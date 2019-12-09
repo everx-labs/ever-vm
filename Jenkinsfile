@@ -54,7 +54,7 @@ pipeline {
         stage('Build') {
             steps {
                 sshagent([G_gitcred]) {
-                    sh 'cargo build --release --features ci_run'
+                    sh 'cargo build --release'
                 }
             }
             post {
@@ -64,7 +64,7 @@ pipeline {
         }
         stage('Tests') {
             steps {
-                sh 'cargo test --release --features ci_run'
+                sh 'cargo test --release'
             }
             post {
                 success { script { G_test = "success" } }
