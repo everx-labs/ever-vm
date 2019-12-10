@@ -1,5 +1,5 @@
 G_gitcred = 'TonJenSSH'
-G_container = "atomxy/empty-ton-sdk-js:20191128"
+G_container = "rust:1.39"
 G_update = "none"
 G_build = "none"
 G_test = "none"
