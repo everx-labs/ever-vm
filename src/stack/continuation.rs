@@ -12,10 +12,9 @@
 * limitations under the License.
 */
 
-use super::{CellData, SaveList, SliceData, Stack, StackItem};
+use super::{Cell, SaveList, SliceData, Stack, StackItem};
 use std::fmt;
 use std::mem;
-use std::sync::Arc;
 use types::{ExceptionCode, Result, ResultOpt};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -126,7 +125,7 @@ impl ContinuationData {
         self.code.undrain_reference();
     }
     
-    pub fn drain_reference(&mut self) -> Result<&Arc<CellData>> {
+    pub fn drain_reference(&mut self) -> Result<Cell> {
         self.code.checked_drain_reference()
             .map_err(|_| exception!(ExceptionCode::InvalidOpcode))
     }

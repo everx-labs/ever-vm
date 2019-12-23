@@ -87,7 +87,7 @@ impl IntegerData {
         )
     }
 
-    pub fn shr<T>(&self, shift: usize) -> Result<(IntegerData)>
+    pub fn shr<T>(&self, shift: usize) -> Result<IntegerData>
     where
         T: behavior::OperationBehavior
     {

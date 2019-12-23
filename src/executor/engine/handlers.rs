@@ -29,6 +29,7 @@ use executor::gas::*;
 use executor::null::*;
 use executor::tuple::*;
 use executor::config::*;
+use executor::rand::*;
 use executor::types::{InstructionOptions, Instruction};
 use executor::Engine;
 use stack::ContinuationData;
@@ -110,7 +111,7 @@ impl Handlers {
             .add_code_page_0_control_flow()
             .add_code_page_0_exceptions()
             .add_code_page_0_dictionaries()
-            .add_code_page_0_gas_and_config()
+            .add_code_page_0_gas_rand_config()
             .add_code_page_0_blockchain()
             .add_code_page_0_crypto()
             .add_code_page_0_debug()
@@ -650,6 +651,8 @@ impl Handlers {
                 .set(0x02, execute_rawreserve)
                 .set(0x03, execute_rawreservex)
                 .set(0x04, execute_setcode)
+                .set(0x06, execute_setlibcode)
+                .set(0x07, execute_changelib)
             )
     }
 
@@ -800,7 +803,7 @@ impl Handlers {
     }
     
     /// Gas and configuration primitives handlers
-    fn add_code_page_0_gas_and_config(self) -> Handlers {
+    fn add_code_page_0_gas_rand_config(self) -> Handlers {
         self
             .add_subset(0xF8, Handlers::new()
                 .set(0x00, execute_accept)
@@ -809,14 +812,18 @@ impl Handlers {
                 .set(0x04, execute_gramtogas)
                 .set(0x05, execute_gastogram)
                 .set(0x0F, execute_commit)
+                .set(0x10, execute_randu256)
+                .set(0x11, execute_rand)
+                .set(0x14, execute_setrand)
+                .set(0x15, execute_addrand)
                 .set(0x20, execute_getparam)
                 .set(0x21, execute_getparam)
                 .set(0x22, execute_getparam)
                 .set(0x23, execute_now)
                 .set(0x24, execute_blocklt)
                 .set(0x25, execute_ltime)
-                .set(0x26, execute_getparam)
-                .set(0x27, execute_getparam)
+                .set(0x26, execute_randseed)
+                .set(0x27, execute_balance)
                 .set(0x28, execute_my_addr)
                 .set(0x29, execute_config_root)
                 .set(0x30, execute_config_dict)

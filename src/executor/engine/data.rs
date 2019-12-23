@@ -28,7 +28,7 @@ fn convert_any(ctx: &mut Ctx, x: u16, to: u16, from: u16) -> Status {
             let data = match to {
                 CONTINUATION => StackItem::Continuation(Arc::new(ContinuationData::with_code(match from {
                     SLICE => x.as_slice()?.clone(),
-                    CELL => SliceData::from_cell(x.as_cell()?, &mut ctx.engine.gas),
+                    CELL => SliceData::from_cell_ref(x.as_cell()?, &mut ctx.engine.gas),
                     _ => unimplemented!()
                 }))),
                 CELL => StackItem::Cell(match from {
@@ -39,7 +39,7 @@ fn convert_any(ctx: &mut Ctx, x: u16, to: u16, from: u16) -> Status {
                 }),
                 SLICE => StackItem::Slice(match from {
                     BUILDER => x.as_builder_mut()?.finalize_and_load(&mut ctx.engine.gas),
-                    CELL => SliceData::from_cell(x.as_cell()?, &mut ctx.engine.gas),
+                    CELL => SliceData::from_cell_ref(x.as_cell()?, &mut ctx.engine.gas),
                     // CONTINUATION => x.as_continuation()?.code().clone(),
                     _ => unimplemented!("to: {:X}, from: {:X}", to, from)
                 }),

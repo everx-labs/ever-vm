@@ -15,7 +15,6 @@
 use ::int;
 use stack::{IntegerData, StackItem};
 use std::fmt;
-use std::result;
 use std::str;
 use std::error::Error;
 use std::sync::Arc;
@@ -24,27 +23,7 @@ pub use ton_types::types::*;
 pub const ACTION_SEND_MSG: u32 = 0x0ec3c86d;
 pub const ACTION_SET_CODE: u32 = 0xad4de08e;
 pub const ACTION_RESERVE:  u32 = 0x36e6b809;
-
-#[derive(Clone, Default, PartialEq, Eq, Hash)]
-pub struct UInt256([u8; 32]);
-
-impl fmt::Debug for UInt256 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", hex::encode(&self.0))
-    }
-}
-
-impl fmt::LowerHex for UInt256 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", hex::encode(&self.0))
-    }
-}
-
-impl fmt::UpperHex for UInt256 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", hex::encode_upper(&self.0))
-    }
-}
+pub const ACTION_CHANGE_LIB: u32 = 0x26fa1dd4;
 
 // Exceptions *****************************************************************
 #[derive(PartialEq)]
@@ -192,7 +171,7 @@ impl Error for Exception {
 }
 
 pub(crate) type Failure = Option<Exception>;
-pub(crate) type Result<T> = result::Result<T, Exception>;
+pub(crate) type Result<T> = std::result::Result<T, Exception>;
 pub(crate) type ResultMut<'a, T> = Result<&'a mut T>;
 pub(crate) type ResultOpt<T> = Result<Option<T>>;
 pub(crate) type ResultRef<'a, T> = Result<&'a T>;

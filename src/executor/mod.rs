@@ -34,6 +34,7 @@ pub mod gas;
 mod dump;
 mod null;
 mod config;
+mod rand;
 
 pub use self::engine::Engine;
 use types::Exception;

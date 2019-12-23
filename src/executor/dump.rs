@@ -34,20 +34,20 @@ fn dump_var(item: &StackItem, how: u8) -> String {
         match item {
             StackItem::None            => String::default(),
             StackItem::Builder(x)      => format!("BC<{:X}>", Arc::as_ref(&x)),
-            StackItem::Cell(x)         => format!("C<{:X}>", Arc::as_ref(&x)),
-            StackItem::Continuation(x) => format!("R<{:X}>", Arc::as_ref(&x.code().cell())),
+            StackItem::Cell(x)         => format!("C<{:X}>", x),
+            StackItem::Continuation(x) => format!("R<{:X}>", x.code().cell()),
             StackItem::Integer(x)      => format!("{:X}", Arc::as_ref(&x)),
-            StackItem::Slice(x)        => format!("CS<{:X}>({}..{})", Arc::as_ref(&x.cell()), x.pos(), x.pos() + x.remaining_bits()),
+            StackItem::Slice(x)        => format!("CS<{:X}>({}..{})", &x.cell(), x.pos(), x.pos() + x.remaining_bits()),
             StackItem::Tuple(x)        => format!("({})", x.iter().map(|v| dump_var(v, how)).collect::<Vec<_>>().join(", ")),
         }
     } else if how.bit(BIN) {
         match item {
             StackItem::None            => String::default(),
             StackItem::Builder(x)      => format!("BC<{:b}>", Arc::as_ref(&x)),
-            StackItem::Cell(x)         => format!("C<{:b}>", Arc::as_ref(&x)),
-            StackItem::Continuation(x) => format!("R<{:b}>", Arc::as_ref(&x.code().cell())),
+            StackItem::Cell(x)         => format!("C<{:b}>", x),
+            StackItem::Continuation(x) => format!("R<{:b}>", x.code().cell()),
             StackItem::Integer(x)      => format!("{:b}", Arc::as_ref(&x)),
-            StackItem::Slice(x)        => format!("CS<{:b}>({}..{})", Arc::as_ref(&x.cell()), x.pos(), x.pos() + x.remaining_bits()),
+            StackItem::Slice(x)        => format!("CS<{:b}>({}..{})", x.cell(), x.pos(), x.pos() + x.remaining_bits()),
             StackItem::Tuple(x)        => format!("({})", x.iter().map(|v| dump_var(v, how)).collect::<Vec<_>>().join(", ")),
         }
     } else if how.bit(STR) {
@@ -65,10 +65,10 @@ fn dump_var(item: &StackItem, how: u8) -> String {
         match item {
             StackItem::None            => String::default(),
             StackItem::Builder(x)      => format!("BC<{:X}>", Arc::as_ref(&x)),
-            StackItem::Cell(x)         => format!("C<{:X}>", Arc::as_ref(&x)),
-            StackItem::Continuation(x) => format!("R<{:X}>", Arc::as_ref(&x.code().cell())),
+            StackItem::Cell(x)         => format!("C<{:X}>", x),
+            StackItem::Continuation(x) => format!("R<{:X}>", x.code().cell()),
             StackItem::Integer(x)      => format!("{}", Arc::as_ref(&x)),
-            StackItem::Slice(x)        => format!("CS<{:X}>({}..{})", Arc::as_ref(&x.cell()), x.pos(), x.pos() + x.remaining_bits()),
+            StackItem::Slice(x)        => format!("CS<{:X}>({}..{})", x.cell(), x.pos(), x.pos() + x.remaining_bits()),
             StackItem::Tuple(x)        => format!("({})", x.iter().map(|v| dump_var(v, how)).collect::<Vec<_>>().join(", ")),
         }
     }

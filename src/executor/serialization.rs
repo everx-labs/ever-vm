@@ -667,7 +667,7 @@ pub fn execute_strefconst(engine: &mut Engine) -> Failure {
             ctx.engine.cmd.var(0).as_cell()?;
             ctx.engine.cmd.var_mut(1).as_builder_mut()?
         };
-        b.checked_append_reference(ctx.engine.cmd.var(0).as_cell()?)?;
+        b.checked_append_reference(ctx.engine.cmd.var(0).as_cell()?.clone())?;
         ctx.engine.cc.stack.push_builder(b);
         Ok(ctx)
     })
@@ -687,8 +687,8 @@ pub fn execute_stref2const(engine: &mut Engine) -> Failure {
             ctx.engine.cmd.var(1).as_cell()?;
             ctx.engine.cmd.var_mut(2).as_builder_mut()?
         };
-        b.checked_append_reference(ctx.engine.cmd.var(0).as_cell()?)?;
-        b.checked_append_reference(ctx.engine.cmd.var(1).as_cell()?)?;
+        b.checked_append_reference(ctx.engine.cmd.var(0).as_cell()?.clone())?;
+        b.checked_append_reference(ctx.engine.cmd.var(1).as_cell()?.clone())?;
         ctx.engine.cc.stack.push_builder(b);
         Ok(ctx)
     })

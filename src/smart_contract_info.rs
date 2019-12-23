@@ -13,8 +13,8 @@
 */
 
 
-use ton_types::types::{UInt256};
-use stack::{CellData, IntegerData, SliceData, StackItem};
+use types::{UInt256};
+use stack::{Cell, IntegerData, SliceData, StackItem};
 use stack::{HashmapE, HashmapType};
 use sha2::{Sha256, Digest};
 use stack::integer::serialization::*;
@@ -39,11 +39,11 @@ pub struct SmartContractInfo{
     unix_time: u32,
     block_lt: u64,
     trans_lt: u64,
-    rand_seed: UInt256,
+    rand_seed: IntegerData,
     balance_remaining_grams: u128,
     balance_remaining_other: HashmapE,
     myself: SliceData,
-    config_params: Option<Arc<CellData>> // config params from masterchain
+    config_params: Option<Cell> // config params from masterchain
 }
 
 impl Default for SmartContractInfo {
@@ -54,7 +54,7 @@ impl Default for SmartContractInfo {
             unix_time: 0,
             block_lt: 0,
             trans_lt: 0,
-            rand_seed: UInt256::from([0;32]),
+            rand_seed: IntegerData::zero(),
             balance_remaining_grams: 0,
             balance_remaining_other: HashmapE::with_bit_len(32),
             myself: SliceData::new(vec!(0x20)),
@@ -103,7 +103,7 @@ impl SmartContractInfo{
         &mut self.trans_lt
     }
 
-    pub fn set_config_params(&mut self, params: Arc<CellData>) {
+    pub fn set_config_params(&mut self, params: Cell) {
         self.config_params = Some(params)
     }
     /*
@@ -120,8 +120,9 @@ impl SmartContractInfo{
         hasher.input(in_msg_hash.as_slice());
         hasher.input(&v);
 
-        let sha256 = hasher.result().to_vec();
-        self.rand_seed = UInt256::from(sha256);
+        let sha256 = hasher.result();
+        self.rand_seed = UnsignedIntegerBigEndianEncoding::new(256)
+            .deserialize(&sha256);
     }
 
     pub fn balance_remaining_grams(&self) -> &u128 {
@@ -153,15 +154,13 @@ impl SmartContractInfo{
                 int!(self.unix_time),  // unix time
                 int!(self.block_lt),   // logical time
                 int!(self.trans_lt),   // transaction time
-                StackItem::Integer(Arc::new(UnsignedIntegerBigEndianEncoding::new(256)
-                    .deserialize(self.rand_seed.as_slice())
-                )),
+                StackItem::Integer(Arc::new(self.rand_seed.clone())),
                 StackItem::Tuple(vec![
                     int!(self.balance_remaining_grams),
                     self.balance_remaining_other.data()
-                        .map(|dict| StackItem::Cell(dict.clone()))
-                        .unwrap_or_default()
-                ]),
+                    .map(|dict| StackItem::Cell(dict.clone()))
+                    .unwrap_or_default()
+                    ]),
                 StackItem::Slice(self.myself.clone()),
                 self.config_params.as_ref()
                     .map(|params| StackItem::Cell(params.clone()))

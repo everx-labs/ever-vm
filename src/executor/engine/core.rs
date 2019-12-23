@@ -74,7 +74,7 @@ pub struct Engine {
 
 pub trait Priced {
     fn price(engine: &mut Engine) -> u128;
-    fn execute(engine: &mut Engine) -> Option<Exception>;
+    fn execute(engine: &mut Engine) -> Failure;
 }
 
 #[derive(Debug)]
@@ -247,7 +247,7 @@ impl Engine {
             let mut log_string = None;
             let err = if let Ok(reference) = self.cc.code().reference(0) {
                 log_string = Some("IMPLICIT JMPREF");
-                if reference.bits_used() % 8 != 0 {
+                if reference.bit_length() % 8 != 0 {
                     err_opt!(ExceptionCode::InvalidOpcode)
                 } else {
                     *self.cc.code_mut() = SliceData::from_cell(reference, &mut self.gas);
@@ -892,7 +892,28 @@ impl Engine {
     pub(in executor) fn code_page_mut(&mut self) -> &mut isize {
         &mut self.code_page
     }
-    
+
+    pub(in executor) fn config_param(&self, index: usize) -> ResultRef<StackItem> {
+        let tuple = self.ctrl(7)?.as_tuple()?;
+        let tuple = tuple.first().ok_or(exception!(ExceptionCode::RangeCheckError))?.as_tuple()?;
+        tuple.get(index).ok_or(exception!(ExceptionCode::RangeCheckError))
+    }
+
+    pub(in executor) fn rand(&self) -> ResultRef<IntegerData> {
+        self.config_param(6)?.as_integer()
+    }
+
+    pub(in executor) fn set_rand(&mut self, rand: IntegerData) -> Status {
+        let mut tuple = self.ctrl_mut(7)?.as_tuple_mut()?;
+        let mut t1 = tuple.first_mut().ok_or(exception!(ExceptionCode::RangeCheckError))?.as_tuple_mut()?;
+        *t1.get_mut(6).ok_or(exception!(ExceptionCode::RangeCheckError))? = StackItem::Integer(Arc::new(rand));
+        self.gas.use_gas(Gas::tuple_gas_price(t1.len()));
+        *tuple.first_mut().ok_or(exception!(ExceptionCode::RangeCheckError))? = StackItem::Tuple(t1);
+        self.gas.use_gas(Gas::tuple_gas_price(tuple.len()));
+        *self.ctrl_mut(7)? = StackItem::Tuple(tuple);
+        Ok(())
+    }
+
     fn undo(&mut self) {
         while let Some(undo) = self.cmd.undo.pop() {
             let mut ctx = Ctx::new(self);

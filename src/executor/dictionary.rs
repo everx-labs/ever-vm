@@ -82,7 +82,7 @@ fn dict(
     .and_then(|ctx| fetch_stack(ctx, params))
     .and_then(|mut ctx| {
         let nbits = ctx.engine.cmd.var(0).as_integer()?.into(0..=1023)?;
-        let mut dict = HashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?);
+        let mut dict = HashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?.cloned());
         let key = keyreader(ctx.engine.cmd.var(2), nbits)?;
         if key.is_empty() {
             if how.any(SET | DEL) {
@@ -130,23 +130,23 @@ fn dictcont(
     .and_then(|ctx| fetch_stack(ctx, 3))
     .and_then(|ctx| {
         let nbits = ctx.engine.cmd.var(0).as_integer()?.into(0..=1023)?;
-        let dict = HashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?);
+        let dict = HashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?.cloned());
         let key = keyreader(ctx.engine.cmd.var(2), nbits)?;
-        if let Some(data) = dict.get_with_gas(key, &mut ctx.engine.gas)? {
-            ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-                ContinuationData::with_code(data)
-            )));
-        }
-        Ok(ctx)
-    })
-    .and_then(|ctx| {
-        let n = ctx.engine.cmd.var_count() - 1;
-        if how.bit(SWITCH) {
-            switch(ctx, var!(n))
-        } else if how.bit(CALLX) {
-            callx(ctx, n)
-        } else {
-            unimplemented!()
+        match dict.get_with_gas(key, &mut ctx.engine.gas)? {
+            Some(data) => {
+                ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
+                    ContinuationData::with_code(data)
+                )));
+                let n = ctx.engine.cmd.var_count() - 1;
+                if how.bit(SWITCH) {
+                    switch(ctx, var!(n))
+                } else if how.bit(CALLX) {
+                    callx(ctx, n)
+                } else {
+                    unimplemented!()
+                }
+            }
+            None => Ok(ctx)
         }
     })
     .err()
@@ -166,7 +166,7 @@ fn dictiter(
     .and_then(|ctx| fetch_stack(ctx, 3))
     .and_then(|mut ctx| {
         let nbits = ctx.engine.cmd.var(0).as_integer()?.into(0..=1023)?;
-        let dict = HashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?);
+        let dict = HashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?.cloned());
         let key = keyreader(ctx.engine.cmd.var(2), nbits)?;
         if key.is_empty() {
             ctx.engine.cc.stack.push(boolean!(false));
@@ -199,7 +199,7 @@ fn find(
     .and_then(|ctx| fetch_stack(ctx, 2))
     .and_then(|mut ctx| {
         let nbits = ctx.engine.cmd.var(0).as_integer()?.into(0..=1023)?;
-        let mut dict = HashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?);
+        let mut dict = HashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?.cloned());
         if let (Some(key), Some(value)) = valfinder(&mut ctx, &dict)? {
             if remove {
                 dict.remove_with_gas(SliceData::from(&key), &mut ctx.engine.gas)?;
@@ -235,7 +235,7 @@ fn pfxdictset(engine: &mut Engine, name: &'static str, how: u8) -> Option<Except
     })
     .and_then(|ctx| {
         let nbits = ctx.engine.cmd.var(0).as_integer()?.into(0..=1023)?;
-        let mut dict = PfxHashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?);
+        let mut dict = PfxHashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?.cloned());
         let key = ctx.engine.cmd.var(2).as_slice()?.clone();
         let key_valid = if how.bit(DEL) { // remove
             dict.remove_with_gas(key, &mut ctx.engine.gas)?.is_some()
@@ -285,7 +285,7 @@ fn pfxdictget(engine: &mut Engine, name: &'static str, how: u8) -> Option<Except
             key   = ctx.engine.cmd.var(0).as_slice()?.clone();
         } else {
             nbits = ctx.engine.cmd.var(0).as_integer()?.into(0..=1023)?;
-            dict = PfxHashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?);
+            dict = PfxHashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?.cloned());
             key   = ctx.engine.cmd.var(2).as_slice()?.clone();
         }
         if let (prefix, Some(value), suffix) = dict.get_prefix_leaf_with_gas(key.clone(), &mut ctx.engine.gas)? {
@@ -1320,7 +1320,7 @@ fn subdict(engine: &mut Engine, name: &'static str, keyreader: KeyReader, into: 
     .and_then(|ctx| fetch_stack(ctx, 4))
     .and_then(|ctx| {
         let nbits = ctx.engine.cmd.var(0).as_integer()?.into(0..=1023)?;
-        let mut dict = HashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?);
+        let mut dict = HashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?.cloned());
         let lbits = ctx.engine.cmd.var(2).as_integer()?.into(0..=nbits)?;
         let key = keyreader(ctx.engine.cmd.var(3), lbits)?;
         into(&mut dict, key, &mut ctx.engine.gas);

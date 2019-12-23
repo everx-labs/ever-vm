@@ -17,18 +17,18 @@ use executor::engine::storage::fetch_stack;
 use executor::serialize_currency_collection;
 use executor::gas::gas_state::Gas;
 use executor::types::{Instruction, Ctx};
-use stack::{CellData, IBitstring, IntegerData, BuilderData, SliceData, StackItem};
-use types::{Exception, ExceptionCode, Failure, Result};
-use types::{ACTION_RESERVE, ACTION_SEND_MSG, ACTION_SET_CODE};
-
+use stack::{Cell, IBitstring, IntegerData, BuilderData, SliceData, StackItem};
 use stack::integer::behavior::OperationBehavior;
+use stack::integer::serialization::{IntoSliceExt, UnsignedIntegerBigEndianEncoding};
 use std::sync::Arc;
+use types::{Exception, ExceptionCode, Failure, Result};
+use types::{ACTION_RESERVE, ACTION_SEND_MSG, ACTION_SET_CODE, ACTION_CHANGE_LIB};
 
 // Blockchain related instructions ********************************************
 const RESERVE_MODE_1: u8 = 1;
 const RESERVE_MODE_0: u8 = 0;
 
-fn add_action(ctx: Ctx, action_id: u32, cell: Option<Arc<CellData>>, suffix: BuilderData) -> Result<Ctx> {
+fn add_action(ctx: Ctx, action_id: u32, cell: Option<Cell>, suffix: BuilderData) -> Result<Ctx> {
     let mut new_action = BuilderData::new();
     new_action.append_u32(action_id)?.append_builder(&suffix)?;
     let c5 = ctx.engine.ctrls.get(5).ok_or(exception!(ExceptionCode::TypeCheckError))?;
@@ -38,6 +38,20 @@ fn add_action(ctx: Ctx, action_id: u32, cell: Option<Arc<CellData>>, suffix: Bui
     }
     ctx.engine.ctrls.put(5, &mut StackItem::Cell(new_action.finalize(&mut ctx.engine.gas)))?;
     Ok(ctx)
+}
+
+/// CHANGELIB (h x - )
+pub(super) fn execute_changelib(engine: &mut Engine) -> Option<Exception> {
+    engine.load_instruction(Instruction::new("CHANGELIB"))
+    .and_then(|ctx| fetch_stack(ctx, 2))
+    .and_then(|ctx| {
+        let x = ctx.engine.cmd.var(0).as_integer()?.into(0..=2)? as u8;
+        let hash = ctx.engine.cmd.var(1).as_integer()?.into_builder::<UnsignedIntegerBigEndianEncoding>(256)?;
+        let mut suffix = BuilderData::with_raw(vec![x * 2], 8)?;
+        suffix.append_builder(&hash)?;
+        add_action(ctx, ACTION_CHANGE_LIB, None, suffix)
+    })
+    .err()
 }
 
 /// SENDRAWMSG (c x – ): pop mode and message cell from stack and put it at the
@@ -61,6 +75,18 @@ pub(super) fn execute_setcode(engine: &mut Engine) -> Option<Exception> {
     .and_then(|ctx| {
         let cell = ctx.engine.cmd.var(0).as_cell()?.clone();
         add_action(ctx, ACTION_SET_CODE, Some(cell), BuilderData::new())
+    })
+    .err()
+}
+
+/// SETLIBCODE (c x - )
+pub(super) fn execute_setlibcode(engine: &mut Engine) -> Option<Exception> {
+    engine.load_instruction(Instruction::new("SETLIBCODE"))
+    .and_then(|ctx| fetch_stack(ctx, 2))
+    .and_then(|ctx| {
+        let x = ctx.engine.cmd.var(0).as_integer()?.into(0..=2)? as u8;
+        let cell = ctx.engine.cmd.var(1).as_cell()?.clone();
+        add_action(ctx, ACTION_CHANGE_LIB, Some(cell), BuilderData::with_raw(vec![x * 2 + 1], 8)?)
     })
     .err()
 }

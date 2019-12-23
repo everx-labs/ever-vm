@@ -22,7 +22,7 @@ use std::ops::Range;
 use std::marker::PhantomData;
 
 #[macro_use]
-mod common_macros;
+mod macros;
 
 mod parse;
 pub use self::parse::*;
@@ -191,8 +191,8 @@ macro_rules! div_variant {
     (@resolve $command:ident => $code: expr) => {
         impl<M: CommandBehaviourModifier> Div<M> {
             pub fn $command<T: Writer>(
-                _engine: &mut Engine<T>,  
-                par: &Vec<&str>, 
+                _engine: &mut Engine<T>,
+                par: &Vec<&str>,
                 destination: &mut T
             ) -> CompileResult {
                 par.assert_len_in(0..2)?;
@@ -241,7 +241,7 @@ div_variant!(
     mulrshiftmodc => 0b10111110
     mulrshiftmodr => 0b10111101
     rshiftc => 0b00110110
-    rshiftr => 0b00110101        
+    rshiftr => 0b00110101
     rshiftmod => 0b00111100
     rshiftmodr => 0b00111101
     rshiftmodc => 0b00111110
@@ -671,11 +671,13 @@ impl<T: Writer> Engine<T> {
         ACCEPT                               => 0xF8, 0x00
         ADD                                  => 0xA0
         ADDCONST z = parse_const_i8          => 0xA6, z
+        ADDRAND                              => 0xF8, 0x15
         AGAIN                                => 0xEA
         AGAINEND                             => 0xEB
         AND                                  => 0xB0
         ATEXIT                               => 0xED, 0xF3
         ATEXITALT                            => 0xED, 0xF4
+        BALANCE                              => 0xF8, 0x27
         BBITREFS                             => 0xCF, 0x33
         BBITS                                => 0xCF, 0x31
         BCHKBITREFS                          => 0xCF, 0x3B
@@ -719,6 +721,7 @@ impl<T: Writer> Engine<T> {
         CALLXVARARGS                         => 0xDB, 0x38
         CAR                                  => 0x6F, 0x10
         CDR                                  => 0x6F, 0x11
+        CHANGELIB                            => 0xFB, 0x07
         CHKBOOL                              => 0xB4, 0x00
         CHKBIT                               => 0xB5, 0x00
         CHKNAN                               => 0xC5
@@ -1176,6 +1179,9 @@ impl<T: Writer> Engine<T> {
         QUFITS z = parse_const_u8_plus_one   => 0xB7, 0xB5, z
         QUFITSX                              => 0xB7, 0xB6, 0x01
         QXOR                                 => 0xB7, 0xB2
+        RAND                                 => 0xF8, 0x11
+        RANDSEED                             => 0xF8, 0x26
+        RANDU256                             => 0xF8, 0x10
         RAWRESERVE                           => 0xFB, 0x02
         RAWRESERVEX                          => 0xFB, 0x03
         REPEAT                               => 0xE4
@@ -1264,8 +1270,10 @@ impl<T: Writer> Engine<T> {
         SETINDEXQ c = parse_const_u4         => 0x6F, 0x70 | c
         SETINDEXVAR                          => 0x6F, 0x85
         SETINDEXVARQ                         => 0x6F, 0x87
+        SETLIBCODE                           => 0xFB, 0x06
         SETNUMARGS c = parse_const_u4_14     => 0xEC, c
         SETNUMVARARGS                        => 0xED, 0x12
+        SETRAND                              => 0xF8, 0x14
         SETRETCTR z = parse_control_register => 0xED, 0x70 | z
         SETSECOND                            => 0x6F, 0x51
         SETTHIRD                             => 0x6F, 0x52

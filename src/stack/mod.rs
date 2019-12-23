@@ -40,7 +40,7 @@ pub use self::continuation::*;
 pub mod integer;
 pub use self::integer::*;
 
-pub use ton_types::{BuilderData, CellData, IBitstring, SliceData, HashmapE, PfxHashmapE, HashmapType, HashmapRemover};
+pub use ton_types::{BuilderData, Cell, IBitstring, SliceData, HashmapE, PfxHashmapE, HashmapType, HashmapRemover};
 
 #[macro_export]
 macro_rules! int {
@@ -86,7 +86,7 @@ macro_rules! dict {
 pub enum StackItem {
     None,
     Builder(Arc<BuilderData>),
-    Cell(Arc<CellData>),
+    Cell(Cell),
     Continuation(Arc<ContinuationData>),
     Integer(Arc<IntegerData>),
     Slice(SliceData),
@@ -128,7 +128,7 @@ impl StackItem {
         }
     }
 
-    pub fn as_cell(&self) -> ResultRef<Arc<CellData>> {
+    pub fn as_cell(&self) -> ResultRef<Cell> {
         match self {
             &StackItem::Cell(ref data) => Ok(data),
             _ => err!(ExceptionCode::TypeCheckError)
@@ -164,7 +164,7 @@ impl StackItem {
     }
 
     /// Returns type D None or Cell
-    pub fn as_dict(&self) -> ResultOpt<&Arc<CellData>> {
+    pub fn as_dict(&self) -> ResultOpt<&Cell> {
         match self {
             &StackItem::None => Ok(None),
             &StackItem::Cell(ref data) => Ok(Some(data)),
@@ -260,7 +260,7 @@ impl StackItem {
                 let refs = data.get_references();
                 let data = SliceData::from(data.cell());
                 let mut bytes = vec![];
-                bytes.push(d1(data.cell().level_mask().mask() as u32, data.cell().references_used() as u32, 0));
+                bytes.push(d1(data.cell().level_mask().mask() as u32, data.cell().references_count() as u32, 0));
                 bytes.push(d2(data.remaining_bits() as u32));
                 bytes.extend_from_slice(&data.storage());
                 if bytes.last() == Some(&0x80) {
@@ -307,7 +307,7 @@ impl fmt::Display for StackItem {
         match self {
             StackItem::None            => write!(f, "Null"),
             StackItem::Builder(x)      => write!(f, "Builder {}", Arc::as_ref(&x)),
-            StackItem::Cell(x)         => write!(f, "CellData x{:x} x{:x}", x.repr_hash(), Arc::as_ref(&x)),
+            StackItem::Cell(x)         => write!(f, "Cell x{:x} x{:x}", x.repr_hash(), x),
             StackItem::Continuation(x) => write!(f, "Continuation x{:x}", x.code().cell().repr_hash()),
             StackItem::Integer(x)      => write!(f, "{}", Arc::as_ref(&x)),
             StackItem::Slice(x)        => write!(f, "Slice x{}", x.to_hex_string()),
@@ -456,7 +456,7 @@ impl Stack {
         }
     }
 
-    fn eq_cell(x: &CellData, y: &StackItem) -> bool {
+    fn eq_cell(x: &Cell, y: &StackItem) -> bool {
         match y {
             StackItem::Cell(y) => x.eq(y),
             _ => false,

@@ -55,7 +55,7 @@ impl Writer for CodePage0 {
     ) -> Result<(), OperationError> {
         let mut code = BuilderData::new();
         if code.append_raw(command, command.len() * 8).is_ok()
-            && code.checked_append_reference(&reference.into_cell()).is_ok() {
+            && code.checked_append_reference(reference.into_cell()).is_ok() {
             self.cells.push(code);
             return Ok(());
             }

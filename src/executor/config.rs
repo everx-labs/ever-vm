@@ -14,24 +14,18 @@
 
 use executor::engine::Engine;
 use executor::engine::storage::fetch_stack;
-use executor::types::{Ctx, InstructionOptions, Instruction};
+use executor::types::{InstructionOptions, Instruction};
 use stack::{BuilderData, IBitstring, IntegerData, StackItem};
 use stack::HashmapE;
 use std::sync::Arc;
-use types::{Exception, ExceptionCode, Result};
-
-fn config_param<'a>(ctx: &'a Ctx, index: usize) -> Result<&'a StackItem> {
-    let tuple = ctx.engine.ctrls.get(7).ok_or(exception!(ExceptionCode::RangeCheckError))?.as_tuple()?;
-    let tuple = tuple.first().ok_or(exception!(ExceptionCode::RangeCheckError))?.as_tuple()?;
-    tuple.get(index).ok_or(exception!(ExceptionCode::RangeCheckError))
-}
+use types::Exception;
 
 fn execute_config_param(engine: &mut Engine, name: &'static str, opt: bool) -> Option<Exception> {
     engine.load_instruction(Instruction::new(name))
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
         let index: i32 = ctx.engine.cmd.var(0).as_integer()?.into(std::i32::MIN..=std::i32::MAX)?;
-        let params = HashmapE::with_hashmap(32, config_param(&ctx, 9)?.as_dict()?);
+        let params = HashmapE::with_hashmap(32, ctx.engine.config_param(9)?.as_dict()?.cloned());
         let mut key = BuilderData::new();
         key.append_i32(index)?;
         if let Some(value) = params.get_with_gas(key.into(), &mut ctx.engine.gas)? {
@@ -52,11 +46,16 @@ fn execute_config_param(engine: &mut Engine, name: &'static str, opt: bool) -> O
     .err()
 }
 
+// - t
+pub(super) fn execute_balance(engine: &mut Engine) -> Option<Exception> {
+    extract_config(engine, "BALANCE")
+}
+
 // ( - D 32)
 pub(super) fn execute_config_dict(engine: &mut Engine) -> Option<Exception> {
     engine.load_instruction(Instruction::new("CONFIGDICT"))
     .and_then(|ctx| {
-        let dict = config_param(&ctx, 9)?.clone();
+        let dict = ctx.engine.config_param(9)?.clone();
         ctx.engine.cc.stack.push(dict.clone());
         ctx.engine.cc.stack.push(int!(32));
         Ok(ctx)
@@ -79,7 +78,7 @@ fn extract_config(engine: &mut Engine, name: &'static str) -> Option<Exception> 
         Instruction::new(name).set_opts(InstructionOptions::Length(0..16))
     )
     .and_then(|ctx| {
-        let value = config_param(&ctx, ctx.engine.cmd.length())?.clone();
+        let value = ctx.engine.config_param(ctx.engine.cmd.length())?.clone();
         ctx.engine.cc.stack.push(value);
         Ok(ctx)
     })
@@ -114,4 +113,9 @@ pub(super) fn execute_ltime(engine: &mut Engine) -> Option<Exception> {
 // - slice
 pub(super) fn execute_my_addr(engine: &mut Engine) -> Option<Exception> {
     extract_config(engine, "MYADDR")
+}
+
+// - x
+pub(super) fn execute_randseed(engine: &mut Engine) -> Option<Exception> {
+    extract_config(engine, "RANDSEED")
 }
