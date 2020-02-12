@@ -15,6 +15,7 @@
 #
 
 [package]
+build = "build.rs"
 name = "ton_vm"
 version = "1.0.0"
 
@@ -26,6 +27,7 @@ ton_types = { git = "https://github.com/tonlabs/ton-labs-types.git" }
 
 # External
 base64 = "0.10.1"
+clap = "2.33.0"
 crc = "^1.8.1"
 ed25519-dalek = "^0.9.1"
 error-chain = { version = "^0.12", default-features = false }
@@ -35,3 +37,9 @@ num = "^0.2"
 num-traits = "^0.2.8"
 rand = "0.6"
 sha2 = "^0.8"
+text_io = "0.1.7"
+threadpool = "1.7.1"
+
+# TBD
+zip = "0.5.3"
+
