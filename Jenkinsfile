@@ -20,22 +20,22 @@ pipeline {
     }
     parameters {
         string(
-            name:'dockerImage_ton_types',
+            name:'dockerImage_ton_labs_types',
             defaultValue: 'tonlabs/ton-labs-types:latest',
             description: 'Existing ton-labs-types image name'
         )
         string(
-            name:'dockerImage_ton_block',
+            name:'dockerImage_ton_labs_block',
             defaultValue: 'tonlabs/ton-labs-block:latest',
             description: 'Existing ton-labs-block image name'
         )
         string(
-            name:'dockerImage_ton_vm',
+            name:'dockerImage_ton_labs_vm',
             defaultValue: '',
             description: 'Expected ton-labs-vm image name'
         )
         string(
-            name:'ton_abi_branch',
+            name:'ton_labs_abi_branch',
             defaultValue: 'master',
             description: 'ton-labs-abi branch for upstairs test'
         )
@@ -72,10 +72,10 @@ pipeline {
                         string DiscordFooter = "Build duration is ${currentBuild.durationString}"
                         DiscordTitle = "Job ${JOB_NAME} from GitHub ${C_PROJECT}"
                         
-                        if (params.dockerImage_ton_vm == '') {
-                            G_image_target = "${C_PROJECT}:${GIT_COMMIT}"
+                        if (params.dockerImage_ton_labs_vm == '') {
+                            G_image_target = "tonlabs/ton-labs-vm:${GIT_COMMIT}"
                         } else {
-                            G_image_target = params.dockerImage_ton_vm
+                            G_image_target = params.dockerImage_ton_labs_vm
                         }
                         echo "Target image name: ${G_image_target}"
 
@@ -116,7 +116,7 @@ pipeline {
                 script {
                     docker.withRegistry('', G_docker_creds) {
                         G_docker_image.withRun() {c -> 
-                            docker.image(params.dockerImage_ton_types).withRun() { ton_types_dep ->
+                            docker.image(params.dockerImage_ton_labs_types).withRun() { ton_types_dep ->
                                 docker.image(G_image_base).inside("--volumes-from ${c.id} --volumes-from ${ton_types_dep.id}") {
                                     sh """
                                         cd /tonlabs/ton-labs-vm
@@ -139,7 +139,7 @@ pipeline {
                 script {
                     docker.withRegistry('', G_docker_creds) {
                         G_docker_image.withRun() {c -> 
-                            docker.image(params.dockerImage_ton_types).withRun() { ton_types_dep ->
+                            docker.image(params.dockerImage_ton_labs_types).withRun() { ton_types_dep ->
                                 docker.image(G_image_base).inside("--volumes-from ${c.id} --volumes-from ${ton_types_dep.id}") {
                                     sh """
                                         cd /tonlabs/ton-labs-vm
@@ -173,23 +173,23 @@ pipeline {
                             def params_executor = [
                                 [
                                     $class: 'StringParameterValue',
-                                    name: 'dockerImage_ton_types',
-                                    value: "${params.dockerImage_ton_types}"
+                                    name: 'dockerImage_ton_labs_types',
+                                    value: "${params.dockerImage_ton_labs_types}"
                                 ],
                                 [
                                     $class: 'StringParameterValue',
-                                    name: 'dockerImage_ton_block',
-                                    value: "${params.dockerImage_ton_block}"
+                                    name: 'dockerImage_ton_labs_block',
+                                    value: "${params.dockerImage_ton_labs_block}"
                                 ],
                                 [
                                     $class: 'StringParameterValue',
-                                    name: 'dockerImage_ton_vm',
+                                    name: 'dockerImage_ton_labs_vm',
                                     value: "${G_image_target}"
                                 ],
                                 [
                                     $class: 'StringParameterValue',
-                                    name: 'ton_abi_branch',
-                                    value: params.ton_abi_branch
+                                    name: 'ton_labs_abi_branch',
+                                    value: params.ton_labs_abi_branch
                                 ],
                                 [
                                     $class: 'StringParameterValue',
@@ -221,23 +221,23 @@ pipeline {
                             def params_abi = [
                                 [
                                     $class: 'StringParameterValue',
-                                    name: 'dockerImage_ton_types',
-                                    value: "${params.dockerImage_ton_types}"
+                                    name: 'dockerImage_ton_labs_types',
+                                    value: "${params.dockerImage_ton_labs_types}"
                                 ],
                                 [
                                     $class: 'StringParameterValue',
-                                    name: 'dockerImage_ton_block',
-                                    value: "${params.dockerImage_ton_block}"
+                                    name: 'dockerImage_ton_labs_block',
+                                    value: "${params.dockerImage_ton_labs_block}"
                                 ],
                                 [
                                     $class: 'StringParameterValue',
-                                    name: 'dockerImage_ton_vm',
+                                    name: 'dockerImage_ton_labs_vm',
                                     value: "${G_image_target}"
                                 ],
                                 [
                                     $class: 'StringParameterValue',
-                                    name: 'ton_abi_branch',
-                                    value: params.ton_abi_branch
+                                    name: 'ton_labs_abi_branch',
+                                    value: params.ton_labs_abi_branch
                                 ],
                                 [
                                     $class: 'StringParameterValue',
@@ -255,7 +255,7 @@ pipeline {
                                     value: params.ton_sdk_branch
                                 ]
                             ]
-                            build job: "Node/ton-labs-abi/${params.ton_abi_branch}", parameters: params_abi
+                            build job: "Node/ton-labs-abi/${params.ton_labs_abi_branch}", parameters: params_abi
                         }
                     }
                     post {
