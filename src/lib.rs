@@ -31,8 +31,6 @@ extern crate rand;
 
 extern crate ton_types;
 
-// TBD
-extern crate zip;
 
 #[macro_use]
 pub mod types;
