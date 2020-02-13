@@ -522,6 +522,7 @@ where
         let mut index = n as isize - 1;
         let x = get_var(&ctx, &mut index)?;
         let (q, r) = if mode.premultiply() {
+            let mut y = get_var(&ctx, &mut index)?;
             let x_opt = if mode.mul_by_shift() {
                 let shift = get_shift(&ctx, &mut index)?;
                 unary_op::<T, _, _, _, _, _>(
@@ -531,7 +532,6 @@ where
                     |result, _| Ok(Some(result))
                 )?
             } else {
-                let y = get_var(&ctx, &mut index)?;
                 binary_op::<T, _, _, _, _, _>(
                     x,
                     y,
@@ -552,7 +552,9 @@ where
                             construct_double_nan
                         )?
                     } else {
-                        let y = get_var(&ctx, &mut index)?;
+                        if !mode.mul_by_shift() {
+                            y = get_var(&ctx, &mut index)?
+                        }
                         if y.is_zero() {
                             on_integer_overflow!(T)?;
                             construct_double_nan()
