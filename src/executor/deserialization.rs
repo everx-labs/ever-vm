@@ -21,8 +21,8 @@ use stack::integer::serialization::{
     UnsignedIntegerLittleEndianEncoding
 };
 use stack::serialization::Deserializer;
-use stack::{StackItem, IntegerData, SliceData, BuilderData};
-use types::{Exception, ExceptionCode, Result};
+use stack::{Cell, StackItem, IntegerData, SliceData, BuilderData};
+use types::{Exception, ExceptionCode, Result, UInt256};
 use executor::engine::data::convert;
 use executor::engine::storage::fetch_stack;
 use executor::gas::gas_state::Gas;
@@ -30,6 +30,7 @@ use executor::microcode::{SLICE, CELL, VAR};
 use executor::types::{Ctx, InstructionOptions, Instruction};
 use executor::Mask;
 use std::sync::Arc;
+use std::collections::HashSet;
 
 const QUIET: u8 = 0x01; // quiet variant
 const STACK: u8 = 0x02; // length of int in stack
@@ -37,6 +38,7 @@ const CMD:   u8 = 0x04; // length of int in cmd parameter
 const PARAM: u8 = 0x08; // length of int in function parameter
 const STAY:  u8 = 0x10; // return slice to stack
 const INV:   u8 = 0x20; // invert (result remainder) on push
+const CEL:   u8 = 0x02; // argument is Cell, otherwise Slice
 
 fn load_slice<'a>(engine: &'a mut Engine, name: &'static str, len: &mut usize, how: u8) -> Result<Ctx<'a>> {
     let params = if how.bit(STACK) {
@@ -858,4 +860,94 @@ pub fn execute_split(engine: &mut Engine) -> Option<Exception> {
 
 pub fn execute_splitq(engine: &mut Engine) -> Option<Exception> {
     split(engine, "SPLITQ", true)
+}
+
+struct DataCounter {
+    visited: HashSet<UInt256>,
+    max: usize,
+    cells: usize,
+    bits: usize,
+    refs: usize
+}
+
+impl DataCounter {
+    fn new(max: usize) -> Self {
+        Self {
+            visited: HashSet::new(),
+            max,
+            cells: 0,
+            bits: 0,
+            refs: 0
+        }
+    }
+    fn count_cell(&mut self, cell: Cell, engine: &mut Engine) -> bool {
+        if !self.visited.insert(cell.repr_hash()) {
+            return true
+        }
+        if self.max == 0 {
+            return false
+        }
+        self.max -= 1;
+        self.cells += 1;
+        self.count_slice(SliceData::from_cell(cell, &mut engine.gas), engine)
+    }
+    fn count_slice(&mut self, slice: SliceData, engine: &mut Engine) -> bool {
+        let refs = slice.remaining_references();
+        self.refs += refs;
+        self.bits += slice.remaining_bits();
+        for i in 0..refs {
+            if !self.count_cell(slice.reference(i).unwrap().clone(), engine) {
+                return false
+            }
+        }
+        true
+    }
+}
+
+fn datasize(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exception> {
+    engine.load_instruction(
+        Instruction::new(name)
+    )
+    .and_then(|ctx| fetch_stack(ctx, 2))
+    .and_then(|mut ctx| {
+        let n = ctx.engine.cmd.var(0).as_integer()?.into(0..=std::usize::MAX)?;
+        let mut counter = DataCounter::new(n);
+        let result = if !how.bit(CEL) {
+            let slice = ctx.engine.cmd.var(1).as_slice()?.clone();
+            counter.count_slice(slice, &mut ctx.engine)
+        } else if ctx.engine.cmd.var(1).is_null() {
+            true
+        } else {
+            let cell = ctx.engine.cmd.var(1).as_cell()?.clone();
+            counter.count_cell(cell, &mut ctx.engine)
+        };
+        if result {
+            ctx.engine.cc.stack.push(int!(counter.cells));
+            ctx.engine.cc.stack.push(int!(counter.bits));
+            ctx.engine.cc.stack.push(int!(counter.refs));
+        } else if !how.bit(QUIET) {
+            return err!(ExceptionCode::CellOverflow)
+        }
+        if how.bit(QUIET) {
+            ctx.engine.cc.stack.push(boolean!(result));
+        }
+        Ok(ctx)
+    })
+    .err()
+}
+
+pub(crate) fn execute_cdatasize(engine: &mut Engine) -> Option<Exception> {
+    datasize(engine, "CDATASIZE", CEL)
+}
+
+pub(crate) fn execute_cdatasizeq(engine: &mut Engine) -> Option<Exception> {
+    datasize(engine, "CDATASIZEQ", QUIET | CEL)
+}
+
+pub(crate) fn execute_sdatasize(engine: &mut Engine) -> Option<Exception> {
+    datasize(engine, "SDATASIZE", 0)
+}
+
+pub(crate) fn execute_sdatasizeq(engine: &mut Engine) -> Option<Exception> {
+    datasize(engine, "SDATASIZEQ", QUIET)
 }

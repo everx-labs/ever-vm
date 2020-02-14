@@ -721,6 +721,8 @@ impl<T: Writer> Engine<T> {
         CALLXVARARGS                         => 0xDB, 0x38
         CAR                                  => 0x6F, 0x10
         CDR                                  => 0x6F, 0x11
+        CDATASIZE                            => 0xF9, 0x41
+        CDATASIZEQ                           => 0xF9, 0x40
         CHANGELIB                            => 0xFB, 0x07
         CHKBOOL                              => 0xB4, 0x00
         CHKBIT                               => 0xB5, 0x00
@@ -1226,6 +1228,8 @@ impl<T: Writer> Engine<T> {
         SCHKREFSQ                            => 0xD7, 0x46
         SCUTFIRST                            => 0xD7, 0x30
         SCUTLAST                             => 0xD7, 0x32
+        SDATASIZE                            => 0xF9, 0x43
+        SDATASIZEQ                           => 0xF9, 0x42
         SDBEGINSX                            => 0xD7, 0x26
         SDBEGINSXQ                           => 0xD7, 0x27
         SDCNTLEAD0                           => 0xC7, 0x10
