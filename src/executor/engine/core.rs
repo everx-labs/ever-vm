@@ -180,20 +180,7 @@ impl Engine {
     }
 
     pub fn get_committed_state_fift(&self) -> String {
-        let mut result: String = if self.cstate.committed {
-            "-1".to_string()
-        } else {
-            "0".to_string()
-        };
-        if !self.cstate.c4.is_null() {
-            result.push_str(" ");
-            result.push_str(self.cstate.c4.dump_as_fift().as_str());
-        }
-        if !self.cstate.c5.is_null() {
-            result.push_str(" ");
-            result.push_str(self.cstate.c5.dump_as_fift().as_str());
-        }
-        result
+        format!(" {} {}", self.cstate.c4.dump_as_fift(), self.cstate.c5.dump_as_fift())
     }
 
     pub fn commit(&mut self) {
