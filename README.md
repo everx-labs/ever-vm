@@ -11,26 +11,22 @@ https://www.rust-lang.org/en-US/install.html
 cargo build
 cargo run
 ```
+---  
 
+See https://docs.ton.dev for documentation
 
-## Compile smart contract:
+---
+Copyright 2018-2020 TON DEV SOLUTIONS LTD.
 
-After build project you can use **compile** util from `target/release/compile` or `target/debug/compile` for compile your contract.
+Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
+this file except in compliance with the License.
 
-Commands (by unix example):
-- Compile contract
-  `./compile your_bytecode_file your_cells_file`
-- Get help
-  `./compile --help`
+You may obtain a copy of the
+License at: https://www.ton.dev/licenses
 
-## Execute smart contract:
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific TON DEV software governing permissions and
+limitations under the License.
 
-After build project you can use **execute** util from `target/release/execute` or `target/debug/execute` for execute your contract.
-
-Commands (by unix example):
-- Execute contract
-  `./execute your_contract_file`
-  - Execute contract with stack items (strings)
-    `./execute your_contract_file --params stack-items`
-- Get help
-  `./execute --help`

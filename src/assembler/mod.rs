@@ -693,6 +693,8 @@ impl<T: Writer> Engine<T> {
         BLESSNUMARGS c = parse_const_u4_14   => 0xEE, c
         BLESSVARARGS                         => 0xED, 0x1F
         BLKDROP c = parse_const_u4           => 0x5F, c
+        BLKDROP2 c1 = parse_const_u4_nonzero;
+                 c2 = parse_const_u4         => 0x6C, (c1 << 4) | c2
         BLKPUSH c1 = parse_const_u4_nonzero;
                 c2 = parse_const_u4          => 0x5F, (c1 << 4) | c2
         BLKSWAP c1 = parse_const_u4_plus_one;
