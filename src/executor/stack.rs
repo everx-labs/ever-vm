@@ -39,6 +39,19 @@ pub(super) fn execute_blkdrop(engine: &mut Engine) -> Option<Exception> {
     .err()
 }
 
+pub(super) fn execute_blkdrop2(engine: &mut Engine) -> Option<Exception> {
+    engine.load_instruction(
+        Instruction::new("BLKDROP2").set_opts(InstructionOptions::LengthAndIndex)
+    )
+    .and_then(|ctx| {
+        let length = ctx.engine.cmd.length_and_index().length;
+        let index = ctx.engine.cmd.length_and_index().index;
+        ctx.engine.cc.stack.drop_range(index..index + length)?;
+        Ok(ctx)
+    })
+    .err()
+}
+
 // (x(j) ... - x(j) ... { x(j) } i times)
 pub(super) fn execute_blkpush(engine: &mut Engine) -> Option<Exception> {
     engine.load_instruction(

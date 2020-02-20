@@ -175,6 +175,10 @@ impl Handlers {
             .set(0x69, execute_chkdepth)
             .set(0x6A, execute_onlytopx)
             .set(0x6B, execute_onlyx)
+            .add_subset(0x6C, Handlers::new()
+                .set_range(0x10..0xFF, execute_blkdrop2)
+                .set(0xFF, execute_blkdrop2)
+            )
     }
 
     fn add_code_page_0_tuple(self) -> Handlers {

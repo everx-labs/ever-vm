@@ -12,7 +12,6 @@ cargo build
 cargo run
 ```
 
-
 ## Compile smart contract:
 
 After build project you can use **compile** util from `target/release/compile` or `target/debug/compile` for compile your contract.
