@@ -176,13 +176,11 @@ pipeline {
             }
             steps {
                 script {
-                    docker.withRegistry('', G_docker_creds) {
-                        sh """
-                            cd /tonlabs/ton-labs-vm
-                            cargo update
-                            cargo test --release
-                        """
-                    }
+                    sh """
+                        cd /tonlabs/ton-labs-vm
+                        cargo update
+                        cargo test --release
+                    """
                 }
             }
             post {
