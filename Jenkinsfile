@@ -138,6 +138,7 @@ pipeline {
                             args
                         )
                         echo "Image ${G_docker_image} as ${G_image_target}"
+                        G_docker_image.push()
                     }
                 }
             }
