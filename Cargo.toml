@@ -17,7 +17,7 @@
 [package]
 build = "build.rs"
 name = "ton_vm"
-version = "1.0.0"
+version = "0.21.59"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 clear_on_drop = { version = "0.2", features = ["no_cc"] }

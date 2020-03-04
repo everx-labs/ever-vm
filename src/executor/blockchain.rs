@@ -25,8 +25,6 @@ use types::{Exception, ExceptionCode, Failure, Result};
 use types::{ACTION_RESERVE, ACTION_SEND_MSG, ACTION_SET_CODE, ACTION_CHANGE_LIB};
 
 // Blockchain related instructions ********************************************
-const RESERVE_MODE_1: u8 = 1;
-const RESERVE_MODE_0: u8 = 0;
 
 fn add_action(ctx: Ctx, action_id: u32, cell: Option<Cell>, suffix: BuilderData) -> Result<Ctx> {
     let mut new_action = BuilderData::new();
@@ -60,9 +58,9 @@ pub(super) fn execute_sendrawmsg(engine: &mut Engine) -> Option<Exception> {
     engine.load_instruction(Instruction::new("SENDRAWMSG"))
     .and_then(|ctx| fetch_stack(ctx, 2))
     .and_then(|ctx| {
-        let x = ctx.engine.cmd.var(0).as_integer()?;
+        let x = ctx.engine.cmd.var(0).as_integer()?.into(0..=255)?;
         let cell = ctx.engine.cmd.var(1).as_cell()?.clone();
-        let suffix = BuilderData::with_raw(vec![x.into(0..=255)?], 8)?;
+        let suffix = BuilderData::with_raw(vec![x], 8)?;
         add_action(ctx, ACTION_SEND_MSG, Some(cell), suffix)
     })
     .err()
@@ -93,25 +91,28 @@ pub(super) fn execute_setlibcode(engine: &mut Engine) -> Option<Exception> {
 
 /// RAWRESERVE (x y - )
 pub(super) fn execute_rawreserve(engine: &mut Engine) -> Option<Exception> {
-    raw_reserve(engine, "RAWRESERVE", RESERVE_MODE_0)
+    engine.load_instruction(Instruction::new("RAWRESERVE"))
+    .and_then(|ctx| fetch_stack(ctx, 2))
+    .and_then(|ctx| {
+        let y = ctx.engine.cmd.var(0).as_integer()?.into(0..=15)?;
+        let mut suffix = BuilderData::with_raw(vec![y], 8)?;
+        let x = ctx.engine.cmd.var(1).as_grams()?;
+        suffix.append_builder(&serialize_currency_collection(x, None)?)?;
+        add_action(ctx, ACTION_RESERVE, None, suffix)
+    })
+    .err()
 }
 
 /// RAWRESERVEX (s y - )
 pub(super) fn execute_rawreservex(engine: &mut Engine) -> Option<Exception> {
-    raw_reserve(engine, "RAWRESERVEX", RESERVE_MODE_1)
-}
-
-fn raw_reserve(engine: &mut Engine, name: &'static str, mode: u8) -> Option<Exception> {
-    engine.load_instruction(Instruction::new(name))
-    .and_then(|ctx| fetch_stack(ctx, 2))
+    engine.load_instruction(Instruction::new("RAWRESERVEX"))
+    .and_then(|ctx| fetch_stack(ctx, 3))
     .and_then(|ctx| {
-        let x = ctx.engine.cmd.var(0).as_integer()?;
-        let mut suffix = BuilderData::with_raw(vec![x.into(0..=3)?], 8)?;
-        suffix.append_builder(&match mode {
-            RESERVE_MODE_0 => serialize_currency_collection(ctx.engine.cmd.var(1).as_grams()?)?,
-            RESERVE_MODE_1 => BuilderData::from_slice(ctx.engine.cmd.var(1).as_slice()?),
-            _ => return err!(ExceptionCode::FatalError)
-        })?;
+        let y = ctx.engine.cmd.var(0).as_integer()?.into(0..=15)?;
+        let mut suffix = BuilderData::with_raw(vec![y], 8)?;
+        let other = ctx.engine.cmd.var(1).as_dict()?;
+        let x = ctx.engine.cmd.var(2).as_grams()?;
+        suffix.append_builder(&serialize_currency_collection(x, other.cloned())?)?;
         add_action(ctx, ACTION_RESERVE, None, suffix)
     })
     .err()
