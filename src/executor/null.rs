@@ -18,6 +18,7 @@ use executor::types::Instruction;
 use stack::{StackItem, IntegerData};
 use executor::engine::storage::fetch_stack;
 use std::sync::Arc;
+use super::Mask;
 
 pub(super) fn execute_null(engine: &mut Engine) -> Option<Exception> {
     engine.load_instruction(
@@ -43,15 +44,23 @@ pub(super) fn execute_isnull(engine: &mut Engine) -> Option<Exception> {
     .err()
 }
 
-fn nullswapif(engine: &mut Engine, name: &'static str, invert: bool, args: usize) -> Option<Exception> {
+const ARG: u8 = 0x03;     // args number
+const DBL: u8 = 0x04;     // DouBLe NULL in result
+const INV: u8 = 0x08;     // INVert rule to get output value: get it upon unsuccessful call
+
+fn nullswapif(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exception> {
+    let args = how.mask(ARG);
     debug_assert!(args == 1 || args == 2);
     engine.load_instruction(
         Instruction::new(name)
     )
-    .and_then(|ctx| fetch_stack(ctx, args))
+    .and_then(|ctx| fetch_stack(ctx, args as usize))
     .and_then(|ctx| {
-        if ctx.engine.cmd.var(0).as_bool()? ^ invert {
+        if ctx.engine.cmd.var(0).as_bool()? ^ how.bit(INV) {
             ctx.engine.cc.stack.push(StackItem::None);
+            if how.bit(DBL) {
+                ctx.engine.cc.stack.push(StackItem::None);
+            }
         }
         if args > 1 {
             ctx.engine.cc.stack.push(ctx.engine.cmd.vars.remove(1));
@@ -64,20 +73,40 @@ fn nullswapif(engine: &mut Engine, name: &'static str, invert: bool, args: usize
 
 // integer - (integer) | (null integer)
 pub(super) fn execute_nullswapif(engine: &mut Engine) -> Option<Exception> {
-    nullswapif(engine, "NULLSWAPIF", false, 1)
+    nullswapif(engine, "NULLSWAPIF", 1)
+}
+
+// integer - (integer) | (null integer)
+pub(super) fn execute_nullswapif2(engine: &mut Engine) -> Option<Exception> {
+    nullswapif(engine, "NULLSWAPIF2", 1 | DBL)
 }
 
 // integer - (integer) | (null integer)
 pub(super) fn execute_nullswapifnot(engine: &mut Engine) -> Option<Exception> {
-    nullswapif(engine, "NULLSWAPIFNOT", true, 1)
+    nullswapif(engine, "NULLSWAPIFNOT", 1 | INV)
+}
+
+// integer - (integer) | (null integer)
+pub(super) fn execute_nullswapifnot2(engine: &mut Engine) -> Option<Exception> {
+    nullswapif(engine, "NULLSWAPIFNOT2", 1 | INV | DBL)
 }
 
 // x integer - (x integer) | (null x integer)
 pub(super) fn execute_nullrotrif(engine: &mut Engine) -> Option<Exception> {
-    nullswapif(engine, "NULLROTRIF", false, 2)
+    nullswapif(engine, "NULLROTRIF", 2)
+}
+
+// x integer - (x integer) | (null x integer)
+pub(super) fn execute_nullrotrif2(engine: &mut Engine) -> Option<Exception> {
+    nullswapif(engine, "NULLROTRIF2", 2 | DBL)
 }
 
 // x integer - (x integer) | (null x integer)
 pub(super) fn execute_nullrotrifnot(engine: &mut Engine) -> Option<Exception> {
-    nullswapif(engine, "NULLROTRIFNOT", true, 2)
+    nullswapif(engine, "NULLROTRIFNOT", 2 | INV)
+}
+
+// x integer - (x integer) | (null x integer)
+pub(super) fn execute_nullrotrifnot2(engine: &mut Engine) -> Option<Exception> {
+    nullswapif(engine, "NULLROTRIFNOT2", 2 | INV | DBL)
 }

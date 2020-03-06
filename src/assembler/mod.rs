@@ -1024,9 +1024,13 @@ impl<T: Writer> Engine<T> {
         NOW                                  => 0xF8, 0x23
         NULL                                 => 0x6D
         NULLROTRIF                           => 0x6F, 0xA2
+        NULLROTRIF2                          => 0x6F, 0xA6
         NULLROTRIFNOT                        => 0x6F, 0xA3
+        NULLROTRIFNOT2                       => 0x6F, 0xA7
         NULLSWAPIF                           => 0x6F, 0xA0
+        NULLSWAPIF2                          => 0x6F, 0xA4
         NULLSWAPIFNOT                        => 0x6F, 0xA1
+        NULLSWAPIFNOT2                       => 0x6F, 0xA5
         ONE                                  => 0x71
         OR                                   => 0xB1
         OVER                                 => 0x21

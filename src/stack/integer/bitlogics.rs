@@ -12,16 +12,9 @@
 * limitations under the License.
 */
 
-use super::*;
-//use std::ops::{
-//    BitAnd,
-//    BitOr,
-//    BitXor,
-//    Shl,
-//    Shr,
-//    Not,
-//};
 use stack::behavior;
+
+use super::*;
 
 impl IntegerData {
     pub fn and<T>(&self, other: &IntegerData) -> Result<IntegerData>
