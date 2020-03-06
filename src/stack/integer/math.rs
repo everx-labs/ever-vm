@@ -129,12 +129,6 @@ impl IntegerData {
 
 pub mod utils {
     use super::*;
-    use std::ops::{
-        Shr,
-        Shl,
-        Sub,
-        BitAnd,
-    };
     use num::{
         One,
     };
@@ -159,9 +153,14 @@ pub mod utils {
 
     #[inline]
     pub fn div_by_shift(dividend: &Int, shift: usize, rounding: Round) -> (Int, Int) {
-        let divisor = Int::one().shl(shift);
-        let mut remainder = dividend.bitand(divisor.clone().sub(1));
-        let mut quotient = dividend.shr(shift);
+        let divisor = Int::one() << shift;
+        let remainder_mask = divisor.clone() - 1;
+        let (mut quotient, mut remainder) = if dividend.sign() == Sign::Minus {
+            let dividend = dividend.abs();
+            (-(dividend.clone() >> shift), -(dividend & &remainder_mask))
+        } else {
+            (dividend >> shift, dividend & &remainder_mask)
+        };
         match rounding {
             Round::FloorToNegativeInfinity => round_floor_to_negative_infinity(
                 &mut quotient, &mut remainder, dividend, &divisor),
@@ -228,8 +227,8 @@ pub mod utils {
         let r_x2 = remainder.clone() << 1;
         let cmp_result = r_x2.abs().cmp(&divisor.abs());
         let is_not_negative = dividend.sign() == divisor.sign();
-        if (cmp_result == Ordering::Equal && is_not_negative)
-            || cmp_result == Ordering::Greater
+        if cmp_result == Ordering::Greater
+            || (cmp_result == Ordering::Equal && is_not_negative)
         {
             if divisor.sign() == remainder.sign() {
                 *remainder -= divisor;

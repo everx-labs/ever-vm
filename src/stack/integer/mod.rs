@@ -208,16 +208,16 @@ pub mod utils {
     /// This macro extracts internal Int value from IntegerData using given NaN behavior
     /// and NaN constructor.
     macro_rules! extract_value {
-    ($T: ident, $v: ident, $nan_constructor: ident) => {
-        match $v.value {
-            IntegerValue::NaN => {
-                on_nan_parameter!($T)?;
-                return Ok($nan_constructor());
-            },
-            IntegerValue::Value(ref $v) => $v,
+        ($T: ident, $v: ident, $nan_constructor: ident) => {
+            match $v.value {
+                IntegerValue::NaN => {
+                    on_nan_parameter!($T)?;
+                    return Ok($nan_constructor());
+                },
+                IntegerValue::Value(ref $v) => $v,
+            }
         }
     }
-}
 
     /// Unary operation. Checks lhs for NaN, unwraps it, calls closure and returns wrapped result.
     #[inline]

@@ -38,7 +38,7 @@ mod rand;
 
 pub use self::engine::Engine;
 use types::Exception;
-use ton_types::{BuilderData, IBitstring};
+use ton_types::{BuilderData, Cell, IBitstring};
 
 
 pub trait Mask {
@@ -69,8 +69,13 @@ fn serialize_grams(grams: u128) -> Result<BuilderData, Exception> {
     Ok(builder)
 }
 
-pub fn serialize_currency_collection(grams: u128) -> Result<BuilderData, Exception> {
+pub fn serialize_currency_collection(grams: u128, other: Option<Cell>) -> Result<BuilderData, Exception> {
     let mut builder = serialize_grams(grams)?;
-    builder.append_bit_zero()?;
+    if let Some(cell) = other {
+        builder.append_bit_one()?;
+        builder.checked_append_reference(cell)?;
+    } else {
+        builder.append_bit_zero()?;
+    }
     Ok(builder)
 }

@@ -37,8 +37,6 @@ num = "^0.2"
 num-traits = "^0.2.8"
 rand = "0.6"
 sha2 = "^0.8"
-text_io = "0.1.7"
-threadpool = "1.7.1"
 
 
 
