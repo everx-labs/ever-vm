@@ -158,7 +158,7 @@ def buildParams() {
                 item = string("name": key, "value": G_images["${nKey}"])
             } else {
                 if(key == 'common_version') {
-                    item = string("name": 'key', "value": G_binversion)
+                    item = string("name": key, "value": G_binversion)
                 } else {
                     item = string("name": key, "value": value)
                 }
