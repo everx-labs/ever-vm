@@ -41,7 +41,7 @@ use stack::{IntegerData, StackItem};
 use std::cmp::Ordering;
 use std::mem;
 use std::sync::Arc;
-use types::{Bitmask, Exception, ExceptionCode, Failure, Result};
+use types::{Bitmask, ExceptionCode, Failure, Result, TvmError};
 
 // Common definitions *********************************************************
 
@@ -432,7 +432,7 @@ where
 }
 
 // (x - x), throws exception if x == NaN
-pub(super) fn execute_chknan(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_chknan(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("CHKNAN")
     )
@@ -682,7 +682,7 @@ where
 }
 
 // (x - x==NaN)
-pub(super) fn execute_isnan(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_isnan(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("ISNAN")
     )
@@ -820,9 +820,13 @@ where
         |x| {
             match x.into(0..=1023) {
                 Ok(shift) => IntegerData::one().shl::<T>(shift),
-                Err(exception) => if exception.code == ExceptionCode::IntegerOverflow {
-                    on_integer_overflow!(T)?;
-                    Ok(IntegerData::nan())
+                Err(exception) => if let Some(TvmError::TvmExceptionFull(err)) = exception.downcast_ref() {
+                    if err.code == ExceptionCode::IntegerOverflow {
+                        on_integer_overflow!(T)?;
+                        Ok(IntegerData::nan())
+                    } else {
+                        Err(exception)
+                    }
                 } else {
                     Err(exception)
                 }

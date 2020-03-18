@@ -20,11 +20,12 @@ use stack::serialization::{Deserializer};
 use stack::integer::serialization::{Encoding, IntoSliceExt, UnsignedIntegerBigEndianEncoding};
 use stack::{BuilderData, IntegerData, StackItem};
 use std::sync::Arc;
-use types::{Exception, ExceptionCode};
+use ton_types::GasConsumer;
+use types::{ExceptionCode, Failure, TvmError};
 
 /// HASHCU (c – x), computes the representation hash of a Cell c
 /// and returns it as a 256-bit unsigned integer x.
-pub(super) fn execute_hashcu(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_hashcu(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("HASHCU"))
         .and_then(|ctx| fetch_stack(ctx, 1))
         .and_then(|ctx| {
@@ -38,11 +39,12 @@ pub(super) fn execute_hashcu(engine: &mut Engine) -> Option<Exception> {
 /// Computes the hash of a Slice s and returns it as a 256-bit unsigned integer x. 
 /// The result is the same as if an ordinary cell containing only data 
 /// and references from s had been created and its hash computed by HASHCU.
-pub(super) fn execute_hashsu(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_hashsu(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("HASHSU"))
         .and_then(|ctx| fetch_stack(ctx, 1))
         .and_then(|ctx| {
-            let cell = BuilderData::from_slice(ctx.engine.cmd.var(0).as_slice()?).finalize(&mut ctx.engine.gas);
+            let builder = BuilderData::from_slice(ctx.engine.cmd.var(0).as_slice()?);
+            let cell = ctx.engine.finalize_cell(builder);
             let hash_int = hash_to_uint(&cell.repr_hash());
             ctx.engine.cc.stack.push(StackItem::Integer(hash_int));
             Ok(ctx)
@@ -54,7 +56,7 @@ pub(super) fn execute_hashsu(engine: &mut Engine) -> Option<Exception> {
 // Computes sha256 of the data bits of Slices.
 // If the bit length of s is not divisible by eight, throws a cell underflow exception. 
 // The hash value is returned as a 256-bit unsigned integer x.
-pub(super) fn execute_sha256u(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_sha256u(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("SHA256U"))
         .and_then(|ctx| fetch_stack(ctx, 1))
         .and_then(|ctx| {
@@ -77,7 +79,7 @@ pub(super) fn execute_sha256u(engine: &mut Engine) -> Option<Exception> {
 // similarly to CHKSIGNU. If the bit length of Slice d is not divisible by eight, 
 // throws a cell underflow exception. The verification of Ed25519 signatures is the standard one, 
 // with sha256 used to reduce d to the 256-bit number that is actually signed.
-pub(super) fn execute_chksigns(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_chksigns(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("CHKSIGNS"))
         .and_then(|ctx| fetch_stack(ctx, 3))
         .and_then(|ctx| {
@@ -105,7 +107,7 @@ pub(super) fn execute_chksigns(engine: &mut Engine) -> Option<Exception> {
 /// CHKSIGNU (h s k – -1 or 0)
 /// checks the Ed25519-signature s (slice) of a hash h (a 256-bit unsigned integer)
 /// using public key k (256-bit unsigned integer).
-pub(super) fn execute_chksignu(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_chksignu(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("CHKSIGNU"))
         .and_then(|ctx| fetch_stack(ctx, 3))
         .and_then(|ctx| {

@@ -12,11 +12,11 @@
 * limitations under the License.
 */
 
+pub(crate) use error::TvmError;
 use ::int;
 use stack::{IntegerData, StackItem};
 use std::fmt;
 use std::str;
-use std::error::Error;
 use std::sync::Arc;
 pub use ton_types::types::*;
 
@@ -45,7 +45,7 @@ impl Exception {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "{}, file {}, line {}",
+            "{}, file {}:{}",
             exception_message(self.number, &self.value),
             self.file,
             self.line
@@ -86,10 +86,12 @@ pub fn exception_message(number: usize, value: &StackItem) -> String {
 #[macro_export]
 macro_rules! exception {
     ($code:expr) => {
-        $crate::types::Exception::from_code($code, file!(), line!())
+        failure::Error::from(TvmError::TvmExceptionFull($crate::types::Exception::from_code($code, file!(), line!())))
+        // failure::bail!(TvmError::TvmExceptionFull($crate::types::Exception::from_code($code, file!(), line!())))
     };
     ($code:expr, $file:expr, $line:expr) => {
-        $crate::types::Exception::from_code($code, $file, $line)
+        failure::Error::from(TvmError::TvmExceptionFull($crate::types::Exception::from_code($code, $file, $line)))
+        // failure::bail!(TvmError::TvmExceptionFull($crate::types::Exception::from_code($code, $file, $line)))
     };
 }
 
@@ -156,22 +158,8 @@ impl fmt::Debug for Exception {
     }
 }
 
-impl Error for Exception {
-    fn description(&self) -> &str {
-        self.code.message()
-    }
-
-    fn cause(&self) -> Option<&dyn Error> {
-        None
-    }
-
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        None
-    }    
-}
-
-pub(crate) type Failure = Option<Exception>;
-pub(crate) type Result<T> = std::result::Result<T, Exception>;
+// pub(crate) use ton_types::Result;
+pub(crate) type Failure = Option<failure::Error>;
 pub(crate) type ResultMut<'a, T> = Result<&'a mut T>;
 pub(crate) type ResultOpt<T> = Result<Option<T>>;
 pub(crate) type ResultRef<'a, T> = Result<&'a T>;

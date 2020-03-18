@@ -28,7 +28,7 @@ use stack::integer::serialization::{
     UnsignedIntegerBigEndianEncoding,
     UnsignedIntegerLittleEndianEncoding
 };
-use types::{ExceptionCode, Result, Failure};
+use types::{ExceptionCode, Failure, Result, TvmError};
 use std::sync::Arc;
 
 const QUIET: u8 = 0x01; // quiet variant

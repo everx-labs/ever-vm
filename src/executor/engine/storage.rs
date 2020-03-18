@@ -27,6 +27,7 @@ use types::{
     ResultRef,
     ResultVec,
     Status,
+    TvmError,
 };
 
 // Utilities ******************************************************************

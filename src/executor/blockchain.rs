@@ -15,13 +15,13 @@
 use executor::engine::Engine;
 use executor::engine::storage::fetch_stack;
 use executor::serialize_currency_collection;
-use executor::gas::gas_state::Gas;
 use executor::types::{Instruction, Ctx};
 use stack::{Cell, IBitstring, IntegerData, BuilderData, SliceData, StackItem};
 use stack::integer::behavior::OperationBehavior;
 use stack::integer::serialization::{IntoSliceExt, UnsignedIntegerBigEndianEncoding};
 use std::sync::Arc;
-use types::{Exception, ExceptionCode, Failure, Result};
+use ton_types::GasConsumer;
+use types::{ExceptionCode, Failure, Result, TvmError};
 use types::{ACTION_RESERVE, ACTION_SEND_MSG, ACTION_SET_CODE, ACTION_CHANGE_LIB};
 
 // Blockchain related instructions ********************************************
@@ -34,12 +34,13 @@ fn add_action(ctx: Ctx, action_id: u32, cell: Option<Cell>, suffix: BuilderData)
     if let Some(cell) = cell {
         new_action.append_reference_cell(cell);
     }
-    ctx.engine.ctrls.put(5, &mut StackItem::Cell(new_action.finalize(&mut ctx.engine.gas)))?;
+    let cell = ctx.engine.finalize_cell(new_action);
+    ctx.engine.ctrls.put(5, &mut StackItem::Cell(cell))?;
     Ok(ctx)
 }
 
 /// CHANGELIB (h x - )
-pub(super) fn execute_changelib(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_changelib(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("CHANGELIB"))
     .and_then(|ctx| fetch_stack(ctx, 2))
     .and_then(|ctx| {
@@ -54,7 +55,7 @@ pub(super) fn execute_changelib(engine: &mut Engine) -> Option<Exception> {
 
 /// SENDRAWMSG (c x – ): pop mode and message cell from stack and put it at the
 /// end of output actions list.
-pub(super) fn execute_sendrawmsg(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_sendrawmsg(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("SENDRAWMSG"))
     .and_then(|ctx| fetch_stack(ctx, 2))
     .and_then(|ctx| {
@@ -67,7 +68,7 @@ pub(super) fn execute_sendrawmsg(engine: &mut Engine) -> Option<Exception> {
 }
 
 /// SETCODE (c - )
-pub(super) fn execute_setcode(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_setcode(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("SETCODE"))
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
@@ -78,7 +79,7 @@ pub(super) fn execute_setcode(engine: &mut Engine) -> Option<Exception> {
 }
 
 /// SETLIBCODE (c x - )
-pub(super) fn execute_setlibcode(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_setlibcode(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("SETLIBCODE"))
     .and_then(|ctx| fetch_stack(ctx, 2))
     .and_then(|ctx| {
@@ -90,7 +91,7 @@ pub(super) fn execute_setlibcode(engine: &mut Engine) -> Option<Exception> {
 }
 
 /// RAWRESERVE (x y - )
-pub(super) fn execute_rawreserve(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_rawreserve(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("RAWRESERVE"))
     .and_then(|ctx| fetch_stack(ctx, 2))
     .and_then(|ctx| {
@@ -104,7 +105,7 @@ pub(super) fn execute_rawreserve(engine: &mut Engine) -> Option<Exception> {
 }
 
 /// RAWRESERVEX (s y - )
-pub(super) fn execute_rawreservex(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_rawreservex(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("RAWRESERVEX"))
     .and_then(|ctx| fetch_stack(ctx, 3))
     .and_then(|ctx| {
@@ -118,7 +119,7 @@ pub(super) fn execute_rawreservex(engine: &mut Engine) -> Option<Exception> {
     .err()
 }
 
-pub(super) fn execute_ldmsgaddr<T: OperationBehavior>(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ldmsgaddr<T: OperationBehavior>(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new(if T::quiet() {"LDMSGADDRQ"} else {"LDMSGADDR"})
     )
@@ -147,14 +148,14 @@ pub(super) fn execute_ldmsgaddr<T: OperationBehavior>(engine: &mut Engine) -> Op
 }
 
 fn load_address<F, T>(engine: &mut Engine, name: &'static str, op: F) -> Failure
-where F: FnOnce(Vec<StackItem>, &mut Gas) -> Result<Vec<StackItem>>, T: OperationBehavior {
+where F: FnOnce(Vec<StackItem>, &mut dyn GasConsumer) -> Result<Vec<StackItem>>, T: OperationBehavior {
     engine.load_instruction(Instruction::new(name))
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
         let mut slice = ctx.engine.cmd.var(0).as_slice()?.clone();
         let mut result = false;
         if let Ok(addr) = parse_address(&mut slice) {
-            if let Ok(mut stack) = op(addr, &mut ctx.engine.gas) {
+            if let Ok(mut stack) = op(addr, ctx.engine) {
                 stack.drain(..).for_each(|var| {ctx.engine.cc.stack.push(var);});
                 result = true;
             }
@@ -171,14 +172,14 @@ where F: FnOnce(Vec<StackItem>, &mut Gas) -> Result<Vec<StackItem>>, T: Operatio
     .err()
 }
 
-pub(super) fn execute_parsemsgaddr<T: OperationBehavior>(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_parsemsgaddr<T: OperationBehavior>(engine: &mut Engine) -> Failure {
     load_address::<_, T>(engine, if T::quiet() {"PARSEMSGADDRQ"} else {"PARSEMSGADDR"},
         |tuple, _| Ok(vec![StackItem::Tuple(tuple)])
     )
 }
 
 // (s - x y) compose rewrite_pfx and address to a 256 bit integer
-pub(super) fn execute_rewrite_std_addr<T: OperationBehavior>(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_rewrite_std_addr<T: OperationBehavior>(engine: &mut Engine) -> Failure {
     load_address::<_, T>(engine, if T::quiet() {"REWRITESTDADDRQ"} else {"REWRITESTDADDR"}, |tuple, _| {
         if tuple.len() == 4 {
             let addr = tuple[3].as_slice()?;
@@ -206,8 +207,8 @@ pub(super) fn execute_rewrite_std_addr<T: OperationBehavior>(engine: &mut Engine
 }
 
 // (s - x s') compose rewrite_pfx and address to a slice
-pub(super) fn execute_rewrite_var_addr<T: OperationBehavior>(engine: &mut Engine) -> Option<Exception> {
-    load_address::<_, T>(engine, if T::quiet() {"REWRITEVARADDRQ"} else {"REWRITEVARADDR"}, |tuple, gas| {
+pub(super) fn execute_rewrite_var_addr<T: OperationBehavior>(engine: &mut Engine) -> Failure {
+    load_address::<_, T>(engine, if T::quiet() {"REWRITEVARADDRQ"} else {"REWRITEVARADDR"}, |tuple, gas_consumer| {
         if tuple.len() == 4 {
             let mut addr = tuple[3].as_slice()?.clone();
             if let Ok(rewrite_pfx) = tuple[1].as_slice() {
@@ -218,7 +219,7 @@ pub(super) fn execute_rewrite_var_addr<T: OperationBehavior>(engine: &mut Engine
                     let mut b = BuilderData::from_slice(rewrite_pfx);
                     addr.shrink_data(bits..);
                     b.append_bytestring(&addr)?;
-                    addr = b.finalize_and_load(gas);
+                    addr = gas_consumer.finalize_cell_and_load(b);
                 }
             };
             let x = tuple[2].clone();

@@ -14,7 +14,8 @@
 
 use types::{
     ExceptionCode,
-    Status
+    Status,
+    TvmError,
 };
 
 pub trait OperationBehavior {

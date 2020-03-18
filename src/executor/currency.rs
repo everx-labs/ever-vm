@@ -14,7 +14,7 @@
 
 use num::BigInt;
 use num::bigint::Sign;
-use types::{Exception, ExceptionCode};
+use types::{ExceptionCode, Failure, TvmError};
 use executor::engine::Engine;
 use executor::types::Instruction;
 use stack::{BuilderData, IBitstring, IntegerData, StackItem};
@@ -22,7 +22,7 @@ use executor::engine::storage::fetch_stack;
 use std::sync::Arc;
 
 // slice - uint slice'
-fn load_var(engine: &mut Engine, name: &'static str, max_bytes: u8, sign: bool) -> Option<Exception> {
+fn load_var(engine: &mut Engine, name: &'static str, max_bytes: u8, sign: bool) -> Failure {
     engine.load_instruction(Instruction::new(name))
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
@@ -41,21 +41,21 @@ fn load_var(engine: &mut Engine, name: &'static str, max_bytes: u8, sign: bool) 
     .err()
 }
 
-pub(super) fn execute_ldgrams(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ldgrams(engine: &mut Engine) -> Failure {
     load_var(engine, "LDGRAMS", 16, false)
 }
-pub(super) fn execute_ldvarint16(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ldvarint16(engine: &mut Engine) -> Failure {
     load_var(engine, "LDVARINT16", 16, true)
 }
-pub(super) fn execute_ldvaruint32(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ldvaruint32(engine: &mut Engine) -> Failure {
     load_var(engine, "LDVARUINT32", 32, false)
 }
-pub(super) fn execute_ldvarint32(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ldvarint32(engine: &mut Engine) -> Failure {
     load_var(engine, "LDVARINT32", 32, true)
 }
 
 // builder uint - builder'
-fn store_var(engine: &mut Engine, name: &'static str, max_bits: usize, sign: bool) -> Option<Exception> {
+fn store_var(engine: &mut Engine, name: &'static str, max_bits: usize, sign: bool) -> Failure {
     engine.load_instruction(Instruction::new(name))
     .and_then(|ctx| fetch_stack(ctx, 2))
     .and_then(|ctx| {
@@ -98,18 +98,18 @@ fn store_var(engine: &mut Engine, name: &'static str, max_bits: usize, sign: boo
 
 }
 
-pub(super) fn execute_stgrams(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_stgrams(engine: &mut Engine) -> Failure {
     store_var(engine, "STGRAMS", 120, false)
 }
 
-pub(super) fn execute_stvarint16(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_stvarint16(engine: &mut Engine) -> Failure {
     store_var(engine, "STVARINT16", 120, true)
 }
 
-pub(super) fn execute_stvaruint32(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_stvaruint32(engine: &mut Engine) -> Failure {
     store_var(engine, "STVARUINT32", 248, false)
 }
 
-pub(super) fn execute_stvarint32(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_stvarint32(engine: &mut Engine) -> Failure {
     store_var(engine, "STVARINT32", 248, true)
 }

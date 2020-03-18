@@ -23,6 +23,7 @@ use types::{
 //    Exception,
     ExceptionCode,
     ResultOpt,
+    TvmError,
 };
 
 #[derive(Clone, Debug)]

@@ -13,8 +13,7 @@
 */
 
 use std::cmp::{max, min};
-use types::ExceptionCode;
-use ton_types::GasConsumer;
+use types::{ExceptionCode, Result, TvmError};
 
 // TODO: it seems everything should be unsigned
 // Application-specific primitives - A.10; Gas-related primitives - A.10.2
@@ -76,17 +75,16 @@ pub struct Gas {
     gas_base: i64,
 }
 
-impl GasConsumer for Gas {
-    fn consume_gas(&mut self, gas: u64) {
-        self.gas_remaining -= gas as i64;
-    }
-    fn finalize_cell(&mut self) {
-        self.consume_gas(Self::finalize_price() as u64)
-    }
-    fn load_cell(&mut self) {
-        self.consume_gas(Self::load_cell_price() as u64)
-    }
-}
+const CELL_LOAD_GAS_PRICE: i64 = 100;
+const CELL_RELOAD_GAS_PRICE: i64 = 25;
+const CELL_CREATE_GAS_PRICE: i64 = 500;
+const EXCEPTION_GAS_PRICE: i64 = 50;
+const TUPLE_ENTRY_GAS_PRICE: i64 = 1;
+const IMPLICIT_JMPREF_GAS_PRICE: i64 = 10;
+const IMPLICIT_RET_GAS_PRICE: i64 = 5;
+const FREE_STACK_DEPTH: usize = 32;
+const STACK_ENTRY_GAS_PRICE: i64 = 1;
+// const MAX_DATA_DEPTH: usize = 512;
 
 impl Gas {
     /// Instanse for constructors. Empty fields
@@ -137,22 +135,37 @@ impl Gas {
 
     /// Compute exception cost
     pub fn exception_price(_code: ExceptionCode) -> i64 {
-        50
+        EXCEPTION_GAS_PRICE
     }
 
     /// Compute exception cost
     pub fn finalize_price() -> i64 {
-        500
+        CELL_CREATE_GAS_PRICE
+    }
+
+    /// Implicit JMP cost
+    pub fn implicit_jmp_price() -> i64 {
+        IMPLICIT_JMPREF_GAS_PRICE
+    }
+
+    /// Implicit RET cost
+    pub fn implicit_ret_price() -> i64 {
+        IMPLICIT_RET_GAS_PRICE
     }
 
     /// Compute exception cost
-    pub fn load_cell_price() -> i64 {
-        100
+    pub fn load_cell_price(first: bool) -> i64 {
+        if first {CELL_LOAD_GAS_PRICE} else {CELL_RELOAD_GAS_PRICE}
+    }
+
+    /// Stack cost
+    pub fn stack_price(stack_depth: usize) -> i64 {
+        STACK_ENTRY_GAS_PRICE * (max(stack_depth, FREE_STACK_DEPTH) - FREE_STACK_DEPTH) as i64
     }
 
     /// Compute tuple using cost
     pub fn tuple_gas_price(tuple_length: usize) -> i64 {
-        tuple_length as i64
+        TUPLE_ENTRY_GAS_PRICE * tuple_length as i64
     }
 
     /// Set input gas to gas limit
@@ -166,6 +179,14 @@ impl Gas {
     pub fn use_gas(&mut self, gas: i64) -> i64 {
         self.gas_remaining -= gas;
         self.gas_remaining
+    }
+    pub fn try_use_gas(&mut self, gas: i64) -> Result<i64> {
+        if self.gas_remaining >= gas {
+            self.gas_remaining -= gas;
+            Ok(self.gas_remaining)
+        } else {
+            err!(ExceptionCode::OutOfGas)
+        }
     }
     // *** Getters ***
     pub fn get_gas_price(&self) -> i64 {

@@ -16,6 +16,7 @@ use super::*;
 use types::{
     ExceptionCode,
     Result,
+    TvmError,
 };
 use num_traits::{
     Num,

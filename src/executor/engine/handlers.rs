@@ -35,7 +35,7 @@ use executor::Engine;
 use stack::ContinuationData;
 use std::fmt;
 use std::ops::Range;
-use types::{Exception, ExceptionCode, Result};
+use types::{ExceptionCode, Failure, Result, TvmError};
 use executor::serialization::*;
 use executor::deserialization::*;
 
@@ -45,11 +45,11 @@ use stack::integer::behavior::{
 };
 
 // ( - )
-fn execute_nop(engine: &mut Engine) -> Option<Exception> {
+fn execute_nop(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("NOP")).err()
 }
 
-fn execute_setcp(engine: &mut Engine) -> Option<Exception> {
+fn execute_setcp(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SETCP").set_opts(InstructionOptions::Integer(-15..240))
     )
@@ -61,7 +61,7 @@ fn execute_setcp(engine: &mut Engine) -> Option<Exception> {
     .err()
 }
 
-fn execute_setcpx(engine: &mut Engine) -> Option<Exception> {
+fn execute_setcpx(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SETCPX")
     )
@@ -74,7 +74,7 @@ fn execute_setcpx(engine: &mut Engine) -> Option<Exception> {
     .err()
 }
 
-fn execute_unknown(engine: &mut Engine) -> Option<Exception> {
+fn execute_unknown(engine: &mut Engine) -> Failure {
     let code = engine.cc.last_cmd();
     trace!(target: "tvm", "Invalid code: {} ({:#X})\n", code, code);
     err_opt!(ExceptionCode::InvalidOpcode)

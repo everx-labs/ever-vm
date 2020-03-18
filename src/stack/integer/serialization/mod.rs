@@ -12,11 +12,11 @@
 * limitations under the License.
 */
 
-use types::{Exception, ExceptionCode, Result};
+use types::{ExceptionCode, Result, TvmError};
 use stack::serialization::{Serializer, Deserializer};
 use stack::{BuilderData, IntegerData, SliceData};
 
-pub trait Encoding : Serializer<IntegerData, Error=Exception> + Deserializer<IntegerData>
+pub trait Encoding : Serializer<IntegerData> + Deserializer<IntegerData>
 {
     fn new(length_in_bits: usize) -> Self;
 }

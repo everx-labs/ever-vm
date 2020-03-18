@@ -33,7 +33,7 @@ use stack::{
     IntegerData,
     StackItem,
 };
-use types::{Exception, ExceptionCode, Result};
+use types::{ExceptionCode, Failure, Result, TvmError};
 use std::mem;
 use std::ops::{Range, RangeInclusive};
 use std::sync::Arc;
@@ -198,13 +198,7 @@ fn jmpxdata(ctx: Ctx) -> Result<Ctx> {
 // checks special case for REPEAT*, UNTIL*, WHILE* 
 // works as a continue, not as a break
 pub(super) fn ret(ctx: Ctx) -> Result<Ctx> {
-    match ctx.engine.cc.type_of {
-        ContinuationType::RepeatLoopBody(_, _) => {
-            ctx.engine.cc.move_to_end();
-            Ok(ctx)
-        },
-        _ => switch(ctx, ctrl!(0))
-    }
+    switch(ctx, ctrl!(0))
 }
 
 fn retalt(ctx: Ctx) -> Result<Ctx> {
@@ -331,7 +325,7 @@ pub(super) fn undo_set_nargs(ctx: &mut Ctx, address: u16, nargs: isize) {
 
 // Continuation related instructions ******************************************
 // (c - ), execute C infinitely
-pub(super) fn execute_again(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_again(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("AGAIN")
     )
@@ -352,7 +346,7 @@ pub(super) fn execute_again(engine: &mut Engine) -> Option<Exception> {
 }
 
 // ( - ), execute CC infinitely
-pub(super) fn execute_againend(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_againend(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("AGAINEND")
     )
@@ -375,7 +369,7 @@ pub(super) fn execute_againend(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (continuation - ), continuation.savelist[0] = c[0], c[0] = continuation
-pub(super) fn execute_atexit(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_atexit(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("ATEXIT")
     )
@@ -386,7 +380,7 @@ pub(super) fn execute_atexit(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (continuation - ), continuation.savelist[1] = c[1], c[1] = continuation
-pub(super) fn execute_atexitalt(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_atexitalt(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("ATEXITALT")
     )
@@ -397,7 +391,7 @@ pub(super) fn execute_atexitalt(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (slice - continuation)
-pub(super) fn execute_bless(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_bless(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("BLESS")
     )
@@ -406,7 +400,7 @@ pub(super) fn execute_bless(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x1 ... xR slice - continuation), continuation.stack.push(x1 ... xR)
-pub(super) fn execute_blessargs(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_blessargs(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("BLESSARGS")
             .set_opts(InstructionOptions::ArgumentConstraints)
@@ -416,7 +410,7 @@ pub(super) fn execute_blessargs(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x1 ... xR slice R N - continuation), continuation.stack.push(x1 ... xR)
-pub(super) fn execute_blessva(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_blessva(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("BLESSVARARGS")
     )
@@ -429,7 +423,7 @@ pub(super) fn execute_blessva(engine: &mut Engine) -> Option<Exception> {
 // c''= continuation {PUSHINT 0}, c''[0] = cc
 //c[0] = c', c[1] = c''
 //execute c
-pub(super) fn execute_booleval(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_booleval(engine: &mut Engine) -> Failure {
     let mut old_cc_idx = ctrl!(0);
     engine.load_instruction(
         Instruction::new("BOOLEVAL")
@@ -462,7 +456,7 @@ pub(super) fn execute_booleval(engine: &mut Engine) -> Option<Exception> {
 
 // n ( - n), calls the continuation in c3
 // approximately equivalent to PUSHINT n; PUSH c3; EXECUTE
-fn execute_call(engine: &mut Engine, name: &'static str, range: Range<isize>, how: u8) -> Option<Exception> {
+fn execute_call(engine: &mut Engine, name: &'static str, range: Range<isize>, how: u8) -> Failure {
     engine.load_instruction(
         Instruction::new(name).set_opts(InstructionOptions::Integer(range)),
     ).and_then(|ctx| {
@@ -495,31 +489,31 @@ fn undo_execute_call(ctx: &mut Ctx, index: usize) {
 }
 
 // 0 =< n =< 255
-pub(super) fn execute_call_short(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_call_short(engine: &mut Engine) -> Failure {
     execute_call(engine, "CALL", 0..256, CALLX)
 }
 // 0 =< n < (2 ^ 14)
-pub(super) fn execute_call_long(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_call_long(engine: &mut Engine) -> Failure {
     execute_call(engine, "CALL", 0..16384, CALLX)
 }
 // 0 =< n < (2 ^ 14)
-pub(super) fn execute_jmp(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_jmp(engine: &mut Engine) -> Failure {
     execute_call(engine, "JMP", 0..16384, SWITCH)
 }
 // 0 =< n < (2 ^ 14)
-pub(super) fn execute_prepare(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_prepare(engine: &mut Engine) -> Failure {
     execute_call(engine, "PREPARE", 0..16384, PREPARE)
 }
 
 // (continuation - ), callcc pattern
-pub(super) fn execute_callcc(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_callcc(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("CALLCC"))
     .and_then(|ctx| callcc(ctx, 0))
     .err()
 }
 
 // (continuation - ), callcc pattern
-pub(super) fn execute_callccargs(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_callccargs(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("CALLCCARGS") 
             .set_opts(InstructionOptions::ArgumentConstraints)
@@ -529,7 +523,7 @@ pub(super) fn execute_callccargs(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (continuation pargs rargs - ), callcc pattern
-pub(super) fn execute_callccva(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_callccva(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("CALLCCVARARGS")
     )
@@ -541,7 +535,7 @@ pub(super) fn execute_callccva(engine: &mut Engine) -> Option<Exception> {
 
 // equivalent to PUSHREFCONT; CALLX
 // e.g. remove first reference from CC and then call it
-pub(super) fn execute_callref(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_callref(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("CALLREF")
     )
@@ -552,7 +546,7 @@ pub(super) fn execute_callref(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (continuation - ), callx pattern
-pub(super) fn execute_callx(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_callx(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("CALLX")
     )
@@ -561,7 +555,7 @@ pub(super) fn execute_callx(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (continuation - ), callx pattern
-pub(super) fn execute_callxargs(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_callxargs(engine: &mut Engine) -> Failure {
     let cmd = engine.cc.last_cmd();
     engine.load_instruction(
         Instruction::new("CALLXARGS").set_opts(
@@ -577,7 +571,7 @@ pub(super) fn execute_callxargs(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (continuation pargs rargs - ), callx pattern
-pub(super) fn execute_callxva(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_callxva(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("CALLXVARARGS")
     )
@@ -588,7 +582,7 @@ pub(super) fn execute_callxva(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (continuation1 continuation2 - continuation1), continuation1.savelist[0] = continuation2
-pub(super) fn execute_compos(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_compos(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("COMPOS")
     )
@@ -606,7 +600,7 @@ pub(super) fn execute_compos(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (continuation1 continuation2 - continuation1), continuation1.savelist[1] = continuation2
-pub(super) fn execute_composalt(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_composalt(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("COMPOSALT")
     )
@@ -625,7 +619,7 @@ pub(super) fn execute_composalt(engine: &mut Engine) -> Option<Exception> {
 
 // (continuation1 continuation2 - continuation1),
 // continuation1.savelist[0] = continuation2, continuation1.savelist[1] = continuation2
-pub(super) fn execute_composboth(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_composboth(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("COMPOSBOTH")
     )
@@ -646,7 +640,7 @@ pub(super) fn execute_composboth(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (f x y - ), x f != 0 else y
-pub(super) fn execute_condsel(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_condsel(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("CONDSEL")
     )
@@ -663,7 +657,7 @@ pub(super) fn execute_condsel(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (f x y - ), x f != 0 else y, throws exception, if types mismatch
-pub(super) fn execute_condselchk(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_condselchk(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("CONDSELCHK")
     )
@@ -691,7 +685,7 @@ const INV:   u8 = 0x20; // condition not
 const BOTH:  u8 = 0x40; // IFELSE
 const THROW: u8 = 0x80; // checks if condition is NaN then throw IntegerOverflow
 
-fn execute_if_mask(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exception> {
+fn execute_if_mask(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     let mut params = 2;
     if how.bit(REF) {
         params -= 1;
@@ -729,72 +723,72 @@ fn execute_if_mask(engine: &mut Engine, name: &'static str, how: u8) -> Option<E
 }
 
 // (condition continuation - ): callx if condition != 0
-pub(super) fn execute_if(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_if(engine: &mut Engine) -> Failure {
     execute_if_mask(engine, "IF", CALL)
 }
 
 // (condition continuation1 continuation2 - ): if condition != 0 callx continuation1 else callx continuation2
-pub(super) fn execute_ifelse(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ifelse(engine: &mut Engine) -> Failure {
     execute_if_mask(engine, "IFELSE", CALL | BOTH | INV)
 }
 
 // (condition continuation - ): switch if condition != 0
-pub(super) fn execute_ifjmp(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ifjmp(engine: &mut Engine) -> Failure {
     execute_if_mask(engine, "IFJMP", JMP)
 }
 
 // (condition continuation - ): callx if condition == 0
-pub(super) fn execute_ifnot(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ifnot(engine: &mut Engine) -> Failure {
     execute_if_mask(engine, "IFNOT", CALL | INV)
 }
       
 // (condition continuation - ): switch if condition == 0
-pub(super) fn execute_ifnotjmp(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ifnotjmp(engine: &mut Engine) -> Failure {
     execute_if_mask(engine, "IFNOTJMP", JMP | INV)
 }
 
 // (condition - Continuation): pushrefcont if condition == 0
-pub(super) fn execute_ifnotref(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ifnotref(engine: &mut Engine) -> Failure {
     execute_if_mask(engine, "IFNOTREF", CALL | INV | REF)
 }
 
 // (condition - ): switch to continuation from references[0] if condition != 0
-pub(super) fn execute_ifjmpref(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ifjmpref(engine: &mut Engine) -> Failure {
     execute_if_mask(engine, "IFJMPREF", JMP | REF)
 }
 
 // (condition - ): switch to continuation from references[0] if condition == 0
-pub(super) fn execute_ifnotjmpref(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ifnotjmpref(engine: &mut Engine) -> Failure {
     execute_if_mask(engine, "IFNOTJMPREF", JMP | INV | REF)
 }
 
 // (condition - ): switch if condition == 0
-pub(super) fn execute_ifnotret(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ifnotret(engine: &mut Engine) -> Failure {
     execute_if_mask(engine, "IFNOTRET", RET | INV)
 }
 
 // (condition - Continuation): pushrefcont if condition != 0
-pub(super) fn execute_ifref(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ifref(engine: &mut Engine) -> Failure {
     execute_if_mask(engine, "IFREF", CALL | REF)
 }
 
 // (condition - ): switch if condition != 0
-pub(super) fn execute_ifret(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ifret(engine: &mut Engine) -> Failure {
     execute_if_mask(engine, "IFRET", RET | THROW)
 }
 
 // (f - ), RETALT f != 0
-pub(super) fn execute_ifretalt(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ifretalt(engine: &mut Engine) -> Failure {
     execute_if_mask(engine, "IFRETALT", RET | ALT)
 }
 
 // (f - ), RETALT f == 0
-pub(super) fn execute_ifnotretalt(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ifnotretalt(engine: &mut Engine) -> Failure {
     execute_if_mask(engine, "IFNOTRETALT", RET | ALT | INV)
 }
 
 // c[0] <-> c[1]
-pub(super) fn execute_invert(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_invert(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("INVERT")
     )
@@ -802,7 +796,7 @@ pub(super) fn execute_invert(engine: &mut Engine) -> Option<Exception> {
     .err()
 }
 
-pub(super) fn execute_jmpref(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_jmpref(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("JMPREF")
     )
@@ -812,7 +806,7 @@ pub(super) fn execute_jmpref(engine: &mut Engine) -> Option<Exception> {
     .err()
 }
 
-pub(super) fn execute_jmprefdata(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_jmprefdata(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("JMPREFDATA")
     )
@@ -823,7 +817,7 @@ pub(super) fn execute_jmprefdata(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (continuation - ), switch pattern
-pub(super) fn execute_jmpx(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_jmpx(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("JMPX")
     )
@@ -832,7 +826,7 @@ pub(super) fn execute_jmpx(engine: &mut Engine) -> Option<Exception> {
     .err()
 }
 
-fn execute_ifbit_mask(engine: &mut Engine, how: u8) -> Option<Exception> {
+fn execute_ifbit_mask(engine: &mut Engine, how: u8) -> Failure {
     engine.load_instruction(
         Instruction::new(
             if how.bit(INV) {
@@ -874,27 +868,27 @@ fn execute_ifbit_mask(engine: &mut Engine, how: u8) -> Option<Exception> {
 }
 
 // (x continuation - x), switch if n's bit of x is set
-pub(super) fn execute_ifbitjmp(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ifbitjmp(engine: &mut Engine) -> Failure {
     execute_ifbit_mask(engine, 0)
 }
 
 // (x continuation - x), switch if n's bit of x is not set
-pub(super) fn execute_ifnbitjmp(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ifnbitjmp(engine: &mut Engine) -> Failure {
     execute_ifbit_mask(engine, INV)
 }
 
 // (x - x), switch pattern if n'th bit is set
-pub(super) fn execute_ifbitjmpref(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ifbitjmpref(engine: &mut Engine) -> Failure {
     execute_ifbit_mask(engine, REF)
 }
 
 // (x - x), switch pattern if n'th bit is not set
-pub(super) fn execute_ifnbitjmpref(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ifnbitjmpref(engine: &mut Engine) -> Failure {
     execute_ifbit_mask(engine, REF | INV)
 }
 
 // (continuation - ), continuation.nargs = cmd.pargs, then switch pattern
-pub(super) fn execute_jmpxargs(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_jmpxargs(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("JMPXARGS").set_opts(InstructionOptions::Pargs(0..16))
     )
@@ -904,7 +898,7 @@ pub(super) fn execute_jmpxargs(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (continuation p - ), continuation.nargs = cmd.pargs, then switch pattern
-pub(super) fn execute_jmpxva(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_jmpxva(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("JMPXVARARGS")
     )
@@ -916,7 +910,7 @@ pub(super) fn execute_jmpxva(engine: &mut Engine) -> Option<Exception> {
 // (integer_repeat_count body_continuation - )
 // body.savelist[0] = cc
 // cc.savelist[0] = c[0]
-pub(super) fn execute_repeat(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_repeat(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("REPEAT")
     )
@@ -943,16 +937,16 @@ pub(super) fn execute_repeat(engine: &mut Engine) -> Option<Exception> {
 // (integer_repeat_count - )
 // body.savelist[0] = cc
 // cc.savelist[0] = c[0]
-pub(super) fn execute_repeatend(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_repeatend(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("REPEATEND")
     )
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
-        let body = ctx.engine.cc.code_mut().withdraw();
+        let body = ctx.engine.cc.code().clone();
         let counter = ctx.engine.cmd.var(0).as_integer()?.into(-0x80000000..=0x7FFFFFFF)?;
         if counter <= 0 {
-            return Ok(ctx);
+            ret(ctx)
         } else {
             ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
                 ContinuationData::with_code(body.clone())
@@ -960,9 +954,7 @@ pub(super) fn execute_repeatend(engine: &mut Engine) -> Option<Exception> {
             ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
                 ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter))
             )));
-            swap(ctx, savelist!(CC, 0), ctrl!(0)) // cc.savelist[0] = c[0]
-            .and_then(|ctx| copy_to_var(ctx, CC))
-            .and_then(|ctx| swap(ctx, savelist!(var!(2), 0), var!(3))) // ec_repeat.savelist[0] = cc
+            swap(ctx, savelist!(var!(2), 0), ctrl!(0))                 // ec_repeat.savelist[0] = c[0]
             .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2))) // body.savelist[0] = ec_repeat
             .and_then(|ctx| switch(ctx, var!(1)))
         }
@@ -973,7 +965,7 @@ pub(super) fn execute_repeatend(engine: &mut Engine) -> Option<Exception> {
 // c[0].stack = cc.stack, cc.stack = ()
 // cc = continuation, c[2..] = cc.savelist[2..]
 // (continuation - ), var[0] = cc.stack.pop(), then jmpxdata pattern
-pub(super) fn execute_jmpxdata(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_jmpxdata(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("JMPXDATA")
     )
@@ -983,14 +975,14 @@ pub(super) fn execute_jmpxdata(engine: &mut Engine) -> Option<Exception> {
 }
 
 // switch to c[0]
-pub(super) fn execute_ret(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_ret(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("RET"))
     .and_then(|ctx| ret(ctx))
     .err()
 }
 
 // switch to c[1]
-pub(super) fn execute_retalt(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_retalt(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("RETALT")
     )
@@ -999,7 +991,7 @@ pub(super) fn execute_retalt(engine: &mut Engine) -> Option<Exception> {
 }
 
 // switch to c[0] with pargs
-pub(super) fn execute_retargs(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_retargs(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("RETARGS").set_opts(InstructionOptions::Pargs(0..16))
     )
@@ -1008,7 +1000,7 @@ pub(super) fn execute_retargs(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (p - ) switch to c[0] with p params
-pub(super) fn execute_retva(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_retva(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("RETVARARGS")
     )
@@ -1019,7 +1011,7 @@ pub(super) fn execute_retva(engine: &mut Engine) -> Option<Exception> {
 
 
 // (condition - ), if condition != 0 then RET else RETALT
-pub(super) fn execute_retbool(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_retbool(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("RETBOOL")
     )
@@ -1034,17 +1026,22 @@ pub(super) fn execute_retbool(engine: &mut Engine) -> Option<Exception> {
 }
 
 // var[0] = c[0], then jmpxdata pattern
-pub(super) fn execute_retdata(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_retdata(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("RETDATA")
     )
-    .and_then(|ctx| copy_to_var(ctx, ctrl!(0)))
+    .and_then(|ctx| {
+        ctx.engine.cmd.push_var(StackItem::Continuation(Arc::new(
+            ContinuationData::with_type(ContinuationType::Quit(ExceptionCode::NormalTermination as i32))
+        )));
+        swap(ctx, ctrl!(0), var!(0))
+    })
     .and_then(|ctx| jmpxdata(ctx))
     .err()
 }
 
 // (xN ... xN-p xN-p-1 ... x0 - xN-p-1 ... x0), c0.stack.push(xN ... xN-p)
-pub(super) fn execute_returnargs(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_returnargs(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("RETURNARGS")
            .set_opts(InstructionOptions::Rargs(0..16))
@@ -1060,7 +1057,7 @@ pub(super) fn execute_returnargs(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (xN ... xN-p xN-p-1 ... x0 p - xN-p-1 ... x0), c0.stack.push(xN ... xN-p)
-pub(super) fn execute_returnva(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_returnva(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("RETURNVARARGS")
     )
@@ -1079,7 +1076,7 @@ pub(super) fn execute_returnva(engine: &mut Engine) -> Option<Exception> {
 }
 
 // ( - ), if c[0].savelist[i].is_none() { c[0].savelist[i] = c[i] }
-pub(super) fn execute_save(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_save(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SAVE").set_opts(InstructionOptions::ControlRegister)
     )
@@ -1088,7 +1085,7 @@ pub(super) fn execute_save(engine: &mut Engine) -> Option<Exception> {
 }
 
 // ( - ), if c[1].savelist[i].is_none() { c[1].savelist[i] = c[i] }
-pub(super) fn execute_savealt(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_savealt(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SAVEALT").set_opts(InstructionOptions::ControlRegister)
     )
@@ -1098,7 +1095,7 @@ pub(super) fn execute_savealt(engine: &mut Engine) -> Option<Exception> {
 
 // ( - ), if c[0].savelist[i].is_none() { c[0].savelist[i] = c[i] }
 // if c[1].savelist[i].is_none() { c[1].savelist[i] = c[i] }
-pub(super) fn execute_saveboth(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_saveboth(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SAVEBOTH").set_opts(InstructionOptions::ControlRegister)
     )
@@ -1112,7 +1109,7 @@ pub(super) fn execute_saveboth(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x - ), c1.savelist[i] = x
-pub(super) fn execute_setaltctr(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_setaltctr(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SETALTCTR").set_opts(InstructionOptions::ControlRegister)
     )
@@ -1125,7 +1122,7 @@ pub(super) fn execute_setaltctr(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x1 ... xR continuation - continuation), continuation.stack.push(x1 ... xR)
-pub(super) fn execute_setcontargs(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_setcontargs(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SETCONTARGS").set_opts(InstructionOptions::ArgumentConstraints)
     )
@@ -1134,7 +1131,7 @@ pub(super) fn execute_setcontargs(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x1 ... xR continuation R N - continuation), continuation.stack.push(x1 ... xR)
-pub(super) fn execute_setcontva(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_setcontva(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SETCONTVARARGS")
     )
@@ -1143,7 +1140,7 @@ pub(super) fn execute_setcontva(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (continuation n - continuation)
-pub(super) fn execute_setnumvarargs(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_setnumvarargs(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SETNUMVARARGS")
     )
@@ -1152,7 +1149,7 @@ pub(super) fn execute_setnumvarargs(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x continuation - continuation), continuation.savelist[i] = x
-pub(super) fn execute_setcontctr(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_setcontctr(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SETCONTCTR").set_opts(InstructionOptions::ControlRegister)
     )
@@ -1170,7 +1167,7 @@ pub(super) fn execute_setcontctr(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x continuation i - continuation), continuation.savelist[i] = x
-pub(super) fn execute_setcontctrx(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_setcontctrx(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SETCONTCTRX")
     )
@@ -1189,7 +1186,7 @@ pub(super) fn execute_setcontctrx(engine: &mut Engine) -> Option<Exception> {
 
 // (continuation - ), continuation.savelist[0] = c[0], continuation.savelist[1] = c[1],
 // c[1] = continuation
-pub(super) fn execute_setexitalt(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_setexitalt(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SETEXITALT")
     )
@@ -1207,7 +1204,7 @@ pub(super) fn execute_setexitalt(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x - ), c0.savelist[i] = x
-pub(super) fn execute_setretctr(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_setretctr(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SETRETCTR").set_opts(InstructionOptions::ControlRegister)
     )
@@ -1220,7 +1217,7 @@ pub(super) fn execute_setretctr(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (continuation - continuation), continuation.savelist[0] = c[0]
-pub(super) fn execute_thenret(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_thenret(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("THENRET")
     )
@@ -1235,7 +1232,7 @@ pub(super) fn execute_thenret(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (continuation - continuation), continuation.savelist[0] = c[1]
-pub(super) fn execute_thenretalt(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_thenretalt(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("THENRETALT")
     )
@@ -1254,7 +1251,7 @@ pub(super) fn execute_thenretalt(engine: &mut Engine) -> Option<Exception> {
 // condition.savelist[0] = cc
 // body.savelist[0] = condition
 // switch to body
-pub(super) fn execute_until(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_until(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("UNTIL")
     )
@@ -1278,7 +1275,7 @@ pub(super) fn execute_until(engine: &mut Engine) -> Option<Exception> {
 // condition.savelist[0] = c[0]
 // body.savelist[0] = condition
 // switch to body
-pub(super) fn execute_untilend(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_untilend(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("UNTILEND")
     )
@@ -1292,9 +1289,7 @@ pub(super) fn execute_untilend(engine: &mut Engine) -> Option<Exception> {
         )));
         Ok(ctx)
     })
-    .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) )     // cc.savelist[0] = c[0]
-    .and_then(|ctx| copy_to_var(ctx, CC))
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)) ) // ec_until.savelist[0] = cc
+    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), ctrl!(0)) ) // ec_until.savelist[0] = c[0]
     .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // body.savelist[0] = ec_until
     .and_then(|ctx| switch(ctx, var!(0)))
     .err()
@@ -1305,7 +1300,7 @@ pub(super) fn execute_untilend(engine: &mut Engine) -> Option<Exception> {
 // ec_while.savelist[0] = cc
 // condition.savelist[0] = ec_while
 // switch to condition
-pub(super) fn execute_while(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_while(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("WHILE")
     )
@@ -1331,7 +1326,7 @@ pub(super) fn execute_while(engine: &mut Engine) -> Option<Exception> {
 // condition.savelist[0] = c[0]
 // ec_while.savelist[0] = condition
 // switch to condition
-pub(super) fn execute_whileend(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_whileend(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("WHILEEND")
     )
@@ -1344,9 +1339,7 @@ pub(super) fn execute_whileend(engine: &mut Engine) -> Option<Exception> {
         )));
         Ok(ctx)
     })
-    .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) )     // cc.savelist[0] = c[0]
-    .and_then(|ctx| copy_to_var(ctx, CC))
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)) ) // ec_while.savelist[0] = cc
+    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), ctrl!(0)) ) // ec_while.savelist[0] = c[0]
     .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // condition.savelist[0] = ec_while
     .and_then(|ctx| switch(ctx, var!(0)))
     .err()

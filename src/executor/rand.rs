@@ -16,8 +16,7 @@ use executor::engine::Engine;
 use executor::engine::storage::fetch_stack;
 use executor::types::Instruction;
 use num::BigInt;
-use types::Exception;
-// use types::{Exception, ExceptionCode, Result};
+use types::Failure;
 use sha2::Digest;
 use stack::{IntegerData, StackItem};
 use stack::serialization::{Deserializer};
@@ -25,7 +24,7 @@ use stack::integer::serialization::{Encoding, IntoSliceExt, UnsignedIntegerBigEn
 use std::sync::Arc;
 
 // (x - )
-pub(crate) fn execute_addrand(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_addrand(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("ADDRAND"))
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
@@ -43,7 +42,7 @@ pub(crate) fn execute_addrand(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (y - z)
-pub(crate) fn execute_rand(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_rand(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("RAND"))
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
@@ -62,7 +61,7 @@ pub(crate) fn execute_rand(engine: &mut Engine) -> Option<Exception> {
 }
 
 // ( - x)
-pub(crate) fn execute_randu256(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_randu256(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("RANDU256"))
     .and_then(|ctx| {
         let mut hasher = sha2::Sha512::new();
@@ -79,7 +78,7 @@ pub(crate) fn execute_randu256(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x - )
-pub(crate) fn execute_setrand(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_setrand(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("SETRAND"))
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {

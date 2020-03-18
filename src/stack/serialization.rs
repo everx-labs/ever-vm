@@ -12,6 +12,8 @@
 * limitations under the License.
 */
 
+use types::Result;
+
 use stack::BuilderData;
 
 pub trait Deserializer<T> {
@@ -21,6 +23,5 @@ pub trait Deserializer<T> {
 }
 
 pub trait Serializer<T> {
-    type Error;
-    fn try_serialize(&self, value: &T) -> Result<BuilderData, Self::Error>;
+    fn try_serialize(&self, value: &T) -> Result<BuilderData>;
 }
