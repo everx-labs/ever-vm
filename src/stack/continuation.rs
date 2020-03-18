@@ -15,7 +15,7 @@
 use super::{Cell, SaveList, SliceData, Stack, StackItem};
 use std::fmt;
 use std::mem;
-use types::{ExceptionCode, Result, ResultOpt};
+use types::{ExceptionCode, Result, ResultOpt, TvmError};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ContinuationType {

@@ -17,10 +17,10 @@ use executor::gas::gas_state::Gas;
 use executor::types::{InstructionOptions, Instruction, WhereToGetParams};
 use executor::Mask;
 use stack::{IntegerData, StackItem};
-use types::{Exception, ExceptionCode};
+use types::{ExceptionCode, Failure, TvmError};
 use std::sync::Arc;
 
-fn tuple(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exception> {
+fn tuple(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     let mut inst = Instruction::new(name);
     let mut params = 0;
     if how.bit(CMD) {
@@ -49,16 +49,16 @@ fn tuple(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exception> 
 }
 
 // TUPLE n (x1 . . . xn – t)
-pub(super) fn execute_tuple_create(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_create(engine: &mut Engine) -> Failure {
     tuple(engine, "TUPLE", CMD)
 }
 
 // TUPLEVAR (x1 . . . xn n – t)
-pub(super) fn execute_tuple_createvar(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_createvar(engine: &mut Engine) -> Failure {
     tuple(engine, "TUPLEVAR", STACK)
 }
 
-fn tuple_index(engine: &mut Engine, how: u8) -> Option<Exception> {
+fn tuple_index(engine: &mut Engine, how: u8) -> Failure {
     let index = how.mask(INDEX);
     let params = if index == 0 {2} else {1};
     engine.load_instruction(match index & 3 {
@@ -141,32 +141,32 @@ fn tuple_index(engine: &mut Engine, how: u8) -> Option<Exception> {
 }
 
 // INDEX k (t – x)
-pub(super) fn execute_tuple_index(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_index(engine: &mut Engine) -> Failure {
     tuple_index(engine, 1 | CMD)
 }
 
 // INDEXQ k (t – x)
-pub(super) fn execute_tuple_index_quiet(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_index_quiet(engine: &mut Engine) -> Failure {
     tuple_index(engine, 1 | CMD | QUIET)
 }
 
 // INDEX2 i,j (t – x)
-pub(super) fn execute_tuple_index2(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_index2(engine: &mut Engine) -> Failure {
     tuple_index(engine, 2 | CMD)
 }
 
 // INDEX3 i,j,k (t – x)
-pub(super) fn execute_tuple_index3(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_index3(engine: &mut Engine) -> Failure {
     tuple_index(engine, 3 | CMD)
 }
 
 // INDEXVAR (t n – x)
-pub(super) fn execute_tuple_indexvar(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_indexvar(engine: &mut Engine) -> Failure {
     tuple_index(engine, STACK)
 }
 
 // INDEXVARQ (t n – x)
-pub(super) fn execute_tuple_indexvar_quiet(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_indexvar_quiet(engine: &mut Engine) -> Failure {
     tuple_index(engine, STACK | QUIET)
 }
 
@@ -181,7 +181,7 @@ const EXACT: u8 = 0x40;
 const LESS:  u8 = 0x80;
 const MORE:  u8 = 0xC0;
 
-fn untuple(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exception> {
+fn untuple(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     let mut params = 1;
     let mut inst = Instruction::new(name);
 
@@ -225,7 +225,7 @@ fn untuple(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exception
 }
 
 // ISTUPLE (t – ?)
-pub(super) fn execute_istuple(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_istuple(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("ISTUPLE"))
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
@@ -237,36 +237,36 @@ pub(super) fn execute_istuple(engine: &mut Engine) -> Option<Exception> {
 }
 
 // UNPACKFIRST k (t – x1 . . . xk)
-pub(super) fn execute_tuple_unpackfirst(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_unpackfirst(engine: &mut Engine) -> Failure {
     untuple(engine, "UNPACKFIRST", CMD | LESS)
 }
 
 // UNPACKFIRSTVAR (t n – x1 . . . xn)
-pub(super) fn execute_tuple_unpackfirstvar(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_unpackfirstvar(engine: &mut Engine) -> Failure {
     untuple(engine, "UNPACKFIRSTVAR", STACK | LESS)
 }
 
 // UNTUPLE n (t – x1 . . . xn)
-pub(super) fn execute_tuple_un(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_un(engine: &mut Engine) -> Failure {
     untuple(engine, "UNTUPLE", CMD | EXACT)
 }
 
 // UNTUPLEVAR (t n – x1 . . . xn)
-pub(super) fn execute_tuple_untuplevar(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_untuplevar(engine: &mut Engine) -> Failure {
     untuple(engine, "UNTUPLEVAR", STACK | EXACT)
 }
 
 // EXPLODE n (t – x1 . . . xm m)
-pub(super) fn execute_tuple_explode(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_explode(engine: &mut Engine) -> Failure {
     untuple(engine, "EXPLODE", CMD | MORE | COUNT)
 }
 
 // EXPLODEVAR (t n – x1 . . . xm m)
-pub(super) fn execute_tuple_explodevar(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_explodevar(engine: &mut Engine) -> Failure {
     untuple(engine, "EXPLODEVAR", STACK | MORE | COUNT)
 }
 
-fn set_index(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exception> {
+fn set_index(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     let mut params = 2;
     let mut inst = Instruction::new(name);
 
@@ -309,26 +309,26 @@ fn set_index(engine: &mut Engine, name: &'static str, how: u8) -> Option<Excepti
 }
 
 // SETINDEX k (t x – t0)
-pub(super) fn execute_tuple_setindex(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_setindex(engine: &mut Engine) -> Failure {
     set_index(engine, "SETINDEX", CMD)
 }
 
 // SETINDEXQ k (t x – t0)
-pub(super) fn execute_tuple_setindex_quiet(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_setindex_quiet(engine: &mut Engine) -> Failure {
     set_index(engine, "SETINDEXQ", CMD | QUIET)
 }
 
 // SETINDEXVAR (t x k – t0)
-pub(super) fn execute_tuple_setindexvar(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_setindexvar(engine: &mut Engine) -> Failure {
     set_index(engine, "SETINDEXVAR", STACK)
 }
 
 // SETINDEXVARQ (t x k – t0)
-pub(super) fn execute_tuple_setindexvar_quiet(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_setindexvar_quiet(engine: &mut Engine) -> Failure {
     set_index(engine, "SETINDEXVARQ", STACK | QUIET)
 }
 
-fn tuple_length(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exception> {
+fn tuple_length(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     engine.load_instruction(Instruction::new(name))
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
@@ -343,17 +343,17 @@ fn tuple_length(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exce
 }
 
 // TLEN (t – n)
-pub(super) fn execute_tuple_len(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_len(engine: &mut Engine) -> Failure {
     tuple_length(engine, "TLEN", 0)
 }
 
 // QTLEN (t – n or −1)
-pub(super) fn execute_tuple_len_quiet(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_len_quiet(engine: &mut Engine) -> Failure {
     tuple_length(engine, "QTLEN", 0 | QUIET)
 }
 
 // LAST (t – x)
-pub(super) fn execute_tuple_last(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_last(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("LAST"))
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
@@ -366,7 +366,7 @@ pub(super) fn execute_tuple_last(engine: &mut Engine) -> Option<Exception> {
 }
 
 // TPUSH (t x – t0)
-pub(super) fn execute_tuple_push(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_push(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("TPUSH"))
     .and_then(|ctx| fetch_stack(ctx, 2))
     .and_then(|ctx| {
@@ -385,7 +385,7 @@ pub(super) fn execute_tuple_push(engine: &mut Engine) -> Option<Exception> {
 }
 
 // TPOP (t – t0 x)
-pub(super) fn execute_tuple_pop(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuple_pop(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("TPOP"))
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {

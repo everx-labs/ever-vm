@@ -22,10 +22,10 @@ use stack::integer::serialization::{
 };
 use stack::serialization::Deserializer;
 use stack::{Cell, StackItem, IntegerData, SliceData, BuilderData};
-use types::{Exception, ExceptionCode, Result, UInt256};
+use ton_types::GasConsumer;
+use types::{ExceptionCode, Failure, Result, TvmError, UInt256};
 use executor::engine::data::convert;
 use executor::engine::storage::fetch_stack;
-use executor::gas::gas_state::Gas;
 use executor::microcode::{SLICE, CELL, VAR};
 use executor::types::{Ctx, InstructionOptions, Instruction};
 use executor::Mask;
@@ -64,7 +64,7 @@ fn load_slice<'a>(engine: &'a mut Engine, name: &'static str, len: &mut usize, h
 }
 
 fn proc_slice<F>(ctx: Ctx, len: usize, how: u8, f: F) -> Result<Ctx>
-where F: FnOnce(&mut SliceData, &mut Gas) -> Result<StackItem> {
+where F: FnOnce(&mut SliceData, &mut dyn GasConsumer) -> Result<StackItem> {
     let mut slice = ctx.engine.cmd.vars.last().unwrap().as_slice()?.clone();
     if slice.remaining_bits() < len {
         if how.bit(STAY) {
@@ -76,7 +76,7 @@ where F: FnOnce(&mut SliceData, &mut Gas) -> Result<StackItem> {
             return err!(ExceptionCode::CellUnderflow);
         }
     } else {
-        let value = f(&mut slice, &mut ctx.engine.gas)?;
+        let value = f(&mut slice, ctx.engine)?;
         if how.bit(INV) {
             if how.bit(STAY) {
                 ctx.engine.cc.stack.push(StackItem::Slice(slice));
@@ -97,7 +97,7 @@ where F: FnOnce(&mut SliceData, &mut Gas) -> Result<StackItem> {
 
 // (slice <bits> - x <slice> <-1> - <slice> <0>)
 fn ld_int<T: Encoding>(engine: &mut Engine, name: &'static str, mut len: usize, how: u8)
--> Option<Exception> {
+-> Failure {
     load_slice(engine, name, &mut len, how)
     .and_then(|ctx| proc_slice(ctx, len, how,
         |slice, _| {
@@ -109,7 +109,7 @@ fn ld_int<T: Encoding>(engine: &mut Engine, name: &'static str, mut len: usize, 
 }
 
 // (slice <bits> - x <slice> <-1> - <slice> <0>)
-fn ld_slice(engine: &mut Engine, name: &'static str, mut len: usize, how: u8) -> Option<Exception> {
+fn ld_slice(engine: &mut Engine, name: &'static str, mut len: usize, how: u8) -> Failure {
     load_slice(engine, name, &mut len, how)
     .and_then(|ctx| proc_slice(ctx, len, how,
         |slice, _| {
@@ -120,45 +120,45 @@ fn ld_slice(engine: &mut Engine, name: &'static str, mut len: usize, how: u8) ->
     .err()
 }
 
-pub fn execute_ldsliceq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldsliceq(engine: &mut Engine) -> Failure {
     ld_slice(engine, "LDSLICEQ", 256, CMD | QUIET | STAY)
 }
 
 /// LDSLICE cc+1 (s - s`` s`), cuts the next cc+1 bits of s into a separate Slice s``.
-pub fn execute_ldslice(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldslice(engine: &mut Engine) -> Failure {
     ld_slice(engine, "LDSLICE", 256, CMD | STAY)
 }
 
-pub fn execute_pldsliceq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldsliceq(engine: &mut Engine) -> Failure {
     ld_slice(engine, "PLDSLICEQ", 256, CMD | QUIET)
 }
 
 /// PLDSLICE cc+1 (s - s``), cuts the next cc+1 bits of s into a separate Slice s``.
-pub fn execute_pldslice(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldslice(engine: &mut Engine) -> Failure {
     ld_slice(engine, "PLDSLICE", 256, CMD)
 }
 
-pub fn execute_ldslicexq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldslicexq(engine: &mut Engine) -> Failure {
     ld_slice(engine, "LDSLICEXQ", 1023, STACK | QUIET | STAY)
 }
 
 /// LDSLICEX(sl - s`` s`), loads the first 0 =< l =< 1023 bits from Slice s
 /// into a separate Slice s``, returning the remainder of s as s`.
-pub fn execute_ldslicex(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldslicex(engine: &mut Engine) -> Failure {
     ld_slice(engine, "LDSLICEX", 1023, STACK | STAY)
 }
 
-pub fn execute_pldslicexq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldslicexq(engine: &mut Engine) -> Failure {
     ld_slice(engine, "PLDSLICEXQ", 1023, STACK | QUIET)
 }
 
 /// PLDSLICEX(sl - s``)
-pub fn execute_pldslicex(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldslicex(engine: &mut Engine) -> Failure {
     ld_slice(engine, "PLDSLICEX", 1023, STACK)
 }
 
 // (cell - slice)
-pub fn execute_ctos(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ctos(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("CTOS")
     )
@@ -172,7 +172,7 @@ pub fn execute_ctos(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (slice - )
-pub fn execute_ends(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ends(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("ENDS")
     )
@@ -188,61 +188,61 @@ pub fn execute_ends(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (slice - x slice)
-pub fn execute_ldu(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldu(engine: &mut Engine) -> Failure {
     ld_int::<UnsignedIntegerBigEndianEncoding>(engine, "LDU", 256, CMD | STAY)
 }
 
 // (slice - x slice)
-pub fn execute_ldi(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldi(engine: &mut Engine) -> Failure {
     ld_int::<SignedIntegerBigEndianEncoding>(engine, "LDI", 256, CMD | STAY)
 }
 
-pub fn execute_ldiq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldiq(engine: &mut Engine) -> Failure {
     ld_int::<SignedIntegerBigEndianEncoding>(engine, "LDIQ", 256, CMD | QUIET | STAY)
 }
 
-pub fn execute_lduq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_lduq(engine: &mut Engine) -> Failure {
     ld_int::<UnsignedIntegerBigEndianEncoding>(engine, "LDUQ", 256, CMD | QUIET | STAY)
 }
 
-pub fn execute_ldixq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldixq(engine: &mut Engine) -> Failure {
     ld_int::<SignedIntegerBigEndianEncoding>(engine, "LDIXQ", 257, STACK | QUIET | STAY)
 }
 
-pub fn execute_lduxq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_lduxq(engine: &mut Engine) -> Failure {
     ld_int::<UnsignedIntegerBigEndianEncoding>(engine, "LDUXQ", 256, STACK | QUIET | STAY)
 }
 
 // (slice length - x slice)
-pub fn execute_ldix(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldix(engine: &mut Engine) -> Failure {
     ld_int::<SignedIntegerBigEndianEncoding>(engine, "LDIX", 257, STACK | STAY)
 }
 
 // (slice length - x slice) 256
-pub fn execute_ldux(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldux(engine: &mut Engine) -> Failure {
     ld_int::<UnsignedIntegerBigEndianEncoding>(engine, "LDUX", 256, STACK | STAY)
 }
 
-pub fn execute_pldixq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldixq(engine: &mut Engine) -> Failure {
     ld_int::<SignedIntegerBigEndianEncoding>(engine, "PLDIXQ", 257, STACK | QUIET)
 }
 
-pub fn execute_plduxq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_plduxq(engine: &mut Engine) -> Failure {
     ld_int::<UnsignedIntegerBigEndianEncoding>(engine, "PLDUXQ", 256, STACK | QUIET)
 }
 
 // (slice length - x)
-pub fn execute_pldix(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldix(engine: &mut Engine) -> Failure {
     ld_int::<SignedIntegerBigEndianEncoding>(engine, "PLDIX", 257, STACK)
 }
 
 // (slice length - x)
-pub fn execute_pldux(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldux(engine: &mut Engine) -> Failure {
     ld_int::<UnsignedIntegerBigEndianEncoding>(engine, "PLDUX", 256, STACK)
 }
 
 // (slice - cell slice)
-pub fn execute_ldref(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldref(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("LDREF")
     )
@@ -256,39 +256,39 @@ pub fn execute_ldref(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (slice - slice' slice'')
-pub fn execute_ldrefrtos(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldrefrtos(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("LDREFRTOS")
     )
     .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| proc_slice(ctx, 0, STAY | INV, |slice, gas|
-        Ok(StackItem::Slice(SliceData::from_cell(slice.checked_drain_reference()?, gas)))
+    .and_then(|ctx| proc_slice(ctx, 0, STAY | INV, |slice, gas_consumer|
+        Ok(StackItem::Slice(gas_consumer.load_cell(slice.checked_drain_reference()?)))
     ))
     .err()
 }
 
 // (slice - x -1 or 0)
-pub fn execute_pldiq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldiq(engine: &mut Engine) -> Failure {
     ld_int::<SignedIntegerBigEndianEncoding>(engine, "PLDIQ", 256, CMD | QUIET)
 }
 
 // (slice - x -1 or 0)
-pub fn execute_plduq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_plduq(engine: &mut Engine) -> Failure {
     ld_int::<UnsignedIntegerBigEndianEncoding>(engine, "PLDUQ", 256, CMD | QUIET)
 }
 
 // (slice - x)
-pub fn execute_pldu(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldu(engine: &mut Engine) -> Failure {
     ld_int::<UnsignedIntegerBigEndianEncoding>(engine, "PLDU", 256, CMD)
 }
 
 // (slice - x)
-pub fn execute_pldi(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldi(engine: &mut Engine) -> Failure {
     ld_int::<SignedIntegerBigEndianEncoding>(engine, "PLDI", 256, CMD)
 }
 
 // (slice - x s)
-pub fn execute_plduz(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_plduz(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("PLDUZ").set_opts(InstructionOptions::LengthMinusOne(0..8))
     )
@@ -313,7 +313,7 @@ pub fn execute_plduz(engine: &mut Engine) -> Option<Exception> {
     .err()
 }
 
-fn sdbegins(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exception> {
+fn sdbegins(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     let mut inst = Instruction::new(name);
     let params = if how.bit(STACK) {
         2
@@ -357,22 +357,22 @@ fn sdbegins(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exceptio
     .err()
 }
 
-pub fn execute_sdbegins(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_sdbegins(engine: &mut Engine) -> Failure {
     sdbegins(engine, "SDBEGINS", CMD)
 }
 
-pub fn execute_sdbeginsq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_sdbeginsq(engine: &mut Engine) -> Failure {
     sdbegins(engine, "SDBEGINSQ", CMD | QUIET)
 }
 
 /// SDBEGINSX(s s` - s``), checks whether s begins with 
 /// (the data bits of) s`, and removes s` from s on success.
 /// On failure throws a cell deserialization exception.
-pub fn execute_sdbeginsx(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_sdbeginsx(engine: &mut Engine) -> Failure {
     sdbegins(engine, "SDBEGINSX", STACK)
 }
 
-pub fn execute_sdbeginsxq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_sdbeginsxq(engine: &mut Engine) -> Failure {
     sdbegins(engine, "SDBEGINSXQ", STACK | QUIET)
 }
 
@@ -433,7 +433,7 @@ fn sdcut(ctx: Ctx, bits: u8, refs: u8) -> Result<Ctx> {
 }
 
 /// SDSKIPFIRST(sl - s`), returns all but the first 0 ≤ l ≤ 1023 bits of s
-pub fn execute_sdskipfirst(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_sdskipfirst(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SDSKIPFIRST")
     )
@@ -442,7 +442,7 @@ pub fn execute_sdskipfirst(engine: &mut Engine) -> Option<Exception> {
     .err()
 }
 
-pub fn execute_sdcutlast(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_sdcutlast(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SDCUTLAST")
     )
@@ -452,7 +452,7 @@ pub fn execute_sdcutlast(engine: &mut Engine) -> Option<Exception> {
 }
 
 /// SDSKIPLAST(sl - s`), returns all but the first 0 ≤ l ≤ 1023 bits of s
-pub fn execute_sdskiplast(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_sdskiplast(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SDSKIPLAST")
     )
@@ -464,7 +464,7 @@ pub fn execute_sdskiplast(engine: &mut Engine) -> Option<Exception> {
 /// SDSUBSTR(s l` l`` - s`), returns 0 ≤ l′ ≤ 1023 bits of s 
 /// starting from offset 0 ≤ l ≤ 1023, thus extracting a bit 
 /// substring out of the data of s.
-pub fn execute_sdsubstr(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_sdsubstr(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SDSUBSTR")
     )
@@ -474,7 +474,7 @@ pub fn execute_sdsubstr(engine: &mut Engine) -> Option<Exception> {
 }
 
 /// (s l r – s`), returns the first 0 <= l <= 1023 bits and first 0 <= r <= 4 references of s
-pub fn execute_scutfirst(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_scutfirst(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SCUTFIRST")
     )
@@ -484,7 +484,7 @@ pub fn execute_scutfirst(engine: &mut Engine) -> Option<Exception> {
 }
 
 /// (s l r – s`), skips the first 0 <= l <= 1023 bits and first 0 <= r <= 4 references of s
-pub fn execute_sskipfirst(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_sskipfirst(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SSKIPFIRST")
     )
@@ -495,7 +495,7 @@ pub fn execute_sskipfirst(engine: &mut Engine) -> Option<Exception> {
 
 /// (s l r – s`), returns the last 0 <= l <= 1023 data bits
 ///  and last 0 <= r <= 4 references of s.
-pub fn execute_scutlast(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_scutlast(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SCUTLAST")
     )
@@ -505,7 +505,7 @@ pub fn execute_scutlast(engine: &mut Engine) -> Option<Exception> {
 }
 
 /// (s l r – s`)
-pub fn execute_sskiplast(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_sskiplast(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SSKIPLAST")
     )
@@ -517,7 +517,7 @@ pub fn execute_sskiplast(engine: &mut Engine) -> Option<Exception> {
 /// (s l r l` r` – s`), returns 0 <= l`<= 1023 bits and 0 <= r` <= 4
 /// references from Slice s, after skipping the first 0 <= l <= 1023 
 /// bits and first 0 <= r <= 4 references.
-pub fn execute_subslice(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_subslice(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SUBSLICE")
     )
@@ -533,7 +533,7 @@ enum Target {
     BitRefs,
 }
 
-fn sbitrefs(engine: &mut Engine, name: &'static str, target: Target) -> Option<Exception> {
+fn sbitrefs(engine: &mut Engine, name: &'static str, target: Target) -> Failure {
     engine.load_instruction(
         Instruction::new(name)
     )
@@ -553,7 +553,7 @@ fn sbitrefs(engine: &mut Engine, name: &'static str, target: Target) -> Option<E
     .err()
 }
 
-fn schkbits(engine: &mut Engine, name: &'static str, limit: usize, quiet: bool) -> Option<Exception> {
+fn schkbits(engine: &mut Engine, name: &'static str, limit: usize, quiet: bool) -> Failure {
     engine.load_instruction(
         Instruction::new(name)
     )
@@ -571,7 +571,7 @@ fn schkbits(engine: &mut Engine, name: &'static str, limit: usize, quiet: bool) 
     .err()
 }
 
-fn schkrefs(engine: &mut Engine, name: &'static str, quiet: bool) -> Option<Exception> {
+fn schkrefs(engine: &mut Engine, name: &'static str, quiet: bool) -> Failure {
     engine.load_instruction(
         Instruction::new(name)
     )
@@ -590,7 +590,7 @@ fn schkrefs(engine: &mut Engine, name: &'static str, quiet: bool) -> Option<Exce
     .err()
 }
 
-fn schkbitrefs(engine: &mut Engine, name: &'static str, quiet: bool) -> Option<Exception> {
+fn schkbitrefs(engine: &mut Engine, name: &'static str, quiet: bool) -> Failure {
     engine.load_instruction(
         Instruction::new(name)
     )
@@ -612,31 +612,31 @@ fn schkbitrefs(engine: &mut Engine, name: &'static str, quiet: bool) -> Option<E
     .err()
 }
 
-pub fn execute_schkbitsq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_schkbitsq(engine: &mut Engine) -> Failure {
     schkbits(engine, "SCHKBITSQ", 1023, true)
 }
 
-pub fn execute_schkbits(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_schkbits(engine: &mut Engine) -> Failure {
     schkbits(engine, "SCHKBITS", 1023, false)
 }
 
-pub fn execute_schkrefsq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_schkrefsq(engine: &mut Engine) -> Failure {
     schkrefs(engine, "SCHKREFSQ", true)
 }
 
-pub fn execute_schkrefs(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_schkrefs(engine: &mut Engine) -> Failure {
     schkrefs(engine, "SCHKREFS", false)
 }
 
-pub fn execute_schkbitrefsq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_schkbitrefsq(engine: &mut Engine) -> Failure {
     schkbitrefs(engine, "SCHKBITREFSQ", true)
 }
 
-pub fn execute_schkbitrefs(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_schkbitrefs(engine: &mut Engine) -> Failure {
     schkbitrefs(engine, "SCHKBITREFS", false)
 }
 
-fn pldref(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exception> {
+fn pldref(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     let mut inst = Instruction::new(name);
     let mut params = 1;
     if how.bit(STACK) {
@@ -660,109 +660,109 @@ fn pldref(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exception>
 }
 
 // (slice - cell)
-pub fn execute_pldref(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldref(engine: &mut Engine) -> Failure {
     pldref(engine, "PLDREF", 0)
 }
 
 // (slice - cell)
-pub fn execute_pldrefidx(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldrefidx(engine: &mut Engine) -> Failure {
     pldref(engine, "PLDREFIDX", CMD)
 }
 
 // (slice n - cell)
-pub fn execute_pldrefvar(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldrefvar(engine: &mut Engine) -> Failure {
     pldref(engine, "PLDREFVAR", STACK)
 }
 
-pub fn execute_sbits(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_sbits(engine: &mut Engine) -> Failure {
     sbitrefs(engine, "SBITS", Target::Bits)
 }
 
-pub fn execute_srefs(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_srefs(engine: &mut Engine) -> Failure {
     sbitrefs(engine, "SREFS", Target::Refs)
 }
 
-pub fn execute_sbitrefs(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_sbitrefs(engine: &mut Engine) -> Failure {
     sbitrefs(engine, "SBITREFS", Target::BitRefs)
 }
 
 // (slice - x slice)
-pub fn execute_ldile4(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldile4(engine: &mut Engine) -> Failure {
     ld_int::<SignedIntegerLittleEndianEncoding>(engine, "LDILE4", 32, PARAM | STAY)
 }
 
 // (slice - x slice)
-pub fn execute_ldule4(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldule4(engine: &mut Engine) -> Failure {
     ld_int::<UnsignedIntegerLittleEndianEncoding>(engine, "LDULE4", 32, PARAM | STAY)
 }
 
 // (slice - x slice)
-pub fn execute_ldile8(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldile8(engine: &mut Engine) -> Failure {
     ld_int::<SignedIntegerLittleEndianEncoding>(engine, "LDILE8", 64, PARAM | STAY)
 }
 
 // (slice - x slice)
-pub fn execute_ldule8(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldule8(engine: &mut Engine) -> Failure {
     ld_int::<UnsignedIntegerLittleEndianEncoding>(engine, "LDULE8", 64, PARAM | STAY)
 }
 
 // (slice - x slice)
-pub fn execute_pldile4(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldile4(engine: &mut Engine) -> Failure {
     ld_int::<SignedIntegerLittleEndianEncoding>(engine, "PLDILE4", 32, PARAM)
 }
 
 // (slice - x slice)
-pub fn execute_pldule4(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldule4(engine: &mut Engine) -> Failure {
     ld_int::<UnsignedIntegerLittleEndianEncoding>(engine, "PLDULE4", 32, PARAM)
 }
 
 // (slice - x slice)
-pub fn execute_pldile8(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldile8(engine: &mut Engine) -> Failure {
     ld_int::<SignedIntegerLittleEndianEncoding>(engine, "PLDILE8", 64, PARAM)
 }
 
 // (slice - x slice)
-pub fn execute_pldule8(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldule8(engine: &mut Engine) -> Failure {
     ld_int::<UnsignedIntegerLittleEndianEncoding>(engine, "PLDULE8", 64, PARAM)
 }
 
 // (slice - x slice)
-pub fn execute_ldile4q(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldile4q(engine: &mut Engine) -> Failure {
     ld_int::<SignedIntegerLittleEndianEncoding>(engine, "LDILE4Q", 32, PARAM | QUIET | STAY)
 }
 
 // (slice - x slice)
-pub fn execute_ldule4q(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldule4q(engine: &mut Engine) -> Failure {
     ld_int::<UnsignedIntegerLittleEndianEncoding>(engine, "LDULE4Q", 32, PARAM | QUIET | STAY)
 }
 
 // (slice - x slice)
-pub fn execute_ldile8q(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldile8q(engine: &mut Engine) -> Failure {
     ld_int::<SignedIntegerLittleEndianEncoding>(engine, "LDILE8Q", 64, PARAM | QUIET | STAY)
 }
 
 // (slice - x slice)
-pub fn execute_ldule8q(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldule8q(engine: &mut Engine) -> Failure {
     ld_int::<UnsignedIntegerLittleEndianEncoding>(engine, "LDULE8Q", 64, PARAM | QUIET | STAY)
 }
 
 // (slice - x slice)
-pub fn execute_pldile4q(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldile4q(engine: &mut Engine) -> Failure {
     ld_int::<SignedIntegerLittleEndianEncoding>(engine, "PLDILE4Q", 32, PARAM | QUIET)
 }
 
 // (slice - x slice)
-pub fn execute_pldule4q(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldule4q(engine: &mut Engine) -> Failure {
     ld_int::<UnsignedIntegerLittleEndianEncoding>(engine, "PLDULE4Q", 32, PARAM | QUIET)
 }
 
 // (slice - x slice)
-pub fn execute_pldile8q(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldile8q(engine: &mut Engine) -> Failure {
     ld_int::<SignedIntegerLittleEndianEncoding>(engine, "PLDILE8Q", 64, PARAM | QUIET)
 }
 
 // (slice - x slice)
-pub fn execute_pldule8q(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_pldule8q(engine: &mut Engine) -> Failure {
     ld_int::<UnsignedIntegerLittleEndianEncoding>(engine, "PLDULE8Q", 64, PARAM | QUIET)
 }
 
@@ -780,7 +780,7 @@ fn trim_leading_bits(slice: &mut SliceData, bit: u8) -> usize {
     skipped
 }
 
-fn ldbit(engine: &mut Engine, name: &'static str, bit: u8) -> Option<Exception> {
+fn ldbit(engine: &mut Engine, name: &'static str, bit: u8) -> Failure {
     engine.load_instruction(
         Instruction::new(name)
     )
@@ -795,15 +795,15 @@ fn ldbit(engine: &mut Engine, name: &'static str, bit: u8) -> Option<Exception> 
     .err()
 }
 
-pub fn execute_ldzeroes(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldzeroes(engine: &mut Engine) -> Failure {
     ldbit(engine, "LDZEROES", 0)
 }
 
-pub fn execute_ldones(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldones(engine: &mut Engine) -> Failure {
     ldbit(engine, "LDONES", 1)
 }
 
-pub fn execute_ldsame(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_ldsame(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("LDSAME")
     )
@@ -819,7 +819,7 @@ pub fn execute_ldsame(engine: &mut Engine) -> Option<Exception> {
     .err()
 }
 
-fn split(engine: &mut Engine, name: &'static str, quiet: bool) -> Option<Exception> {
+fn split(engine: &mut Engine, name: &'static str, quiet: bool) -> Failure {
     engine.load_instruction(
         Instruction::new(name)
     )
@@ -854,11 +854,11 @@ fn split(engine: &mut Engine, name: &'static str, quiet: bool) -> Option<Excepti
     .err()
 }
 
-pub fn execute_split(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_split(engine: &mut Engine) -> Failure {
     split(engine, "SPLIT", false)
 }
 
-pub fn execute_splitq(engine: &mut Engine) -> Option<Exception> {
+pub fn execute_splitq(engine: &mut Engine) -> Failure {
     split(engine, "SPLITQ", true)
 }
 
@@ -889,7 +889,7 @@ impl DataCounter {
         }
         self.max -= 1;
         self.cells += 1;
-        self.count_slice(SliceData::from_cell(cell, &mut engine.gas), engine)
+        self.count_slice(engine.load_cell(cell), engine)
     }
     fn count_slice(&mut self, slice: SliceData, engine: &mut Engine) -> bool {
         let refs = slice.remaining_references();
@@ -904,7 +904,7 @@ impl DataCounter {
     }
 }
 
-fn datasize(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exception> {
+fn datasize(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     engine.load_instruction(
         Instruction::new(name)
     )
@@ -936,18 +936,18 @@ fn datasize(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exceptio
     .err()
 }
 
-pub(crate) fn execute_cdatasize(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_cdatasize(engine: &mut Engine) -> Failure {
     datasize(engine, "CDATASIZE", CEL)
 }
 
-pub(crate) fn execute_cdatasizeq(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_cdatasizeq(engine: &mut Engine) -> Failure {
     datasize(engine, "CDATASIZEQ", QUIET | CEL)
 }
 
-pub(crate) fn execute_sdatasize(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_sdatasize(engine: &mut Engine) -> Failure {
     datasize(engine, "SDATASIZE", 0)
 }
 
-pub(crate) fn execute_sdatasizeq(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_sdatasizeq(engine: &mut Engine) -> Failure {
     datasize(engine, "SDATASIZEQ", QUIET)
 }

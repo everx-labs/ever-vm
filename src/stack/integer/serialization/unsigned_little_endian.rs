@@ -17,9 +17,9 @@ use super::{
     Encoding
 };
 use types::{
-    Exception,
     ExceptionCode,
     Result,
+    TvmError,
 };
 use stack::BuilderData;
 use stack::serialization::{
@@ -45,8 +45,6 @@ impl Encoding for UnsignedIntegerLittleEndianEncoding {
 }
 
 impl Serializer<IntegerData> for UnsignedIntegerLittleEndianEncoding {
-    type Error = Exception;
-  
     fn try_serialize(&self, value: &IntegerData) -> Result<BuilderData> {
         if value.is_neg() || !value.ufits_in(self.length_in_bits) {
             // Spec. 3.2.7
@@ -73,7 +71,7 @@ impl Deserializer<IntegerData> for UnsignedIntegerLittleEndianEncoding {
         debug_assert!(data.len() * 8 >= self.length_in_bits);
 
         let value = BigInt::from_bytes_le(Sign::Plus, data);
-        IntegerData::from(value).expect("Should always fit")
+        IntegerData::from(value).unwrap_or(IntegerData::zero())
     }
 }
 

@@ -12,38 +12,36 @@
 * limitations under the License.
 */
 
+use ton_types::types::ExceptionCode;
 use crate::types::Exception;
 
-error_chain! {
-
-    types {
-        TvmError, TvmErrorKind, TvmResultExt, TvmResult;
-    }
-
-    foreign_links {
-        Io(std::io::Error);
-        Tvm(Exception);
-    }
-
-    errors {
-        InvalidData(msg: String) {
-            description("Invalid data"),
-            display("Invalid data: {}", msg)
-        }
-        InvalidOperation(msg: String) {
-            description("Invalid operation"),
-            display("Invalid operation: {}", msg)
-        }
-        InvalidArg(msg: String) {
-            description("Invalid argument"),
-            display("Invalid argument: {}", msg)
-        }
-    }
+#[derive(Debug, failure::Fail)]
+pub enum TvmError {
+    /// Fatal error.
+    #[fail(display = "Fatal error: {}", 0)]
+    FatalError(String),
+    /// Invalid argument.
+    #[fail(display = "Invalid argument: {}", 0)]
+    InvalidArg(usize),
+    /// Invalid data.
+    #[fail(display = "Invalid data: {}", 0)]
+    InvalidData(String),
+    /// Invalid operation.
+    #[fail(display = "Invalid operation: {}", 0)]
+    InvalidOperation(String),
+    /// TVM Exception
+    #[fail(display = "VM Exception, code: {}", 0)]
+    TvmException(ExceptionCode),
+    /// TVM Exception description
+    #[fail(display = "VM Exception: {}", 0)]
+    TvmExceptionFull(Exception),
 }
 
-#[macro_export]
-macro_rules! tvm_err {
-    ($code:expr) => {
-        Err(TvmError::from_kind($code))
-    };
+#[allow(dead_code)]
+pub(crate) fn exception_code(err: failure::Error) -> Option<ExceptionCode> {
+    if let Some(TvmError::TvmExceptionFull(err)) = err.downcast_ref() {
+        Some(err.code)
+    } else {
+        None
+    }
 }

@@ -22,13 +22,13 @@ use stack::{ContinuationData, IntegerData, StackItem};
 use std::cmp;
 use std::usize;
 use std::sync::Arc;
-use types::{Exception, ExceptionCode};
+use types::{ExceptionCode, Failure, TvmError};
 
 
 // Stack manipulation *********************************************************
 
 // (xi ... x1 - )
-pub(super) fn execute_blkdrop(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_blkdrop(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("BLKDROP").set_opts(InstructionOptions::Length(0..16))
     )
@@ -39,7 +39,7 @@ pub(super) fn execute_blkdrop(engine: &mut Engine) -> Option<Exception> {
     .err()
 }
 
-pub(super) fn execute_blkdrop2(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_blkdrop2(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("BLKDROP2").set_opts(InstructionOptions::LengthAndIndex)
     )
@@ -53,7 +53,7 @@ pub(super) fn execute_blkdrop2(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x(j) ... - x(j) ... { x(j) } i times)
-pub(super) fn execute_blkpush(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_blkpush(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("BLKPUSH").set_opts(InstructionOptions::LengthAndIndex)
     )
@@ -75,7 +75,7 @@ pub(super) fn execute_blkpush(engine: &mut Engine) -> Option<Exception> {
 // (a(j+i-1)...a(j) a(j-1)...a(0) - a(j-1)...a(0) a(j+i-1)..a(j))
 // Example: BLKSWAP 2, 4:
 // (8 7 6 {5 4} {3 2 1 0} - 8 7 6 {3 2 1 0} {5 4})
-pub(super) fn execute_blkswap(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_blkswap(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("BLKSWAP").set_opts(
             InstructionOptions::LengthMinusOneAndIndexMinusOne
@@ -90,7 +90,7 @@ pub(super) fn execute_blkswap(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (a(j+i+1)...a(j+2) a(j+1)...a(2) j i - a(j+1)...a(2) a(j+i+1)...a(j+2))
-pub(super) fn execute_blkswx(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_blkswx(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("BLKSWX")
     )
@@ -105,7 +105,7 @@ pub(super) fn execute_blkswx(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (i - ), throws exception if depth < i
-pub(super) fn execute_chkdepth(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_chkdepth(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("CHKDEPTH")
     )
@@ -121,7 +121,7 @@ pub(super) fn execute_chkdepth(engine: &mut Engine) -> Option<Exception> {
 }
 
 // ( - stack_depth)
-pub(super) fn execute_depth(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_depth(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("DEPTH")
     )
@@ -134,7 +134,7 @@ pub(super) fn execute_depth(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (a(i)...a(1) i - )
-pub(super) fn execute_dropx(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_dropx(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("DROPX")
     )
@@ -151,7 +151,7 @@ pub(super) fn execute_dropx(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (a b - )
-pub(super) fn execute_drop2(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_drop2(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("DROP2")
     )
@@ -166,7 +166,7 @@ pub(super) fn execute_drop2(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (a b - a b a b)
-pub(super) fn execute_dup2(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_dup2(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("DUP2")
     )
@@ -182,7 +182,7 @@ pub(super) fn execute_dup2(engine: &mut Engine) -> Option<Exception> {
 }
 
 // ( ... a(i)...a(1) i - a(i)...a(1))
-pub(super) fn execute_onlytopx(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_onlytopx(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("ONLYTOPX")
     )
@@ -200,7 +200,7 @@ pub(super) fn execute_onlytopx(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (a(depth)...a(depth-i+1) ... i - a(depth)...a(depth-i+1))
-pub(super) fn execute_onlyx(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_onlyx(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("ONLYX")
     )
@@ -218,7 +218,7 @@ pub(super) fn execute_onlyx(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (a b c d - a b c d a b)
-pub(super) fn execute_over2(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_over2(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("OVER2")
     )
@@ -234,7 +234,7 @@ pub(super) fn execute_over2(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (i - s(i))
-pub(super) fn execute_pick(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pick(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("PICK")
     )
@@ -252,7 +252,7 @@ pub(super) fn execute_pick(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x ... y - y ...)
-pub(super) fn execute_pop(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pop(engine: &mut Engine) -> Failure {
     let cmd = engine.cc.last_cmd();
     let range = if (cmd & 0xF0) == 0x30 {
         0..16
@@ -273,7 +273,7 @@ pub(super) fn execute_pop(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x - ), c[i] = x
-pub(super) fn execute_popctr(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_popctr(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("POPCTR").set_opts(InstructionOptions::ControlRegister)
     )
@@ -286,7 +286,7 @@ pub(super) fn execute_popctr(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x i - ), c[i] = x
-pub(super) fn execute_popctrx(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_popctrx(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("POPCTRX")
     )
@@ -299,7 +299,7 @@ pub(super) fn execute_popctrx(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x - ), c[0].savelist[i] = c[i], c[i] = x, 
-pub(super) fn execute_popsave(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_popsave(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("POPSAVE").set_opts(InstructionOptions::ControlRegister)
     )
@@ -314,7 +314,7 @@ pub(super) fn execute_popsave(engine: &mut Engine) -> Option<Exception> {
 
 // (x ... y ... z ... a - a... y ... z ... z y x)
 // PU2XC s(i), s(j-1), s(k-2), equal to PUSH s(i); SWAP; PUSH s(j); SWAP; XCHG s(k)
-pub(super) fn execute_pu2xc(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pu2xc(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("PU2XC").set_opts(InstructionOptions::StackRegisterTrio(4))
     )
@@ -339,7 +339,7 @@ pub(super) fn execute_pu2xc(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x ... - x ... x)
-pub(super) fn execute_push(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_push(engine: &mut Engine) -> Failure {
     let cmd = engine.cc.last_cmd();
     let range = if (cmd & 0xF0) == 0x20 {
         0..16
@@ -363,7 +363,7 @@ pub(super) fn execute_push(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x ... y ... - x ... y ... x y)
-pub(super) fn execute_push2(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_push2(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("PUSH2")
             .set_opts(
@@ -385,7 +385,7 @@ pub(super) fn execute_push2(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x ... y ... z ...  - x ... y ... z... x y z)
-pub(super) fn execute_push3(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_push3(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("PUSH3").set_opts(InstructionOptions::StackRegisterTrio(4))
     )
@@ -405,7 +405,7 @@ pub(super) fn execute_push3(engine: &mut Engine) -> Option<Exception> {
     .err()
 }
 
-fn execute_pushcont(engine: &mut Engine, opts: InstructionOptions) -> Option<Exception> {
+fn execute_pushcont(engine: &mut Engine, opts: InstructionOptions) -> Failure {
     engine.load_instruction(
         Instruction::new("PUSHCONT").set_opts(opts)
     )
@@ -418,17 +418,17 @@ fn execute_pushcont(engine: &mut Engine, opts: InstructionOptions) -> Option<Exc
 }
 
 // ( - continuation)
-pub(super) fn execute_pushcont_short(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pushcont_short(engine: &mut Engine) -> Failure {
     execute_pushcont(engine, InstructionOptions::Bytestring(7, 2, 7, 0))
 }
 
 // ( - continuation)
-pub(super) fn execute_pushcont_long(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pushcont_long(engine: &mut Engine) -> Failure {
     execute_pushcont(engine, InstructionOptions::Bytestring(4, 0, 4, 0))
 }
 
 // ( - c[i])
-pub(super) fn execute_pushctr(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pushctr(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("PUSHCTR").set_opts(InstructionOptions::ControlRegister)
     )
@@ -442,7 +442,7 @@ pub(super) fn execute_pushctr(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (i - c[i])
-pub(super) fn execute_pushctrx(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pushctrx(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("PUSHCTRX")
     )
@@ -457,7 +457,7 @@ pub(super) fn execute_pushctrx(engine: &mut Engine) -> Option<Exception> {
 }
 
 // ( - int)
-pub(super) fn execute_pushint(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pushint(engine: &mut Engine) -> Failure {
     let cmd = engine.cc.last_cmd();
     let range = if (cmd & 0xF0) == 0x70 {
         -5..11
@@ -480,7 +480,7 @@ pub(super) fn execute_pushint(engine: &mut Engine) -> Option<Exception> {
 }
 
 // ( - int)
-pub(super) fn execute_pushint_big(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pushint_big(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("PUSHINT").set_opts(InstructionOptions::BigInteger)
     )
@@ -493,7 +493,7 @@ pub(super) fn execute_pushint_big(engine: &mut Engine) -> Option<Exception> {
 }
 
 // ( - NaN)
-pub(super) fn execute_pushnan(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pushnan(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("PUSHNAN")
     )
@@ -505,7 +505,7 @@ pub(super) fn execute_pushnan(engine: &mut Engine) -> Option<Exception> {
 }
 
 // ( - int = -2^(x+1))
-pub(super) fn execute_pushnegpow2(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pushnegpow2(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("PUSHNEGPOW2")
             .set_opts(
@@ -524,7 +524,7 @@ pub(super) fn execute_pushnegpow2(engine: &mut Engine) -> Option<Exception> {
 }
 
 // ( - 2^(x+1))
-pub(super) fn execute_pushpow2(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pushpow2(engine: &mut Engine) -> Failure {
     let power = engine.cc.last_cmd();
     engine.load_instruction(
         Instruction::new("PUSHPOW2")
@@ -539,7 +539,7 @@ pub(super) fn execute_pushpow2(engine: &mut Engine) -> Option<Exception> {
 }
 
 // ( - int = 2^(x+1)-1)
-pub(super) fn execute_pushpow2dec(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pushpow2dec(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("PUSHPOW2DEC")
             .set_opts(
@@ -560,7 +560,7 @@ pub(super) fn execute_pushpow2dec(engine: &mut Engine) -> Option<Exception> {
     .err()
 }
 
-fn fetch_ref(engine: &mut Engine, name: &'static str, to: u16) -> Option<Exception> {
+fn fetch_ref(engine: &mut Engine, name: &'static str, to: u16) -> Failure {
     engine.load_instruction(
         Instruction::new(name)
     )
@@ -578,21 +578,21 @@ fn fetch_ref(engine: &mut Engine, name: &'static str, to: u16) -> Option<Excepti
 }
 
 // ( - Cell) from cc references[0]
-pub(super) fn execute_pushref(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pushref(engine: &mut Engine) -> Failure {
     fetch_ref(engine, "PUSHREF", CELL)
 }
 
 // ( - Continuation) from cc references[0] 
-pub(super) fn execute_pushrefcont(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pushrefcont(engine: &mut Engine) -> Failure {
     fetch_ref(engine, "PUSHREFCONT", CONTINUATION)
 }
 
 // ( - Slice) from cc references[0]
-pub(super) fn execute_pushrefslice(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pushrefslice(engine: &mut Engine) -> Failure {
     fetch_ref(engine, "PUSHREFSLICE", SLICE)
 }
 
-fn execute_pushslice(engine: &mut Engine, opts: InstructionOptions) -> Option<Exception> {
+fn execute_pushslice(engine: &mut Engine, opts: InstructionOptions) -> Failure {
     engine.load_instruction(
         Instruction::new("PUSHSLICE").set_opts(opts)
     )
@@ -605,23 +605,23 @@ fn execute_pushslice(engine: &mut Engine, opts: InstructionOptions) -> Option<Ex
 }
 
 // ( - slice)
-pub(super) fn execute_pushslice_short(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pushslice_short(engine: &mut Engine) -> Failure {
     execute_pushslice(engine, InstructionOptions::Bitstring(8, 0, 4, 0))
 }
 
 // ( - slice)
-pub(super) fn execute_pushslice_mid(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pushslice_mid(engine: &mut Engine) -> Failure {
     execute_pushslice(engine, InstructionOptions::Bitstring(8, 2, 5, 1))
 }
 
 // ( - slice)
-pub(super) fn execute_pushslice_long(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_pushslice_long(engine: &mut Engine) -> Failure {
     execute_pushslice(engine, InstructionOptions::Bitstring(8, 3, 7, 0))
 }
 
 // (x ... y ... a - a ... y ... y x)
 // PUXC s(i), s(j-1), equivalent to PUSH s(i); SWAP; XCHG s(j)
-pub(super) fn execute_puxc(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_puxc(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("PUXC")
             .set_opts(
@@ -647,7 +647,7 @@ pub(super) fn execute_puxc(engine: &mut Engine) -> Option<Exception> {
 
 // (x ... y ... z ... a b - a ... b ... z ... z y x)
 // PUXC2 s(i), s(j-1), s(k-1): equivalent to PUSH s(i); XCHG s2; XCHG2 s(j), s(k)
-pub(super) fn execute_puxc2(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_puxc2(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("PUXC2").set_opts(InstructionOptions::StackRegisterTrio(4))
     )
@@ -672,7 +672,7 @@ pub(super) fn execute_puxc2(engine: &mut Engine) -> Option<Exception> {
 
 // (x ... y ... z ... a - x ... a ... z ... z y x)
 // PUXCPU s(i), s(j-1), s(k-1): equivalent to PUSH s(i); SWAP; XCHG s(j); PUSH s(k)
-pub(super) fn execute_puxcpu(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_puxcpu(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("PUXCPU").set_opts(InstructionOptions::StackRegisterTrio(4))
     )
@@ -696,7 +696,7 @@ pub(super) fn execute_puxcpu(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (a(j+i-1)...a(j) ... - a(j)...a(j+i-1) ...)
-pub(super) fn execute_reverse(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_reverse(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("REVERSE").set_opts(
             InstructionOptions::LengthMinusTwoAndIndex
@@ -712,7 +712,7 @@ pub(super) fn execute_reverse(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (a(j+i+1)...a(j+2) ... j i - a(j+2)...a(j+i+1) ...)
-pub(super) fn execute_revx(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_revx(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("REVX")
     )
@@ -727,7 +727,7 @@ pub(super) fn execute_revx(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x a(i)...a(1) i - a(i)...a(1) x)
-pub(super) fn execute_roll(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_roll(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("ROLLX")
     )
@@ -746,7 +746,7 @@ pub(super) fn execute_roll(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (a(i+1)...a(2) x i - x a(i+1)...a(2))
-pub(super) fn execute_rollrev(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_rollrev(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("ROLLREVX")
     )
@@ -765,7 +765,7 @@ pub(super) fn execute_rollrev(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (a b c - b c a)
-pub(super) fn execute_rot(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_rot(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("ROT")
     )
@@ -778,7 +778,7 @@ pub(super) fn execute_rot(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (a b c - c a b)
-pub(super) fn execute_rotrev(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_rotrev(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("ROTREV")
     )
@@ -795,7 +795,7 @@ pub(super) fn execute_rotrev(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (a b c d - c d a b)
-pub(super) fn execute_swap2(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_swap2(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("SWAP2")
     )
@@ -810,7 +810,7 @@ pub(super) fn execute_swap2(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x y - y x y)
-pub(super) fn execute_tuck(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tuck(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("TUCK")
     )
@@ -827,7 +827,7 @@ pub(super) fn execute_tuck(engine: &mut Engine) -> Option<Exception> {
 
 // (x ... y ... z ... a b - x ... a ... b ... z y x)
 // XC2PU s(i), s(j), s(k): equivalent to XCHG2 s(i), s(j); PUSH s(k)
-pub(super) fn execute_xc2pu(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_xc2pu(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("XC2PU")
             .set_opts(InstructionOptions::StackRegisterTrio(4))
@@ -849,7 +849,7 @@ pub(super) fn execute_xc2pu(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x ... y ... - y ... x ...)
-pub(super) fn execute_xchg(engine: &mut Engine, opts: InstructionOptions) -> Option<Exception> {
+pub(super) fn execute_xchg(engine: &mut Engine, opts: InstructionOptions) -> Failure {
     engine.load_instruction(
         Instruction::new("XCHG").set_opts(opts)
     )
@@ -863,7 +863,7 @@ pub(super) fn execute_xchg(engine: &mut Engine, opts: InstructionOptions) -> Opt
 }
 
 // XCHG addressing via the same instruction byte
-pub(super) fn execute_xchg_simple(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_xchg_simple(engine: &mut Engine) -> Failure {
     execute_xchg(
         engine, 
         InstructionOptions::StackRegisterPair(WhereToGetParams::GetFromLastByte)
@@ -871,7 +871,7 @@ pub(super) fn execute_xchg_simple(engine: &mut Engine) -> Option<Exception> {
 }
 
 // XCHG addressing via the next instruction byte
-pub(super) fn execute_xchg_std(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_xchg_std(engine: &mut Engine) -> Failure {
     execute_xchg(
         engine, 
         InstructionOptions::StackRegisterPair(WhereToGetParams::GetFromNextByte)
@@ -879,7 +879,7 @@ pub(super) fn execute_xchg_std(engine: &mut Engine) -> Option<Exception> {
 }
 
 // XCHG addressing via the next instruction byte, long index
-pub(super) fn execute_xchg_long(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_xchg_long(engine: &mut Engine) -> Failure {
     execute_xchg(
         engine,  
         InstructionOptions::StackRegisterPair(WhereToGetParams::GetFromNextByteLong)
@@ -888,7 +888,7 @@ pub(super) fn execute_xchg_long(engine: &mut Engine) -> Option<Exception> {
 
 // (x ... y ... a b - a ... b ... x y)
 // XCHG s(1),s(i); XCHG s(0),s(j).
-pub(super) fn execute_xchg2(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_xchg2(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("XCHG2").set_opts(
             InstructionOptions::StackRegisterPair(WhereToGetParams::GetFromNextByte)
@@ -910,7 +910,7 @@ pub(super) fn execute_xchg2(engine: &mut Engine) -> Option<Exception> {
 
 // (x ... y ... z ... a b c - c ... b ... a ... z y x)
 // XCHG s(2), s(i); XCHG s(1) s(j); XCHG s(0), s(k)
-pub(super) fn execute_xchg3(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_xchg3(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("XCHG3").set_opts(InstructionOptions::StackRegisterTrio(4))
     )
@@ -931,7 +931,7 @@ pub(super) fn execute_xchg3(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (a(i+1)...a(1) i - a(1)...a(i+1))
-pub(super) fn execute_xchgx(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_xchgx(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("XCHGX")
     )
@@ -946,7 +946,7 @@ pub(super) fn execute_xchgx(engine: &mut Engine) -> Option<Exception> {
 
 // (x ... y ... a - x ... a ... y x)
 // XCHG s(i), PUSH s(j)
-pub(super) fn execute_xcpu(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_xcpu(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("XCPU").set_opts(
             InstructionOptions::StackRegisterPair(WhereToGetParams::GetFromNextByte)
@@ -968,7 +968,7 @@ pub(super) fn execute_xcpu(engine: &mut Engine) -> Option<Exception> {
 
 // (x ... y ... z ... a - x ... y ... a ... z y x)
 // XCHG s(i), PUSH s(j), PUSH s(k+1)
-pub(super) fn execute_xcpu2(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_xcpu2(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("XCPU2").set_opts(InstructionOptions::StackRegisterTrio(4))
     )
@@ -989,7 +989,7 @@ pub(super) fn execute_xcpu2(engine: &mut Engine) -> Option<Exception> {
 
 // (x ... y ... z ... a b - b ... y ... a ... z y x)
 // XCPUXC s(i), s(j), s(k-1): equavalent to XCHG s(1), s(i); PUSH s(j); SWAP; XCHG s(k)
-pub(super) fn execute_xcpuxc(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_xcpuxc(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("XCPUXC")
             .set_opts(InstructionOptions::StackRegisterTrio(4))

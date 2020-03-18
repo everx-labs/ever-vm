@@ -18,9 +18,9 @@ use super::{
     Encoding 
 };
 use types::{
-    Exception,
     ExceptionCode,
     Result,
+    TvmError,
 };
 use stack::BuilderData;
 use stack::serialization::{
@@ -45,8 +45,6 @@ impl Encoding for UnsignedIntegerBigEndianEncoding {
 }
 
 impl Serializer<IntegerData> for UnsignedIntegerBigEndianEncoding {
-    type Error = Exception;
-  
     fn try_serialize(&self, value: &IntegerData) -> Result<BuilderData> {
         if value.is_neg() || !value.ufits_in(self.length_in_bits) {
             // Spec. 3.2.7

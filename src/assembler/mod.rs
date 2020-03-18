@@ -31,7 +31,7 @@ mod writer;
 use self::writer::CodePage0;
 use self::writer::Writer;
 use stack::integer::IntegerData;
-use types::ExceptionCode;
+use types::{ExceptionCode, TvmError};
 
 // Basic types *****************************************************************
 /// Operation Compilation result
@@ -306,14 +306,18 @@ fn compile_pushint<T: Writer>(_engine: &mut Engine<T>, par: &Vec<&str>, destinat
         _ => {
             let int = match IntegerData::from_str_radix(sub_str.as_str(), radix) {
                 Ok(value) => value,
-                Err(exception) => match exception.code {
-                    ExceptionCode::TypeCheckError => {
-                        return Err(ParameterError::UnexpectedType.parameter("arg 0"));
-                    },
-                    ExceptionCode::IntegerOverflow => {
-                        return Err(ParameterError::OutOfRange.parameter("arg 0"));
-                    },
-                    _ => unimplemented!()
+                Err(exception) => if let Ok(TvmError::TvmExceptionFull(err)) = exception.downcast() {
+                    match err.code {
+                        ExceptionCode::TypeCheckError => {
+                            return Err(ParameterError::UnexpectedType.parameter("arg 0"));
+                        },
+                        ExceptionCode::IntegerOverflow => {
+                            return Err(ParameterError::OutOfRange.parameter("arg 0"));
+                        },
+                        _ => unimplemented!()
+                    }
+                } else {
+                    return Err(ParameterError::UnexpectedType.parameter("arg 0"));
                 }
             };
             let mut int_bytes = int.to_big_endian_octet_string();

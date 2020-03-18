@@ -13,20 +13,18 @@
 */
 
 #![cfg_attr(feature = "ci_run", deny(warnings))]
-#![recursion_limit="128"] // needs for error_chain
 
 // External
 extern crate core;
 extern crate crc;
 extern crate ed25519_dalek;
+extern crate failure;
 #[macro_use]
 extern crate log;
 extern crate num;
 extern crate num_traits;
 extern crate sha2;
 
-#[macro_use]
-extern crate error_chain;
 extern crate rand;
 
 extern crate ton_types;

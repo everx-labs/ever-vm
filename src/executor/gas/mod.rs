@@ -19,7 +19,7 @@ use executor::engine::storage::fetch_stack;
 use executor::types::Instruction;
 use stack::StackItem;
 use stack::integer::{IntegerData, conversion::FromInt};
-use types::{ExceptionCode, Failure};
+use types::{ExceptionCode, Failure, TvmError};
 use self::gas_state::SPEC_LIMIT;
 use std::sync::Arc;
 

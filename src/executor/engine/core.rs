@@ -31,6 +31,7 @@ use executor::types::{
 };
 use stack::{
     BuilderData,
+    Cell,
     ContinuationData,
     ContinuationType,
     IntegerData,
@@ -40,8 +41,9 @@ use stack::{
     StackItem,
 };
 //use std::cmp::Ordering;
-use std::isize;
+use std::collections::HashSet;
 use std::sync::Arc;
+use ton_types::GasConsumer;
 use types::{
     Exception,
     ExceptionCode,
@@ -50,6 +52,8 @@ use types::{
     ResultMut,
     ResultRef,
     Status,
+    TvmError,
+    UInt256,
 };
 use SmartContractInfo;
 
@@ -60,6 +64,7 @@ pub struct Engine {
     pub(in executor) cc: ContinuationData,
     pub(in executor) cmd: Instruction,
     pub(in executor) ctrls: SaveList,
+    visited_cells: HashSet<UInt256>,
     cstate: CommittedState,
     handlers: Handlers,
     time: u64,
@@ -115,6 +120,20 @@ impl CommittedState {
     }
 }
 
+impl GasConsumer for Engine {
+    fn finalize_cell(&mut self, builder: BuilderData) -> Cell {
+        self.gas.use_gas(Gas::finalize_price());
+        builder.into()
+    }
+    fn load_cell(&mut self, cell: Cell) -> SliceData {
+        self.load_cell(cell)
+    }
+    fn finalize_cell_and_load(&mut self, builder: BuilderData) -> SliceData {
+        let cell = self.finalize_cell(builder);
+        self.load_cell(cell)
+    }
+}
+
 impl Engine {
     pub const TRACE_CODE:  u8 = 0x01;
     pub const TRACE_GAS:   u8 = 0x02;
@@ -129,6 +148,7 @@ impl Engine {
             cc: ContinuationData::new_empty(),
             cmd: Instruction::new("NOP"),
             ctrls: SaveList::new(),
+            visited_cells: HashSet::new(),
             cstate: CommittedState::new_empty(),
             handlers: Handlers::new_code_page_0(),
             time: 0,
@@ -201,7 +221,7 @@ impl Engine {
                     return Ok(result)
                 }
             }
-            let gas = self.gas.get_gas_used();
+            let gas = self.gas_used();
             self.cmd_code = self.cc.code().clone();
             self.cmd = Instruction::new("");
             let handler = self.handlers.get_handler(&mut self.cc)?;
@@ -210,21 +230,23 @@ impl Engine {
                 trace!(target: "tvm", "{}: {}\n", self.step, self.cmd.dump_with_params().unwrap_or_default());
             }
             if self.trace_bit(Engine::TRACE_GAS) {
-                trace!(target: "tvm", "Gas: {} ({})\n", self.gas.get_gas_remaining(), self.gas.get_gas_used() - gas);
+                trace!(target: "tvm", "Gas: {} ({})\n", self.gas_used(), self.gas_used() - gas);
             }
             if self.trace_bit(Engine::TRACE_STACK) {
                 trace!(target: "tvm", "{}", self.dump_stack("Stack trace", false));
             }
             if self.trace_bit(Engine::TRACE_CTRLS) {
-                trace!(target: "tvm", "{}", self.dump_ctrls(false));
+                trace!(target: "tvm", "{}", self.dump_ctrls(true));
             }
             self.cmd.ictx.clear();
             if self.gas.get_gas_remaining() < 0 {
                 return err!(ExceptionCode::OutOfGas)
             }
             if let Some(err) = execution_result {
-                self.undo();
-                self.raise_exception(err)?;
+                if let TvmError::TvmExceptionFull(err) = err.downcast()? {
+                    self.undo();
+                    self.raise_exception(err)?;
+                }
             }
         }
     }
@@ -232,33 +254,37 @@ impl Engine {
     pub(in executor) fn seek_next_cmd(&mut self) -> Result<Option<i32>> {
         while self.cc.code().remaining_bits() == 0 {
             let mut log_string = None;
+            let gas = self.gas_used();
             let err = if let Ok(reference) = self.cc.code().reference(0) {
                 log_string = Some("IMPLICIT JMPREF");
                 if reference.bit_length() % 8 != 0 {
                     err_opt!(ExceptionCode::InvalidOpcode)
                 } else {
-                    *self.cc.code_mut() = SliceData::from_cell(reference, &mut self.gas);
+                    self.gas.try_use_gas(Gas::implicit_jmp_price())?;
+                    *self.cc.code_mut() = self.load_cell(reference);
                     None
                 }
             } else { //TODO: put every case in functions
                 match self.cc.type_of.clone() {
                     ContinuationType::Ordinary => {
+                        self.gas.try_use_gas(Gas::implicit_ret_price())?;
                         if self.ctrls.get(0).is_none() {
                             return Ok(Some(0))
                         }
                         log_string = Some("IMPLICIT RET");
                         switch(Ctx{engine: self}, ctrl!(0)).err()
-                    },
+                    }
                     ContinuationType::PushInt(code) => {
                         log_string = Some("IMPLICIT PUSHINT");
                         self.cc.stack.push(int!(code));
                         switch(Ctx{engine: self}, ctrl!(0)).err()
-                    },
+                    }
                     ContinuationType::Quit(exit_code) => {
                         return Ok(Some(exit_code))
-                    },
+                    }
                     ContinuationType::TryCatch => {
                         log_string = Some("IMPLICIT RET FROM TRY-CATCH");
+                        self.gas.try_use_gas(Gas::implicit_ret_price())?;
                         self.ctrls.remove(2).unwrap();
                         switch(Ctx{engine: self}, ctrl!(0)).err()
                     }
@@ -286,20 +312,27 @@ impl Engine {
                             }
                             Err(e) => Some(e)
                         }
-                    },
+                    }
                     ContinuationType::RepeatLoopBody(code, counter) => {
                         if counter > 1 {
                             log_string = Some("NEXT REPEAT ITERATION");
+                            let n = self.cmd.var_count();
                             if let ContinuationType::RepeatLoopBody(_, ref mut counter) = self.cc.type_of {
                                 *counter -= 1;
                             }
-                            *self.cc.code_mut() = code;
-                            None
+                            self.cmd.push_var(StackItem::Continuation(Arc::new(
+                                ContinuationData::with_code(code)
+                            )));
+                            copy_to_var(Ctx{engine:self}, CC)
+                            .and_then(|ctx| swap(ctx, savelist!(var!(n + 1), 0), ctrl!(0))) // ec_repeat.savelist[0] = cc
+                            .and_then(|ctx| swap(ctx, savelist!(var!(n), 0), var!(n + 1))) // body.savelist[0] = ec_repeat
+                            .and_then(|ctx| switch(ctx, var!(n)))
+                            .err()
                         } else {
                             log_string = Some("RET FROM REPEAT");
                             switch(Ctx{engine: self}, ctrl!(0)).err()
                         }
-                    },
+                    }
                     ContinuationType::UntilLoopCondition(body) => {
                         match self.check_until_loop_condition() {
                             Ok(true) => {
@@ -320,7 +353,7 @@ impl Engine {
                             }
                             Err(e) => Some(e)
                         }
-                    },
+                    }
                     ContinuationType::AgainLoopBody(slice) => {
                         log_string = Some("NEXT AGAIN ITERATION");
                         let n = self.cmd.var_count();
@@ -337,20 +370,32 @@ impl Engine {
             if let Some(log_string) = log_string {
                 self.step += 1;
                 if self.trace_bit(Engine::TRACE_CODE) {
-                    trace!(target: "tvm", "{} {}\n", self.step, log_string);
+                    trace!(target: "tvm", "{}: {}\n", self.step, log_string);
+                }
+                if self.trace_bit(Engine::TRACE_GAS) && gas != self.gas_used() {
+                    trace!(target: "tvm", "Gas: {} ({})\n", self.gas_used(), self.gas_used() - gas);
                 }
                 if self.trace_bit(Engine::TRACE_STACK) {
                     trace!(target: "tvm", "{}", self.dump_stack("Stack trace", false));
                 }
                 if self.trace_bit(Engine::TRACE_CTRLS) {
-                    trace!(target: "tvm", "{}", self.dump_ctrls(false));
+                    trace!(target: "tvm", "{}", self.dump_ctrls(true));
                 }
             }
             if let Some(err) = err {
-                self.raise_exception(err)?;
+                if let TvmError::TvmExceptionFull(err) = err.downcast()? {
+                    self.raise_exception(err)?;
+                }
             }
         }
         Ok(None)
+    }
+
+    /// Loads cell to slice cheking in precashed map
+    pub fn load_cell(&mut self, cell: Cell) -> SliceData {
+        let first = self.visited_cells.insert(cell.repr_hash());
+        self.gas.use_gas(Gas::load_cell_price(first));
+        cell.into()
     }
 
     pub fn get_committed_state(&self) -> &CommittedState {
@@ -391,6 +436,8 @@ impl Engine {
                 "3: copy of CC".to_string()
             } else if i == 7 {
                 "7: SmartContractInfo".to_string()
+            } else if let StackItem::Continuation(x) = item {
+                format!("{}: {:?}", i, x.type_of)
             } else {
                 format!("{}: {}", i, item.dump_as_fift())
             })).collect::<Vec<_>>().join("\n")
@@ -855,17 +902,14 @@ impl Engine {
     fn raise_exception(&mut self, exception: Exception) -> Status {
         self.step += 1;
         if self.trace_bit(Engine::TRACE_CODE) {
-            trace!(target: "tvm", "\n{} EXCEPTION: {}\n", self.step, exception);
+            trace!(target: "tvm", "\n{}: EXCEPTION: {}\n", self.step, exception);
         }
         if self.trace_bit(Engine::TRACE_STACK) {
             trace!(target: "tvm", "{}\n", self.dump_stack("Stack trace", false));
         }
-        self.gas.use_gas(Gas::exception_price(exception.code));
-        if self.gas.get_gas_remaining() < 0 {
-            return err!(ExceptionCode::OutOfGas)
-        }
+        self.gas.try_use_gas(Gas::exception_price(exception.code))?;
         if self.ctrls.get(2).is_none() {
-            return Err(exception)
+            return Err(failure::Error::from(TvmError::TvmExceptionFull(exception)))
         }
         self.cc.stack.push(exception.value);
         self.cc.stack.push(int!(exception.number));

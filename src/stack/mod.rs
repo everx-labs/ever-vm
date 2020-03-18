@@ -26,6 +26,7 @@ use types::{
     ResultRef,
     ResultVec,
     Status,
+    TvmError,
 };
 
 pub mod serialization;

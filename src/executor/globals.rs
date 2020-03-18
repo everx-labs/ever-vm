@@ -17,13 +17,13 @@ use executor::Mask;
 use executor::types::{Instruction, InstructionOptions};
 use executor::engine::{Engine, storage::fetch_stack};
 use stack::StackItem;
-use types::Exception;
+use types::Failure;
 
 const STACK: u8 = 0x02;
 const CMD:   u8 = 0x04;
 const SET:   u8 = 0x10;
 
-fn execute_setget_globalvar(engine: &mut Engine, name: &'static str, how: u8) -> Option<Exception> {
+fn execute_setget_globalvar(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     let mut inst = Instruction::new(name);
     let mut params = 0;
     if how.bit(CMD) {
@@ -66,24 +66,24 @@ fn execute_setget_globalvar(engine: &mut Engine, name: &'static str, how: u8) ->
 
 // GETGLOBVAR (k–x), returns the k-th global variable for 0 ≤ k < 255. 
 // Equivalent to PUSH c7; SWAP; INDEXVARQ
-pub(super) fn execute_getglobvar(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_getglobvar(engine: &mut Engine) -> Failure {
     execute_setget_globalvar(engine, "GETGLOBVAR", STACK)
 }
 
 // GETGLOB k( –x), returns the k-th global variable for 1 ≤ k ≤ 31
 // Equivalent to PUSH c7; INDEXQ k.
-pub(super) fn execute_getglob(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_getglob(engine: &mut Engine) -> Failure {
     execute_setget_globalvar(engine, "GETGLOB", CMD)
 }
 
 // SETGLOBVAR (x k– ), assigns x to the k-th global variable for 0 ≤ k <255.
 // Equivalent to PUSH c7; ROTREV; SETINDEXVARQ; POP c7.
-pub(super) fn execute_setglobvar(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_setglobvar(engine: &mut Engine) -> Failure {
     execute_setget_globalvar(engine, "SETGLOBVAR", SET | STACK)
 }
 
 // SETGLOB k (x– ), assigns x to the k-th global variable for 1 ≤ k ≤ 31.
 // Equivalent to PUSH c7; SWAP; SETINDEXQ k; POP c7
-pub(super) fn execute_setglob(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_setglob(engine: &mut Engine) -> Failure {
     execute_setget_globalvar(engine, "SETGLOB", SET | CMD)
 }

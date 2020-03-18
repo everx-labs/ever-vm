@@ -16,7 +16,7 @@ use executor::engine::Engine;
 use executor::types::{Ctx, Instruction, InstructionOptions};
 use executor::Mask;
 use stack::{StackItem, SliceData};
-use types::{Exception, ExceptionCode, Result, Failure};
+use types::{ExceptionCode, Failure, Result, TvmError};
 use std::cmp;
 use std::str;
 use std::sync::Arc;
@@ -107,21 +107,21 @@ where F: FnOnce(Ctx) -> Result<Ctx> {
     .err()
 }
 /// dumps all the stack 
-pub(crate) fn execute_dump_stack(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_dump_stack(engine: &mut Engine) -> Failure {
     internal_dump(engine, "DUMPSTK", FLUSH, |ctx| {
         let depth = cmp::min(ctx.engine.cc.stack.depth(), 255);
         dump_stack(ctx, depth, true)
     })
 }
 /// dumps al least top 1..15 registers
-pub(crate) fn execute_dump_stack_top(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_dump_stack_top(engine: &mut Engine) -> Failure {
     internal_dump(engine, "DUMPSTKTOP", FLUSH | DEPTH, |ctx| {
         let depth = cmp::min(ctx.engine.cc.stack.depth(), ctx.engine.cmd.integer() as usize);
         dump_stack(ctx, depth, false)
     })
 }
 /// buffers s0 as hex
-pub(crate) fn execute_print_hex(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_print_hex(engine: &mut Engine) -> Failure {
     internal_dump(engine, "HEXPRINT", 0, |ctx| {
         if ctx.engine.cc.stack.depth() > 0 {
             let dump = dump_var(ctx.engine.cc.stack.get(0), HEX);
@@ -131,7 +131,7 @@ pub(crate) fn execute_print_hex(engine: &mut Engine) -> Option<Exception> {
     })
 }
 /// buffers s0 as binary
-pub(crate) fn execute_print_bin(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_print_bin(engine: &mut Engine) -> Failure {
     internal_dump(engine, "BINPRINT", 0, |ctx| {
         if ctx.engine.cc.stack.depth() > 0 {
             let dump = dump_var(ctx.engine.cc.stack.get(0), BIN);
@@ -141,7 +141,7 @@ pub(crate) fn execute_print_bin(engine: &mut Engine) -> Option<Exception> {
     })
 }
 /// buffers s0 as string
-pub(crate) fn execute_print_str(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_print_str(engine: &mut Engine) -> Failure {
     internal_dump(engine, "STRPRINT", 0, |ctx| {
         if ctx.engine.cc.stack.depth() > 0 {
             let dump = dump_var(ctx.engine.cc.stack.get(0), STR);
@@ -151,7 +151,7 @@ pub(crate) fn execute_print_str(engine: &mut Engine) -> Option<Exception> {
     })
 }
 /// dumps s0 as hex
-pub(crate) fn execute_dump_hex(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_dump_hex(engine: &mut Engine) -> Failure {
     internal_dump(engine, "HEXDUMP", FLUSH, |ctx| {
         if ctx.engine.cc.stack.depth() > 0 {
             let dump = dump_var(ctx.engine.cc.stack.get(0), HEX) + "\n";
@@ -161,7 +161,7 @@ pub(crate) fn execute_dump_hex(engine: &mut Engine) -> Option<Exception> {
     })
 }
 /// dumps s0 as binary
-pub(crate) fn execute_dump_bin(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_dump_bin(engine: &mut Engine) -> Failure {
     internal_dump(engine, "BINDUMP", FLUSH, |ctx| {
         if ctx.engine.cc.stack.depth() > 0 {
             let dump = dump_var(ctx.engine.cc.stack.get(0), BIN) + "\n";
@@ -171,7 +171,7 @@ pub(crate) fn execute_dump_bin(engine: &mut Engine) -> Option<Exception> {
     })
 }
 /// dumps s0 as string
-pub(crate) fn execute_dump_str(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_dump_str(engine: &mut Engine) -> Failure {
     internal_dump(engine, "STRDUMP", FLUSH, |ctx| {
         if ctx.engine.cc.stack.depth() > 0 {
             let dump = dump_var(ctx.engine.cc.stack.get(0), STR) + "\n";
@@ -181,19 +181,19 @@ pub(crate) fn execute_dump_str(engine: &mut Engine) -> Option<Exception> {
     })
 }
 /// turns debug output on
-pub(crate) fn execute_debug_on(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_debug_on(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("DEBUGON"))
     .map(|ctx| ctx.engine.switch_debug(true))
     .err()
 }
 /// turns debug output off
-pub(crate) fn execute_debug_off(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_debug_off(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("DEBUGOFF"))
     .map(|ctx| ctx.engine.switch_debug(true))
     .err()
 }
 /// dumps s(n)
-pub(crate) fn execute_dump_var(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_dump_var(engine: &mut Engine) -> Failure {
     internal_dump(engine, "DUMP", FLUSH | INDEX, |ctx| {
         let index = ctx.engine.cmd.integer() as usize;
         if index < ctx.engine.cc.stack.depth() {
@@ -204,7 +204,7 @@ pub(crate) fn execute_dump_var(engine: &mut Engine) -> Option<Exception> {
     })
 }
 /// prints s(n)
-pub(crate) fn execute_print_var(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_print_var(engine: &mut Engine) -> Failure {
     internal_dump(engine, "PRINT", INDEX, |ctx| {
         let index = ctx.engine.cmd.integer() as usize;
         if index < ctx.engine.cc.stack.depth() {
@@ -235,7 +235,7 @@ where F: FnOnce(Ctx, String) -> Result<Ctx> {
     .err()
 }
 
-pub(crate) fn execute_dump_string(engine: &mut Engine) -> Option<Exception> {
+pub(crate) fn execute_dump_string(engine: &mut Engine) -> Failure {
     let length = 1 + (0x0F & engine.cc.last_cmd() as usize);
     match engine.cc.next_cmd() {
         Ok(0) if length == 1 => internal_dump_string(engine, "LOGFLUSH", FLUSH, |ctx, _string| {

@@ -14,9 +14,10 @@
 
 use executor::microcode::{VAR, CELL, SLICE, BUILDER, CONTINUATION};
 use executor::types::{Ctx, Undo};
-use stack::{ContinuationData, SliceData, StackItem};
+use stack::{ContinuationData, StackItem};
 use std::mem;
 use std::sync::Arc;
+use ton_types::GasConsumer;
 use types::{Result, Status};
 
 // Utilities ******************************************************************
@@ -24,28 +25,48 @@ use types::{Result, Status};
 fn convert_any(ctx: &mut Ctx, x: u16, to: u16, from: u16) -> Status {
     match address_tag!(x) {
         VAR => {
-            let x = ctx.engine.cmd.var_mut(storage_index!(x));
-            let data = match to {
-                CONTINUATION => StackItem::Continuation(Arc::new(ContinuationData::with_code(match from {
-                    SLICE => x.as_slice()?.clone(),
-                    CELL => SliceData::from_cell_ref(x.as_cell()?, &mut ctx.engine.gas),
-                    _ => unimplemented!()
-                }))),
-                CELL => StackItem::Cell(match from {
-                    BUILDER => x.as_builder_mut()?.finalize(&mut ctx.engine.gas),
-                    CONTINUATION => x.as_continuation()?.code().into_cell(), // it only for undo
-                    // SLICE => x.as_slice()?.into_cell(),
-                    _ => unimplemented!("to: {:X}, from: {:X}", to, from)
-                }),
-                SLICE => StackItem::Slice(match from {
-                    BUILDER => x.as_builder_mut()?.finalize_and_load(&mut ctx.engine.gas),
-                    CELL => SliceData::from_cell_ref(x.as_cell()?, &mut ctx.engine.gas),
-                    // CONTINUATION => x.as_continuation()?.code().clone(),
-                    _ => unimplemented!("to: {:X}, from: {:X}", to, from)
-                }),
-                _ => unimplemented!("to: {:X}, from: {:X}", to, from)
+            let data = match from {
+                BUILDER => {
+                    let var = ctx.engine.cmd.var_mut(storage_index!(x));
+                    let builder = var.as_builder_mut()?;
+                    let cell = ctx.engine.finalize_cell(builder);
+                    match to {
+                        CELL => StackItem::Cell(cell),
+                        SLICE => StackItem::Slice(ctx.engine.load_cell(cell)),
+                        _ => unimplemented!()
+                    }
+                }
+                CELL => {
+                    let var = ctx.engine.cmd.var(storage_index!(x));
+                    let cell = var.as_cell()?.clone();
+                    let slice = ctx.engine.load_cell(cell);
+                    match to {
+                        CONTINUATION => StackItem::Continuation(Arc::new(ContinuationData::with_code(slice))),
+                        SLICE => StackItem::Slice(slice),
+                        _ => unimplemented!()
+                    }
+                }
+                SLICE => {
+                    let var = ctx.engine.cmd.var(storage_index!(x));
+                    let slice = var.as_slice()?.clone();
+                    match to {
+                        CONTINUATION => StackItem::Continuation(Arc::new(ContinuationData::with_code(slice))),
+                        SLICE => StackItem::Slice(slice),
+                        _ => unimplemented!()
+                    }
+                }
+                CONTINUATION => { // it only for undo
+                    let var = ctx.engine.cmd.var(storage_index!(x));
+                    let slice = var.as_continuation()?.code();
+                    match to {
+                        CELL => StackItem::Cell(slice.cell().clone()),
+                        SLICE => StackItem::Slice(slice.clone()),
+                        _ => unimplemented!()
+                    }
+                }
+                _ => unimplemented!()
             };
-            mem::replace(x, data);
+            mem::replace(ctx.engine.cmd.var_mut(storage_index!(x)), data);
         }
         _ => unimplemented!("x: {:X}, to: {:X}, from: {:X}", x, to, from)
     };

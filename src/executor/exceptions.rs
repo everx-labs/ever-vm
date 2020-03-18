@@ -20,7 +20,7 @@ use executor::types::{Ctx, Instruction, InstructionOptions};
 use stack::{ContinuationType, IntegerData, StackItem};
 use std::ops::Range;
 use std::sync::Arc;
-use types::{Exception, ExceptionCode, Result};
+use types::{Exception, ExceptionCode, Failure, Result, TvmError};
 
 //Utilities **********************************************************************************
 //(c c' -)
@@ -74,12 +74,12 @@ fn do_throw(ctx: Ctx, number_index: isize, value_index: isize) -> Result<Ctx> {
     } else {
         ctx.engine.cmd.var(value_index as usize).clone()
     };
-    Err(Exception::from_number_and_value(number, value, file!(), line!()))
+    Err(failure::Error::from(TvmError::TvmExceptionFull(Exception::from_number_and_value(number, value, file!(), line!()))))
 }
 
 //Handlers ***********************************************************************************
 
-fn execute_throw(engine: &mut Engine, range: Range<isize>) -> Option<Exception> {
+fn execute_throw(engine: &mut Engine, range: Range<isize>) -> Failure {
     engine.load_instruction(
         Instruction::new("THROW").set_opts(InstructionOptions::Integer(range)),
     )
@@ -88,17 +88,17 @@ fn execute_throw(engine: &mut Engine, range: Range<isize>) -> Option<Exception> 
 }
 
 // (=> throw 0 n)
-pub(super) fn execute_throw_short(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_throw_short(engine: &mut Engine) -> Failure {
     execute_throw(engine, 0..64)
 }
 
 // (=> throw 0 n)
-pub(super) fn execute_throw_long(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_throw_long(engine: &mut Engine) -> Failure {
     execute_throw(engine, 0..2048)
 }
 
 // helper for THROWIF/THROWIFNOT instructions
-fn execute_throwif_throwifnot(engine: &mut Engine, reverse_condition: bool, range: Range<isize>) -> Option<Exception> {
+fn execute_throwif_throwifnot(engine: &mut Engine, reverse_condition: bool, range: Range<isize>) -> Failure {
     engine.load_instruction(
         Instruction::new(if reverse_condition {"THROWIFNOT"} else {"THROWIF"})
             .set_opts(InstructionOptions::Integer(range)),
@@ -114,19 +114,19 @@ fn execute_throwif_throwifnot(engine: &mut Engine, reverse_condition: bool, rang
     .err()
 }
 
-pub(super) fn execute_throwif_short(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_throwif_short(engine: &mut Engine) -> Failure {
     execute_throwif_throwifnot(engine, false, 0..64)
 }
 
-pub(super) fn execute_throwif_long(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_throwif_long(engine: &mut Engine) -> Failure {
     execute_throwif_throwifnot(engine, false, 0..2048)
 }
 
-pub(super) fn execute_throwifnot_short(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_throwifnot_short(engine: &mut Engine) -> Failure {
     execute_throwif_throwifnot(engine, true, 0..64)
 }
 
-pub(super) fn execute_throwifnot_long(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_throwifnot_long(engine: &mut Engine) -> Failure {
     execute_throwif_throwifnot(engine, true, 0..2048)
 }
 
@@ -134,7 +134,7 @@ pub(super) fn execute_throwifnot_long(engine: &mut Engine) -> Option<Exception> 
 fn execute_throwanyif_throwanyifnot(
     engine: &mut Engine, 
     reverse_condition: bool
-) -> Option<Exception> {
+) -> Failure {
     engine.load_instruction(
         Instruction::new(if reverse_condition {"THROWANYIFNOT"} else {"THROWANYIF"})
     )
@@ -150,17 +150,17 @@ fn execute_throwanyif_throwanyifnot(
 }
 
 // (n f, f!=0 => throw 0 n)
-pub(super) fn execute_throwanyif(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_throwanyif(engine: &mut Engine) -> Failure {
     execute_throwanyif_throwanyifnot(engine, false)
 }
 
 // (n f, f==0 => throw 0 n)
-pub(super) fn execute_throwanyifnot(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_throwanyifnot(engine: &mut Engine) -> Failure {
     execute_throwanyif_throwanyifnot(engine, true)
 }
 
 // (n => throw 0 n)
-pub(super) fn execute_throwany(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_throwany(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("THROWANY")
     )
@@ -170,7 +170,7 @@ pub(super) fn execute_throwany(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x => throw x n)
-pub(super) fn execute_throwarg(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_throwarg(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("THROWARG").set_opts(InstructionOptions::Integer(0..2048)),
     )
@@ -180,7 +180,7 @@ pub(super) fn execute_throwarg(engine: &mut Engine) -> Option<Exception> {
 }
 
 // (x n => throw x n)
-pub(super) fn execute_throwargany(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_throwargany(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("THROWARGANY")
     )
@@ -193,7 +193,7 @@ pub(super) fn execute_throwargany(engine: &mut Engine) -> Option<Exception> {
 fn execute_throwarganyif_throwarganyifnot(
     engine: &mut Engine, 
     reverse_condition: bool
-) -> Option<Exception> {
+) -> Failure {
     engine.load_instruction(
         Instruction::new(if reverse_condition {"THROWARGANYIFNOT"} else {"THROWARGANYIF"})
     )
@@ -209,12 +209,12 @@ fn execute_throwarganyif_throwarganyifnot(
 }
 
 // (x n f, f!=0 => throw x n)
-pub(super) fn execute_throwarganyif(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_throwarganyif(engine: &mut Engine) -> Failure {
     execute_throwarganyif_throwarganyifnot(engine, false)
 }
 
 // (x n f, f==0 => throw x n)
-pub(super) fn execute_throwarganyifnot(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_throwarganyifnot(engine: &mut Engine) -> Failure {
     execute_throwarganyif_throwarganyifnot(engine, true)
 }
 
@@ -222,7 +222,7 @@ pub(super) fn execute_throwarganyifnot(engine: &mut Engine) -> Option<Exception>
 fn execute_throwargif_throwargifnot(
     engine: &mut Engine, 
     reverse_condition: bool
-) -> Option<Exception> {
+) -> Failure {
     engine.load_instruction(
         Instruction::new(
             if reverse_condition {"THROWARGIFNOT"} else {"THROWARGIF"}
@@ -240,17 +240,17 @@ fn execute_throwargif_throwargifnot(
 }
 
 // (x f, f!=0 => throw x n)
-pub(super) fn execute_throwargif(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_throwargif(engine: &mut Engine) -> Failure {
     execute_throwargif_throwargifnot(engine, false)
 }
 
 // (x f, f==0 => throw x n)
-pub(super) fn execute_throwargifnot(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_throwargifnot(engine: &mut Engine) -> Failure {
     execute_throwargif_throwargifnot(engine, true)
 }
 
 // (c c' - ) 
-pub(super) fn execute_try(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_try(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("TRY")
     )
@@ -260,7 +260,7 @@ pub(super) fn execute_try(engine: &mut Engine) -> Option<Exception> {
 
 // (c c' - ) 
 //move 0<=p<=15 stack elements from cc to c, return 0<=r<=15 stack values of resulting stack of c or c'.
-pub(super) fn execute_tryargs(engine: &mut Engine) -> Option<Exception> {
+pub(super) fn execute_tryargs(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("TRYARGS").set_opts(InstructionOptions::ArgumentAndReturnConstraints)
     )
