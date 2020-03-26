@@ -12,11 +12,12 @@
 * limitations under the License.
 */
 
-use executor::engine::Engine;
-use executor::math::DivMode;
-use stack::{SaveList, SliceData, StackItem, IntegerData};
-use std::fmt;
-use std::ops::Range;
+use crate::{
+    executor::{engine::Engine, math::DivMode}, 
+    stack::{StackItem, integer::IntegerData, savelist::SaveList}
+};
+use std::{fmt, ops::Range};
+use ton_types::SliceData;
 
 pub(super) struct Ctx<'a> {
     pub(super) engine: &'a mut Engine,

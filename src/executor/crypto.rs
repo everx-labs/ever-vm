@@ -12,16 +12,29 @@
 * limitations under the License.
 */
 
-use ed25519_dalek::{PublicKey, Signature, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH};
-use executor::engine::{Engine, storage::fetch_stack};
-use executor::types::Instruction;
-use sha2::{Digest, Sha256, Sha512};
-use stack::serialization::{Deserializer};
-use stack::integer::serialization::{Encoding, IntoSliceExt, UnsignedIntegerBigEndianEncoding};
-use stack::{BuilderData, IntegerData, StackItem};
+use crate::{
+    error::TvmError, 
+    executor::{
+        engine::{Engine, storage::fetch_stack}, types::Instruction
+    },
+    stack::{
+        StackItem,
+        integer::{
+            IntegerData, 
+            serialization::{Encoding, IntoSliceExt, UnsignedIntegerBigEndianEncoding}
+        },
+        serialization::Deserializer
+    },
+    types::{Exception, Failure}
+};
+use sha2::Digest;
 use std::sync::Arc;
-use ton_types::GasConsumer;
-use types::{ExceptionCode, Failure, TvmError};
+use ton_types::{BuilderData, error, GasConsumer, types::ExceptionCode};
+
+const PUBLIC_KEY_BITS:  usize = PUBLIC_KEY_BYTES * 8;
+const SIGNATURE_BITS:   usize = SIGNATURE_BYTES * 8;
+const PUBLIC_KEY_BYTES: usize = ed25519_dalek::PUBLIC_KEY_LENGTH;
+const SIGNATURE_BYTES:  usize = ed25519_dalek::SIGNATURE_LENGTH;
 
 /// HASHCU (c – x), computes the representation hash of a Cell c
 /// and returns it as a 256-bit unsigned integer x.
@@ -62,7 +75,7 @@ pub(super) fn execute_sha256u(engine: &mut Engine) -> Failure {
         .and_then(|ctx| {
             let slice = ctx.engine.cmd.var(0).as_slice()?;
             if slice.remaining_bits() % 8 == 0 {
-                let mut hasher = Sha256::new();
+                let mut hasher = sha2::Sha256::new();
                 hasher.input(slice.get_bytestring(0));
                 let hash_int = hash_to_uint(hasher.result());
                 ctx.engine.cc.stack.push(StackItem::Integer(hash_int));
@@ -84,20 +97,20 @@ pub(super) fn execute_chksigns(engine: &mut Engine) -> Failure {
         .and_then(|ctx| fetch_stack(ctx, 3))
         .and_then(|ctx| {
             let pub_key = ctx.engine.cmd.var(0).as_integer()?
-                .into_builder::<UnsignedIntegerBigEndianEncoding>(PUBLIC_KEY_LENGTH * 8)?;
-            if ctx.engine.cmd.var(1).as_slice()?.remaining_bits() < SIGNATURE_LENGTH * 8
-                && ctx.engine.cmd.var(2).as_slice()?.remaining_bits() % 8 != 0 {
+                .into_builder::<UnsignedIntegerBigEndianEncoding>(PUBLIC_KEY_BITS)?;
+            if (ctx.engine.cmd.var(1).as_slice()?.remaining_bits() < SIGNATURE_BITS) &&
+               (ctx.engine.cmd.var(2).as_slice()?.remaining_bits() % 8 != 0) {
                 return err!(ExceptionCode::CellUnderflow)
             }
-            let pub_key = PublicKey::from_bytes(&pub_key.data()[..PUBLIC_KEY_LENGTH])
-                .map_err(|_| exception!(ExceptionCode::FatalError))?;
-
-            let signature = Signature::from_bytes(
-                &ctx.engine.cmd.var(1).as_slice()?.get_bytestring(0)[..SIGNATURE_LENGTH]
+            let pub_key = ed25519_dalek::PublicKey::from_bytes(
+                &pub_key.data()[..PUBLIC_KEY_BYTES]
+            ).map_err(|_| exception!(ExceptionCode::FatalError))?;
+            let signature = ed25519_dalek::Signature::from_bytes(
+                &ctx.engine.cmd.var(1).as_slice()?.get_bytestring(0)[..SIGNATURE_BYTES]
             ).map_err(|_| exception!(ExceptionCode::FatalError))?;
 
             let data = ctx.engine.cmd.var(2).as_slice()?.get_bytestring(0);
-            let result = pub_key.verify::<Sha512>(&data, &signature).is_ok();
+            let result = pub_key.verify(&data, &signature).is_ok();
             ctx.engine.cc.stack.push(boolean!(result));
             Ok(ctx)
         })
@@ -112,20 +125,21 @@ pub(super) fn execute_chksignu(engine: &mut Engine) -> Failure {
         .and_then(|ctx| fetch_stack(ctx, 3))
         .and_then(|ctx| {
             let pub_key = ctx.engine.cmd.var(0).as_integer()?
-                .into_builder::<UnsignedIntegerBigEndianEncoding>(PUBLIC_KEY_LENGTH * 8)?;
-            if ctx.engine.cmd.var(1).as_slice()?.remaining_bits() < SIGNATURE_LENGTH * 8 {
+                .into_builder::<UnsignedIntegerBigEndianEncoding>(PUBLIC_KEY_BITS)?;
+            if ctx.engine.cmd.var(1).as_slice()?.remaining_bits() < SIGNATURE_BITS {
                 return err!(ExceptionCode::CellUnderflow)
             }
             let hash = ctx.engine.cmd.var(2).as_integer()?
                 .into_builder::<UnsignedIntegerBigEndianEncoding>(256)?;
 
-            let signature = Signature::from_bytes(
-                &ctx.engine.cmd.var(1).as_slice()?.get_bytestring(0)[..SIGNATURE_LENGTH]
+            let signature = ed25519_dalek::Signature::from_bytes(
+                &ctx.engine.cmd.var(1).as_slice()?.get_bytestring(0)[..SIGNATURE_BYTES]
             ).map_err(|_| exception!(ExceptionCode::FatalError))?;
 
-            let pub_key = PublicKey::from_bytes(&pub_key.data())
-                .map_err(|_| exception!(ExceptionCode::FatalError))?;
-            let result = pub_key.verify::<Sha512>(hash.data(), &signature).is_ok();
+            let pub_key = ed25519_dalek::PublicKey::from_bytes(
+                &pub_key.data()
+            ).map_err(|_| exception!(ExceptionCode::FatalError))?;
+            let result = pub_key.verify(hash.data(), &signature).is_ok();
             ctx.engine.cc.stack.push(boolean!(result));
             Ok(ctx)
         })

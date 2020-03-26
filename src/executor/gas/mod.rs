@@ -12,16 +12,17 @@
 * limitations under the License.
 */
 
-pub mod gas_state;
-
-use executor::engine::Engine;
-use executor::engine::storage::fetch_stack;
-use executor::types::Instruction;
-use stack::StackItem;
-use stack::integer::{IntegerData, conversion::FromInt};
-use types::{ExceptionCode, Failure, TvmError};
-use self::gas_state::SPEC_LIMIT;
+use crate::{
+    error::TvmError, 
+    executor::{engine::{Engine, storage::fetch_stack}, types::Instruction},
+    stack::{StackItem, integer::{IntegerData, conversion::FromInt}},
+    types::{Exception, Failure}
+};
 use std::sync::Arc;
+use ton_types::{error, types::ExceptionCode};
+
+pub mod gas_state;
+use gas_state::SPEC_LIMIT;
 
 // Application-specific primitives - A.10; Gas-related primitives - A.10.2
 // ACCEPT - F800 

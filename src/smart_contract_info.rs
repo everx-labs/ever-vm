@@ -12,14 +12,14 @@
 * limitations under the License.
 */
 
-
-use types::{UInt256};
-use stack::{Cell, IntegerData, SliceData, StackItem};
-use stack::{HashmapE, HashmapType};
-use sha2::{Sha256, Digest};
-use stack::integer::serialization::*;
-use stack::serialization::Deserializer;
+use crate::stack::{
+    StackItem, 
+    integer::{IntegerData, serialization::{Encoding, UnsignedIntegerBigEndianEncoding}},
+    serialization::Deserializer
+};
+use sha2::Digest;
 use std::sync::Arc;
+use ton_types::{Cell, HashmapE, HashmapType, SliceData, types::UInt256};
 
 
 /*
@@ -114,7 +114,7 @@ impl SmartContractInfo{
     pub fn calc_rand_seed(&mut self, rand_seed_block: UInt256, in_msg_hash: UInt256) {
         // combine all parameters to vec and calculate hash of them
         let v = self.trans_lt.to_be_bytes();
-        let mut hasher = Sha256::new();
+        let mut hasher = sha2::Sha256::new();
         hasher.input(rand_seed_block.as_slice());
         hasher.input(self.myself.cell().repr_hash().as_slice());
         hasher.input(in_msg_hash.as_slice());

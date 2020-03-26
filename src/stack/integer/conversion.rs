@@ -12,16 +12,17 @@
 * limitations under the License.
 */
 
-use super::*;
-use types::{
-    ExceptionCode,
-    Result,
-    TvmError,
+use crate::{
+    error::TvmError, 
+    stack::integer::{
+        Int, IntegerData, IntegerValue, serialization::common::bits_to_bytes,
+        utils::{check_overflow, process_value, twos_complement}
+    },
+    types::Exception
 };
-use num_traits::{
-    Num,
-};
-use super::serialization::common::bits_to_bytes;
+use num_traits::{Num, Signed};
+use std::ops::RangeInclusive;
+use ton_types::{error, Result, types::ExceptionCode};
 
 impl IntegerData {
     /// Constructs new IntegerData from u32 in a fastest way.
@@ -32,7 +33,7 @@ impl IntegerData {
         }
         IntegerData {
             value: IntegerValue::Value(
-                Int::new(Sign::Plus, vec![value])
+                Int::new(num::bigint::Sign::Plus, vec![value])
             )
         }
     }
@@ -47,9 +48,9 @@ impl IntegerData {
             value: IntegerValue::Value(
                 Int::new(
                     if value < 0 {
-                        Sign::Minus
+                        num::bigint::Sign::Minus
                     } else {
-                        Sign::Plus
+                        num::bigint::Sign::Plus
                     }, vec![value.abs() as u32])
             )
         }
@@ -110,7 +111,7 @@ impl IntegerData {
     /// Constructs new IntegerData value from the little-endian slice of u32
     /// without overflow checking.
     #[inline]
-    pub fn from_vec_le_unchecked(sign: Sign, digits: Vec<u32>) -> IntegerData {
+    pub fn from_vec_le_unchecked(sign: num::bigint::Sign, digits: Vec<u32>) -> IntegerData {
         IntegerData {
             value: IntegerValue::Value(Int::new(sign, digits))
         }
@@ -119,7 +120,7 @@ impl IntegerData {
     /// Constructs new IntegerData value from the little-endian slice of u32
     /// with overflow checking.
     #[inline]
-    pub fn from_vec_le(sign: Sign, digits: Vec<u32>) -> Result<IntegerData> {
+    pub fn from_vec_le(sign: num::bigint::Sign, digits: Vec<u32>) -> Result<IntegerData> {
         let bigint = Int::new(sign, digits);
         if !check_overflow(&bigint) {
             return err!(ExceptionCode::IntegerOverflow);
@@ -143,7 +144,7 @@ impl IntegerData {
     }
 
     /// Returns value converted into given type with range checking.
-    pub fn into<T>(&self, range: std::ops::RangeInclusive<T>) -> Result<T>
+    pub fn into<T>(&self, range: RangeInclusive<T>) -> Result<T>
     where
         T: PartialOrd + std::fmt::Display + FromInt
     {
@@ -191,9 +192,9 @@ impl IntegerData {
         let digit_count = (byte_len + 3) >> 2;
         let mut digits: Vec<u32> = vec![0; digit_count];
         let (sign, mut value) = if greatest3bits & 0b100 == 0 {
-            (Sign::Plus, greatest3bits)
+            (num::bigint::Sign::Plus, greatest3bits)
         } else {
-            (Sign::Minus, 0xFFFF_FFF8u32 | greatest3bits)
+            (num::bigint::Sign::Minus, 0xFFFF_FFF8u32 | greatest3bits)
         };
 
         let mut upper = byte_len & 0b11;
@@ -216,7 +217,7 @@ impl IntegerData {
             digits[i] = value;
         }
 
-        if sign == Sign::Minus {
+        if sign == num::bigint::Sign::Minus {
             twos_complement(&mut digits);
         }
         Ok(IntegerData::from_vec_le_unchecked(sign, digits))
@@ -317,7 +318,7 @@ macro_rules! auto_from_int {
                     if let Some(x) = <dyn num::ToPrimitive>::$f(value) {
                         Ok(x)
                     } else {
-                        err!($crate::types::ExceptionCode::RangeCheckError)
+                        err!(ExceptionCode::RangeCheckError)
                     }
                 }
             }

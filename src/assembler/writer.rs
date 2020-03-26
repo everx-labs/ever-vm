@@ -12,8 +12,8 @@
 * limitations under the License.
 */
 
-use stack::{BuilderData, SliceData};
-use super::OperationError;
+use crate::assembler::OperationError;
+use ton_types::{BuilderData, SliceData};
 
 pub trait Writer : 'static {
     fn new() -> Self;

@@ -12,23 +12,18 @@
 * limitations under the License.
 */
 
-use executor::microcode::{VAR, STACK, CC, CC_SAVELIST, CTRL, CTRL_SAVELIST, VAR_SAVELIST};
-use executor::types::{Ctx, Undo};
-use stack::{ContinuationData, SaveList, StackItem};
-use executor::continuation::undo_set_nargs;
-use std::mem;
-use std::ops::Range;
-use std::sync::Arc;
-use types::{
-//    Exception,
-    ExceptionCode,
-    Result,
-    ResultMut,
-    ResultRef,
-    ResultVec,
-    Status,
-    TvmError,
+use crate::{
+    error::TvmError,
+    executor::{
+        continuation::undo_set_nargs,
+        microcode::{VAR, STACK, CC, CC_SAVELIST, CTRL, CTRL_SAVELIST, VAR_SAVELIST}, 
+        types::{Ctx, Undo}
+    },
+    stack::{StackItem, continuation::ContinuationData, savelist::SaveList},
+    types::{Exception, ResultMut, ResultRef, ResultVec, Status}
 };
+use std::{mem, ops::Range, sync::Arc};
+use ton_types::{error, Result, types::ExceptionCode};
 
 // Utilities ******************************************************************
 
@@ -142,8 +137,11 @@ fn put_to_list(ctx: &mut Ctx, x: &mut Info, y: &mut StackItem) -> Result<Option<
 fn put_to_list_from_item(ctx: &mut Ctx, x: &mut Info, y: &Info) -> Result<Option<StackItem>> {
     if !SaveList::can_put(x.index, y.item(ctx)?) {
         let value = x.list(ctx)?.get(x.index).map(|value| value.clone()).unwrap_or_default();
-        error!(target: "tvm", "Cannot set: {} to list with index: {} and value: {}",
-            y.item(ctx)?.clone(), x.index, value);
+        log::error!(
+            target: "tvm", 
+            "Cannot set: {} to list with index: {} and value: {}",
+            y.item(ctx)?.clone(), x.index, value
+        );
         err!(ExceptionCode::TypeCheckError)
     } else {
         let mut y = y.item(ctx)?.withdraw();
@@ -154,8 +152,11 @@ fn put_to_list_from_item(ctx: &mut Ctx, x: &mut Info, y: &Info) -> Result<Option
 fn put_to_list_from_list(ctx: &mut Ctx, x: &mut Info, y: &mut Info) -> Result<Option<StackItem>> {
     if !SaveList::can_put(x.index, y.list(ctx)?.get(y.index).unwrap()) {
         let value = x.list(ctx)?.get(x.index).map(|value| value.clone()).unwrap_or_default();
-        error!(target: "tvm", "Cannot set: {} to list with index: {} and value: {}",
-            y.list(ctx)?.get(y.index).unwrap().clone(), x.index, value);
+        log::error!(
+            target: "tvm", 
+            "Cannot set: {} to list with index: {} and value: {}",
+            y.list(ctx)?.get(y.index).unwrap().clone(), x.index, value
+        );
         err!(ExceptionCode::TypeCheckError)
     } else {
         let mut y = y.list(ctx)?.remove(y.index).unwrap();
@@ -248,7 +249,7 @@ fn swap_any(ctx: &mut Ctx, mut x: u16, mut y: u16) -> Status {
 // Microfunctions *************************************************************
 
 // c[*] = CC.savelist[*], excluding given indexes
-pub(in executor) fn apply_savelist(ctx: Ctx, exclude: Range<usize>) -> Result<Ctx> {
+pub(in crate::executor) fn apply_savelist(ctx: Ctx, exclude: Range<usize>) -> Result<Ctx> {
     let mut prev = SaveList::new();
     let mut undo = false;
     for (k, v) in ctx.engine.cc.savelist.iter_mut() {
@@ -280,7 +281,7 @@ fn undo_apply_savelist(ctx: &mut Ctx, mut savelist: SaveList) {
 
 // ctx.cmd.push_var(copy-of-src)
 // src addressing is described in executor/microcode.rs
-pub(in executor) fn copy_to_var(ctx: Ctx, src: u16) -> Result<Ctx> {
+pub(in crate::executor) fn copy_to_var(ctx: Ctx, src: u16) -> Result<Ctx> {
     let copy = match address_tag!(src) {
         CC => {
             let copy = ctx.engine.cc.copy_without_stack();
@@ -304,7 +305,7 @@ fn undo_copy_to_var(ctx: &mut Ctx, _src: u16) {
 }
 
 // ctx.cmd.push_var(src.references[0])
-pub(in executor) fn fetch_reference(ctx: Ctx, src: u16) -> Result<Ctx> {
+pub(in crate::executor) fn fetch_reference(ctx: Ctx, src: u16) -> Result<Ctx> {
     let cell = match address_tag!(src) {
         CC => ctx.engine.cc.drain_reference()?.clone(),
         _ => unimplemented!()
@@ -325,7 +326,7 @@ fn undo_fetch_reference(ctx: &mut Ctx, src: u16) {
 }
 
 // ctx.cmd.push_var(CC.stack[0..depth])
-pub(in executor) fn fetch_stack(ctx: Ctx, depth: usize) -> Result<Ctx> {
+pub(in crate::executor) fn fetch_stack(ctx: Ctx, depth: usize) -> Result<Ctx> {
     if ctx.engine.cc.stack.depth() < depth {
         err!(ExceptionCode::StackUnderflow)
     } else {
@@ -343,7 +344,7 @@ fn undo_fetch_stack(ctx: &mut Ctx, depth: usize) {
 
 // dst.stack.push(CC.stack)
 // dst addressing is described in executor/microcode.rs
-pub(in executor) fn pop_all(ctx: Ctx, dst: u16) -> Result<Ctx> {
+pub(in crate::executor) fn pop_all(ctx: Ctx, dst: u16) -> Result<Ctx> {
     let nargs = continuation_by_address(&ctx, dst)?.nargs;
     let depth = ctx.engine.cc.stack.depth();
     let pargs = ctx.engine.cmd.ictx.pargs();
@@ -362,7 +363,7 @@ pub(in executor) fn pop_all(ctx: Ctx, dst: u16) -> Result<Ctx> {
 
 // dst.stack.push(CC.stack[range])
 // dst addressing is described in executor/microcode.rs
-pub(in executor) fn pop_range(
+pub(in crate::executor) fn pop_range(
     mut ctx: Ctx, 
     drop: Range<usize>, 
     save: usize, 
@@ -390,7 +391,7 @@ fn undo_pop_range(ctx: &mut Ctx, save: usize, mut drop: Vec<StackItem>, src: u16
 
 // x <-> y
 // x and y addressing is described in executor/microcode.rs
-pub(in executor) fn swap(mut ctx: Ctx, x: u16, y: u16) -> Result<Ctx> {  
+pub(in crate::executor) fn swap(mut ctx: Ctx, x: u16, y: u16) -> Result<Ctx> {  
     swap_any(&mut ctx, x, y)?;                                                                             
     ctx.engine.cmd.undo.push(Undo::WithCodePair(undo_swap, x, y));
     Ok(ctx)

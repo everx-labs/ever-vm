@@ -12,13 +12,9 @@
 * limitations under the License.
 */
 
-pub(crate) use error::TvmError;
-use ::int;
-use stack::{IntegerData, StackItem};
-use std::fmt;
-use std::str;
-use std::sync::Arc;
-pub use ton_types::types::*;
+use crate::{int, stack::{StackItem, integer::IntegerData}};
+use std::{fmt, str, sync::Arc};
+use ton_types::{Result, types::ExceptionCode};
 
 pub const ACTION_SEND_MSG: u32 = 0x0ec3c86d;
 pub const ACTION_SET_CODE: u32 = 0xad4de08e;
@@ -78,7 +74,7 @@ impl Exception {
 
 pub fn exception_message(number: usize, value: &StackItem) -> String {
     match ExceptionCode::from_usize(number) {
-        Some(code) => code.message().to_owned(),
+        Some(code) => format!("{}", code),
         _ => format!("unknown exception (number {}, value {})", number, value),
     }
 }
@@ -86,12 +82,10 @@ pub fn exception_message(number: usize, value: &StackItem) -> String {
 #[macro_export]
 macro_rules! exception {
     ($code:expr) => {
-        failure::Error::from(TvmError::TvmExceptionFull($crate::types::Exception::from_code($code, file!(), line!())))
-        // failure::bail!(TvmError::TvmExceptionFull($crate::types::Exception::from_code($code, file!(), line!())))
+        error!(TvmError::TvmExceptionFull(Exception::from_code($code, file!(), line!())))
     };
     ($code:expr, $file:expr, $line:expr) => {
-        failure::Error::from(TvmError::TvmExceptionFull($crate::types::Exception::from_code($code, $file, $line)))
-        // failure::bail!(TvmError::TvmExceptionFull($crate::types::Exception::from_code($code, $file, $line)))
+        error!(TvmError::TvmExceptionFull(Exception::from_code($code, $file, $line)))
     };
 }
 
@@ -109,10 +103,6 @@ macro_rules! err {
 macro_rules! err_opt {
     ($code:expr) => {
         Some(exception!($code))
-    };
-
-    ($number:expr, $value:expr) => {
-        Some(exception!($number, $value))
     };
 }
 

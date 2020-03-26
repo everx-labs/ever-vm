@@ -12,36 +12,23 @@
 * limitations under the License.
 */
 
-use executor::engine::Engine;
-use executor::engine::storage::fetch_stack;
-use executor::types::{
-    Ctx,
-    InstructionOptions,
-    Instruction,
-};
-use stack::integer::{
-    behavior::{
-        OperationBehavior,
+use crate::{
+    error::TvmError, 
+    executor::{
+        engine::{Engine, storage::fetch_stack}, types::{Ctx, InstructionOptions, Instruction}
     },
-    math::{
-        Round,
-        utils::{
-            div_by_shift,
-            divmod,
+    stack::{
+        StackItem,
+        integer::{
+            IntegerData,
+            behavior::OperationBehavior, math::{Round, utils::{div_by_shift, divmod}},
+            utils::{unary_op, binary_op, process_double_result, construct_double_nan}
         }
     },
-    utils::{
-        unary_op,
-        binary_op,
-        process_double_result,
-        construct_double_nan,
-    }
+    types::{Exception, Failure}
 };
-use stack::{IntegerData, StackItem};
-use std::cmp::Ordering;
-use std::mem;
-use std::sync::Arc;
-use types::{Bitmask, ExceptionCode, Failure, Result, TvmError};
+use std::{cmp::Ordering, mem, sync::Arc};
+use ton_types::{error, Result, types::{Bitmask, ExceptionCode}};
 
 // Common definitions *********************************************************
 

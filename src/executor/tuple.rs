@@ -12,13 +12,17 @@
 * limitations under the License.
 */
 
-use executor::engine::{Engine, storage::fetch_stack};
-use executor::gas::gas_state::Gas;
-use executor::types::{InstructionOptions, Instruction, WhereToGetParams};
-use executor::Mask;
-use stack::{IntegerData, StackItem};
-use types::{ExceptionCode, Failure, TvmError};
+use crate::{
+    error::TvmError, 
+    executor::{
+        Mask, engine::{Engine, storage::fetch_stack}, gas::gas_state::Gas, 
+        types::{InstructionOptions, Instruction, WhereToGetParams}
+    },
+    stack::{StackItem, integer::IntegerData},
+    types::{Exception, Failure}
+};
 use std::sync::Arc;
+use ton_types::{error, types::ExceptionCode};
 
 fn tuple(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     let mut inst = Instruction::new(name);

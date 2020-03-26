@@ -12,18 +12,24 @@
 * limitations under the License.
 */
 
-use executor::engine::Engine;
-use executor::engine::data::convert;
-use executor::engine::storage::{fetch_stack, fetch_reference, copy_to_var, swap};   
-use executor::microcode::{CTRL, CC, CELL, SAVELIST, VAR, SLICE, CONTINUATION};
-use executor::types::{WhereToGetParams, InstructionOptions, Instruction};
-use stack::integer::behavior::Signaling;
-use stack::{ContinuationData, IntegerData, StackItem};
-use std::cmp;
-use std::usize;
-use std::sync::Arc;
-use types::{ExceptionCode, Failure, TvmError};
-
+use crate::{
+    error::TvmError, 
+    executor::{
+        engine::{
+            Engine, data::convert, 
+            storage::{fetch_stack, fetch_reference, copy_to_var, swap}
+        },
+        microcode::{CTRL, CC, CELL, SAVELIST, VAR, SLICE, CONTINUATION}, 
+        types::{WhereToGetParams, InstructionOptions, Instruction}
+    },
+    stack::{
+        StackItem, continuation::ContinuationData, 
+        integer::{IntegerData, behavior::Signaling}
+    },
+    types::{Exception, Failure}
+};
+use std::{cmp, usize, sync::Arc};
+use ton_types::{error, types::ExceptionCode};
 
 // Stack manipulation *********************************************************
 

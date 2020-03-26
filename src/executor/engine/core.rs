@@ -12,63 +12,41 @@
 * limitations under the License.
 */
 
-use executor::engine::storage::{swap, copy_to_var};
-use executor::gas::gas_state::Gas;
-use executor::microcode::{VAR, SAVELIST, CC, CTRL};
-use executor::continuation::switch;
-use executor::engine::handlers::Handlers;
-use executor::math::DivMode;
-use executor::types::{
-    Ctx,
-    Instruction,
-    InstructionOptions,
-    InstructionParameter,
-    RegisterPair,
-    RegisterTrio,
-    LengthAndIndex,
-    Undo,
-    WhereToGetParams,
+use crate::{
+    error::TvmError, 
+    executor::{
+        continuation::switch, engine::{handlers::Handlers, storage::{swap, copy_to_var}}, 
+        gas::gas_state::Gas, math::DivMode, microcode::{VAR, SAVELIST, CC, CTRL},
+        types::{
+            Ctx, Instruction, InstructionOptions, InstructionParameter, RegisterPair,
+            RegisterTrio, LengthAndIndex, Undo, WhereToGetParams,
+        }
+    },
+    stack::{
+        Stack, StackItem, continuation::{ContinuationData, ContinuationType}, 
+        integer::IntegerData, savelist::SaveList
+    },
+    smart_contract_info::SmartContractInfo, 
+    types::{Exception, Failure, ResultMut, ResultRef, Status}
 };
-use stack::{
-    BuilderData,
-    Cell,
-    ContinuationData,
-    ContinuationType,
-    IntegerData,
-    SaveList,
-    SliceData,
-    Stack,
-    StackItem,
+use std::{collections::HashSet, sync::Arc};
+use ton_types::{
+    BuilderData, Cell, error, fail, GasConsumer, Result, SliceData, 
+    types::{ExceptionCode, UInt256}
 };
-//use std::cmp::Ordering;
-use std::collections::HashSet;
-use std::sync::Arc;
-use ton_types::GasConsumer;
-use types::{
-    Exception,
-    ExceptionCode,
-    Result,
-    Failure,
-    ResultMut,
-    ResultRef,
-    Status,
-    TvmError,
-    UInt256,
-};
-use SmartContractInfo;
 
 pub(super) type ExecuteHandler = fn(&mut Engine) -> Failure;
 
 #[derive(Debug)]
 pub struct Engine {
-    pub(in executor) cc: ContinuationData,
-    pub(in executor) cmd: Instruction,
-    pub(in executor) ctrls: SaveList,
+    pub(in crate::executor) cc: ContinuationData,
+    pub(in crate::executor) cmd: Instruction,
+    pub(in crate::executor) ctrls: SaveList,
     visited_cells: HashSet<UInt256>,
     cstate: CommittedState,
     handlers: Handlers,
     time: u64,
-    pub(in executor) gas: Gas,
+    pub(in crate::executor) gas: Gas,
     code_page: isize,
     debug_on: isize, // status of debug can be recursively incremented
     step: usize, // number of executable command
@@ -215,7 +193,7 @@ impl Engine {
                     return err!(ExceptionCode::OutOfGas)
                 } else {
                     if self.trace_bit(Engine::TRACE_CODE) {
-                        trace!(target: "tvm", "NORMAL TERMINATION\n");
+                        log::trace!(target: "tvm", "NORMAL TERMINATION\n");
                     }
                     self.commit();
                     return Ok(result)
@@ -227,16 +205,26 @@ impl Engine {
             let handler = self.handlers.get_handler(&mut self.cc)?;
             let execution_result = handler(self);
             if self.trace_bit(Engine::TRACE_CODE) {
-                trace!(target: "tvm", "{}: {}\n", self.step, self.cmd.dump_with_params().unwrap_or_default());
+                log::trace!(
+                    target: "tvm", 
+                    "{}: {}\n", 
+                    self.step, 
+                    self.cmd.dump_with_params().unwrap_or_default()
+                );
             }
             if self.trace_bit(Engine::TRACE_GAS) {
-                trace!(target: "tvm", "Gas: {} ({})\n", self.gas_used(), self.gas_used() - gas);
+                log::trace!(
+                    target: "tvm", 
+                    "Gas: {} ({})\n", 
+                    self.gas_used(), 
+                    self.gas_used() - gas
+                );
             }
             if self.trace_bit(Engine::TRACE_STACK) {
-                trace!(target: "tvm", "{}", self.dump_stack("Stack trace", false));
+                log::trace!(target: "tvm", "{}", self.dump_stack("Stack trace", false));
             }
             if self.trace_bit(Engine::TRACE_CTRLS) {
-                trace!(target: "tvm", "{}", self.dump_ctrls(true));
+                log::trace!(target: "tvm", "{}", self.dump_ctrls(true));
             }
             self.cmd.ictx.clear();
             if self.gas.get_gas_remaining() < 0 {
@@ -251,7 +239,7 @@ impl Engine {
         }
     }
 
-    pub(in executor) fn seek_next_cmd(&mut self) -> Result<Option<i32>> {
+    pub(in crate::executor) fn seek_next_cmd(&mut self) -> Result<Option<i32>> {
         while self.cc.code().remaining_bits() == 0 {
             let mut log_string = None;
             let gas = self.gas_used();
@@ -370,16 +358,21 @@ impl Engine {
             if let Some(log_string) = log_string {
                 self.step += 1;
                 if self.trace_bit(Engine::TRACE_CODE) {
-                    trace!(target: "tvm", "{}: {}\n", self.step, log_string);
+                    log::trace!(target: "tvm", "{}: {}\n", self.step, log_string);
                 }
                 if self.trace_bit(Engine::TRACE_GAS) && gas != self.gas_used() {
-                    trace!(target: "tvm", "Gas: {} ({})\n", self.gas_used(), self.gas_used() - gas);
+                    log::trace!(
+                        target: "tvm", 
+                        "Gas: {} ({})\n", 
+                        self.gas_used(), 
+                        self.gas_used() - gas
+                    );
                 }
                 if self.trace_bit(Engine::TRACE_STACK) {
-                    trace!(target: "tvm", "{}", self.dump_stack("Stack trace", false));
+                    log::trace!(target: "tvm", "{}", self.dump_stack("Stack trace", false));
                 }
                 if self.trace_bit(Engine::TRACE_CTRLS) {
-                    trace!(target: "tvm", "{}", self.dump_ctrls(true));
+                    log::trace!(target: "tvm", "{}", self.dump_ctrls(true));
                 }
             }
             if let Some(err) = err {
@@ -495,7 +488,7 @@ impl Engine {
 
     // Internal API ***********************************************************
 
-    pub(in executor) fn apply_savelist(&mut self, savelist: &mut SaveList) -> Status {
+    pub(in crate::executor) fn apply_savelist(&mut self, savelist: &mut SaveList) -> Status {
         for (k, v) in savelist.iter_mut() {
             self.ctrls.put(*k, v)?;
         }
@@ -504,14 +497,14 @@ impl Engine {
     }
 
     #[allow(dead_code)]
-    pub(in executor) fn local_time(&mut self) -> u64 {
+    pub(in crate::executor) fn local_time(&mut self) -> u64 {
         self.time += 1;
         self.time
     }
 
     // Implementation *********************************************************
 
-    pub(in executor) fn load_instruction(&mut self, cmd: Instruction) -> Result<Ctx> {
+    pub(in crate::executor) fn load_instruction(&mut self, cmd: Instruction) -> Result<Ctx> {
         self.cmd = cmd;
         self.step += 1;
         self.extract_instruction().map(move |_| Ctx::new(self))
@@ -523,21 +516,21 @@ impl Engine {
         // result.map(move |_| Ctx::new(self))
     }
 
-    pub(in executor) fn switch_debug(&mut self, on_off: bool) {
+    pub(in crate::executor) fn switch_debug(&mut self, on_off: bool) {
         self.debug_on += if on_off {1} else {-1}
     }
 
-    pub(in executor) fn debug(&self) -> bool {
+    pub(in crate::executor) fn debug(&self) -> bool {
         self.debug_on > 0
     }
 
-    pub(in executor) fn dump(&mut self, dump: String) {
+    pub(in crate::executor) fn dump(&mut self, dump: String) {
         self.debug_buffer += &dump;
     }
 
-    pub(in executor) fn flush(&mut self) {
+    pub(in crate::executor) fn flush(&mut self) {
         if self.debug_on > 0 {
-            info!(target: "tvm", "{}", self.debug_buffer);
+            log::info!(target: "tvm", "{}", self.debug_buffer);
         }
         self.debug_buffer = String::default()
     }
@@ -902,14 +895,15 @@ impl Engine {
     fn raise_exception(&mut self, exception: Exception) -> Status {
         self.step += 1;
         if self.trace_bit(Engine::TRACE_CODE) {
-            trace!(target: "tvm", "\n{}: EXCEPTION: {}\n", self.step, exception);
+            log::trace!(target: "tvm", "\n{}: EXCEPTION: {}\n", self.step, exception);
         }
         if self.trace_bit(Engine::TRACE_STACK) {
-            trace!(target: "tvm", "{}\n", self.dump_stack("Stack trace", false));
+            log::trace!(target: "tvm", "{}\n", self.dump_stack("Stack trace", false));
         }
         self.gas.try_use_gas(Gas::exception_price(exception.code))?;
         if self.ctrls.get(2).is_none() {
-            return Err(failure::Error::from(TvmError::TvmExceptionFull(exception)))
+            log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code);
+            fail!(TvmError::TvmExceptionFull(exception))
         }
         self.cc.stack.push(exception.value);
         self.cc.stack.push(int!(exception.number));
@@ -919,22 +913,23 @@ impl Engine {
         .and_then(|_| switch(Ctx::new(self), ctrl!(2)))
         .map(|_|())
     }
+
     /// Set code page for interpret bytecode. now only code page 0 is supported
-    pub(in executor) fn code_page_mut(&mut self) -> &mut isize {
+    pub(in crate::executor) fn code_page_mut(&mut self) -> &mut isize {
         &mut self.code_page
     }
 
-    pub(in executor) fn config_param(&self, index: usize) -> ResultRef<StackItem> {
+    pub(in crate::executor) fn config_param(&self, index: usize) -> ResultRef<StackItem> {
         let tuple = self.ctrl(7)?.as_tuple()?;
         let tuple = tuple.first().ok_or(exception!(ExceptionCode::RangeCheckError))?.as_tuple()?;
         tuple.get(index).ok_or(exception!(ExceptionCode::RangeCheckError))
     }
 
-    pub(in executor) fn rand(&self) -> ResultRef<IntegerData> {
+    pub(in crate::executor) fn rand(&self) -> ResultRef<IntegerData> {
         self.config_param(6)?.as_integer()
     }
 
-    pub(in executor) fn set_rand(&mut self, rand: IntegerData) -> Status {
+    pub(in crate::executor) fn set_rand(&mut self, rand: IntegerData) -> Status {
         let mut tuple = self.ctrl_mut(7)?.as_tuple_mut()?;
         let mut t1 = tuple.first_mut().ok_or(exception!(ExceptionCode::RangeCheckError))?.as_tuple_mut()?;
         *t1.get_mut(6).ok_or(exception!(ExceptionCode::RangeCheckError))? = StackItem::Integer(Arc::new(rand));

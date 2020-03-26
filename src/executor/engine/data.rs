@@ -12,13 +12,13 @@
 * limitations under the License.
 */
 
-use executor::microcode::{VAR, CELL, SLICE, BUILDER, CONTINUATION};
-use executor::types::{Ctx, Undo};
-use stack::{ContinuationData, StackItem};
+use crate::{
+    executor::{microcode::{VAR, CELL, SLICE, BUILDER, CONTINUATION}, types::{Ctx, Undo}},
+    stack::{StackItem, continuation::ContinuationData}, types::Status
+};
 use std::mem;
 use std::sync::Arc;
-use ton_types::GasConsumer;
-use types::{Result, Status};
+use ton_types::{GasConsumer, Result};
 
 // Utilities ******************************************************************
 
@@ -77,7 +77,7 @@ fn convert_any(ctx: &mut Ctx, x: u16, to: u16, from: u16) -> Status {
 
 // Convert type of x; x addressing is described in executor/microcode.rs
 // to, from are one of { BUILDER, CELL, CONTINUATION, SLICE }
-pub(in executor) fn convert(mut ctx: Ctx, x: u16, to: u16, from: u16) -> Result<Ctx> {  
+pub(in crate::executor) fn convert(mut ctx: Ctx, x: u16, to: u16, from: u16) -> Result<Ctx> {
     convert_any(&mut ctx, x, to, from)?;                                                                             
     ctx.engine.cmd.undo.push(Undo::WithCodeTriplet(undo_convert, x, to, from));
     Ok(ctx)

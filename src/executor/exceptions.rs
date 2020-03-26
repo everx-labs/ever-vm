@@ -12,15 +12,17 @@
 * limitations under the License.
 */
 
-use executor::continuation::{callx};
-use executor::engine::Engine;
-use executor::engine::storage::{fetch_stack, swap, copy_to_var};
-use executor::microcode::{CTRL, VAR, SAVELIST, CC};
-use executor::types::{Ctx, Instruction, InstructionOptions};
-use stack::{ContinuationType, IntegerData, StackItem};
-use std::ops::Range;
-use std::sync::Arc;
-use types::{Exception, ExceptionCode, Failure, Result, TvmError};
+use crate::{
+    error::TvmError, 
+    executor::{
+        continuation::callx, engine::{Engine, storage::{fetch_stack, swap, copy_to_var}},
+        microcode::{CTRL, VAR, SAVELIST, CC}, types::{Ctx, Instruction, InstructionOptions}
+    },
+    stack::{StackItem, continuation::ContinuationType, integer::IntegerData},
+    types::{Exception, Failure}
+};
+use std::{ops::Range, sync::Arc};
+use ton_types::{error, fail, Result, types::ExceptionCode};
 
 //Utilities **********************************************************************************
 //(c c' -)
@@ -74,7 +76,11 @@ fn do_throw(ctx: Ctx, number_index: isize, value_index: isize) -> Result<Ctx> {
     } else {
         ctx.engine.cmd.var(value_index as usize).clone()
     };
-    Err(failure::Error::from(TvmError::TvmExceptionFull(Exception::from_number_and_value(number, value, file!(), line!()))))
+    fail!(
+        TvmError::TvmExceptionFull(
+            Exception::from_number_and_value(number, value, file!(), line!())
+        )
+    )
 }
 
 //Handlers ***********************************************************************************

@@ -12,13 +12,13 @@
 * limitations under the License.
 */
 
-use num::BigInt;
-use num::bigint::Sign;
-use types::{ExceptionCode, Failure, TvmError};
-use executor::engine::Engine;
-use executor::types::Instruction;
-use stack::{BuilderData, IBitstring, IntegerData, StackItem};
-use executor::engine::storage::fetch_stack;
+use crate::{
+    error::TvmError, 
+    executor::{engine::{Engine, storage::fetch_stack}, types::Instruction},
+    stack::{StackItem, integer::IntegerData}, 
+    types::{Exception, Failure}
+};
+use ton_types::{BuilderData, error, IBitstring, types::ExceptionCode};
 use std::sync::Arc;
 
 // slice - uint slice'
@@ -31,8 +31,8 @@ fn load_var(engine: &mut Engine, name: &'static str, max_bytes: u8, sign: bool) 
         let bytes = slice.get_next_int(len)? as usize;
         let vec = slice.get_next_bytes(bytes)?;
         let value = match sign {
-            true => BigInt::from_signed_bytes_be(&vec),
-            false => BigInt::from_bytes_be(Sign::Plus, &vec)
+            true => num::BigInt::from_signed_bytes_be(&vec),
+            false => num::BigInt::from_bytes_be(num::bigint::Sign::Plus, &vec)
         };
         ctx.engine.cc.stack.push(int!(value));
         ctx.engine.cc.stack.push(StackItem::Slice(slice));

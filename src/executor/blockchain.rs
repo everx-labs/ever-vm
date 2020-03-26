@@ -12,17 +12,29 @@
 * limitations under the License.
 */
 
-use executor::engine::Engine;
-use executor::engine::storage::fetch_stack;
-use executor::serialize_currency_collection;
-use executor::types::{Instruction, Ctx};
-use stack::{Cell, IBitstring, IntegerData, BuilderData, SliceData, StackItem};
-use stack::integer::behavior::OperationBehavior;
-use stack::integer::serialization::{IntoSliceExt, UnsignedIntegerBigEndianEncoding};
+use crate::{
+    error::TvmError, 
+    executor::{
+        serialize_currency_collection, engine::{Engine, storage::fetch_stack},
+        types::{Instruction, Ctx}
+    },
+    stack::{
+        StackItem,
+        integer::{
+            IntegerData, behavior::OperationBehavior, 
+            serialization::{IntoSliceExt, UnsignedIntegerBigEndianEncoding}
+        }
+    },
+    types::{
+        ACTION_RESERVE, ACTION_SEND_MSG, ACTION_SET_CODE, ACTION_CHANGE_LIB, 
+        Exception, Failure
+    }
+};
 use std::sync::Arc;
-use ton_types::GasConsumer;
-use types::{ExceptionCode, Failure, Result, TvmError};
-use types::{ACTION_RESERVE, ACTION_SEND_MSG, ACTION_SET_CODE, ACTION_CHANGE_LIB};
+use ton_types::{
+    BuilderData, Cell, error, GasConsumer, IBitstring, Result, SliceData, 
+    types::ExceptionCode
+};
 
 // Blockchain related instructions ********************************************
 

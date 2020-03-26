@@ -12,31 +12,28 @@
 * limitations under the License.
 */
 
-use executor::engine::Engine;
-use executor::engine::data::convert;
-use executor::engine::storage::{fetch_stack, swap, copy_to_var, pop_range, fetch_reference, apply_savelist, pop_all};
-use executor::microcode::{VAR, SAVELIST, CC, CELL, CTRL, SLICE, CONTINUATION};
-use executor::types::{
-    Ctx,
-    Instruction,
-    InstructionOptions,
-    InstructionParameter,
-    Undo,
+use crate::{
+    error::TvmError, 
+    executor::{
+        Mask,
+        engine::{
+            Engine, data::convert,                                      
+            storage::{
+                apply_savelist, copy_to_var, fetch_reference, fetch_stack,
+                pop_range, pop_all, swap
+            }
+        },
+        microcode::{VAR, SAVELIST, CC, CELL, CTRL, SLICE, CONTINUATION},
+        types::{Ctx, Instruction, InstructionOptions, InstructionParameter, Undo}
+    },
+    stack::{
+        StackItem, continuation::{ContinuationData, ContinuationType}, 
+        integer::{IntegerData, behavior::Signaling}
+    },
+    types::{Exception, Failure}
 };
-use executor::Mask;
-use stack::integer::behavior::{
-    Signaling,
-};
-use stack::{
-    ContinuationData,
-    ContinuationType,
-    IntegerData,
-    StackItem,
-};
-use types::{ExceptionCode, Failure, Result, TvmError};
-use std::mem;
-use std::ops::{Range, RangeInclusive};
-use std::sync::Arc;
+use ton_types::{error, Result, types::ExceptionCode};
+use std::{mem, ops::{Range, RangeInclusive}, sync::Arc};
 
 const CALLX: u8 = 0x40;   // CALLX to found value
 const SWITCH: u8 = 0x80;  // SWITCH to found value

@@ -12,19 +12,9 @@
 * limitations under the License.
 */
 
-use super::{
-    Stack,
-    StackItem
-};
-use std::collections::hash_map::IterMut;
-use std::collections::HashMap;
-use std::fmt;
-use types::{
-//    Exception,
-    ExceptionCode,
-    ResultOpt,
-    TvmError,
-};
+use crate::{error::TvmError, stack::{Stack, StackItem}, types::{Exception, ResultOpt}};
+use std::{collections::{HashMap, hash_map::IterMut}, fmt};
+use ton_types::{error, types::ExceptionCode};
 
 #[derive(Clone, Debug)]
 pub struct SaveList {

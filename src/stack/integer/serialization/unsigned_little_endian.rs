@@ -12,27 +12,16 @@
 * limitations under the License.
 */
 
-use super::{
-    IntegerData,
-    Encoding
-};
-use types::{
-    ExceptionCode,
-    Result,
-    TvmError,
-};
-use stack::BuilderData;
-use stack::serialization::{
-    Serializer,
-    Deserializer
-};
-use num::{
-    bigint::{
-        Sign,
+use crate::{
+    error::TvmError,
+    stack::{
+        BuilderData, 
+        integer::{IntegerData, serialization::{Encoding, common::bits_to_bytes}}, 
+        serialization::{Serializer, Deserializer}
     },
-    BigInt,
+    types::Exception
 };
-use stack::integer::serialization::common::bits_to_bytes;
+use ton_types::{error, Result, types::ExceptionCode};
 
 pub struct UnsignedIntegerLittleEndianEncoding {
     length_in_bits: usize
@@ -70,7 +59,7 @@ impl Deserializer<IntegerData> for UnsignedIntegerLittleEndianEncoding {
     fn deserialize(&self, data: &[u8]) -> IntegerData {
         debug_assert!(data.len() * 8 >= self.length_in_bits);
 
-        let value = BigInt::from_bytes_le(Sign::Plus, data);
+        let value = num::BigInt::from_bytes_le(num::bigint::Sign::Plus, data);
         IntegerData::from(value).unwrap_or(IntegerData::zero())
     }
 }

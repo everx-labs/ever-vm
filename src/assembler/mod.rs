@@ -12,26 +12,23 @@
 * limitations under the License.
 */
 
+use crate::{error::TvmError, stack::integer::IntegerData};
+use std::{collections::HashMap, marker::PhantomData, ops::Range};
+use ton_types::{SliceData, types::ExceptionCode};
+
 mod errors;
-pub use self::errors::{
-    CompileError, OperationError, ParameterError, Position, ToOperationParameterError,
+pub use errors::{
+    CompileError, OperationError, ParameterError, Position, 
+    ToOperationParameterError,
 };
-use stack::SliceData;
-use std::collections::HashMap;
-use std::ops::Range;
-use std::marker::PhantomData;
 
 #[macro_use]
 mod macros;
-
 mod parse;
-pub use self::parse::*;
+use parse::*;
 
 mod writer;
-use self::writer::CodePage0;
-use self::writer::Writer;
-use stack::integer::IntegerData;
-use types::{ExceptionCode, TvmError};
+use writer::{CodePage0, Writer};
 
 // Basic types *****************************************************************
 /// Operation Compilation result
@@ -61,7 +58,7 @@ impl CommandBehaviourModifier for Quiet {
 trait EnsureParametersCountInRange {
     fn assert_empty(&self) -> Result<(), OperationError>;
     fn assert_len(&self, n: usize) -> Result<(), OperationError>;
-    fn assert_len_in(&self, Range<usize>) -> Result<(), OperationError>;
+    fn assert_len_in(&self, _: Range<usize>) -> Result<(), OperationError>;
 }
 
 impl<T> EnsureParametersCountInRange for Vec<T>{
@@ -168,7 +165,7 @@ fn compile_pushcont<T: Writer>(engine: &mut Engine<T>, par: &Vec<&str>, destinat
             //Write as r = 1 and xx = 0x00.
             destination.write_composite_command(&[0x8E, 0x80], cont)
         } else {
-            error!(target: "compile", "Maybe cell longer than 1024 bit?");
+            log::error!(target: "compile", "Maybe cell longer than 1024 bit?");
             Err(OperationError::NotFitInSlice)
         }
     }
@@ -789,7 +786,9 @@ impl<T: Writer> Engine<T> {
         DICTIDELGETREF                       => 0xF4, 0x65
         DICTIGET                             => 0xF4, 0x0C
         DICTIGETEXEC                         => 0xF4, 0xA2
+        DICTIGETEXECZ                        => 0xF4, 0xBE
         DICTIGETJMP                          => 0xF4, 0xA0
+        DICTIGETJMPZ                         => 0xF4, 0xBC
         DICTIGETNEXT                         => 0xF4, 0x78
         DICTIGETNEXTEQ                       => 0xF4, 0x79
         DICTIGETPREV                         => 0xF4, 0x7A
@@ -847,7 +846,9 @@ impl<T: Writer> Engine<T> {
         DICTUDELGETREF                       => 0xF4, 0x67
         DICTUGET                             => 0xF4, 0x0E
         DICTUGETEXEC                         => 0xF4, 0xA3
+        DICTUGETEXECZ                        => 0xF4, 0xBF
         DICTUGETJMP                          => 0xF4, 0xA1
+        DICTUGETJMPZ                         => 0xF4, 0xBD
         DICTUGETNEXT                         => 0xF4, 0x7C
         DICTUGETNEXTEQ                       => 0xF4, 0x7D
         DICTUGETPREV                         => 0xF4, 0x7E
@@ -1678,7 +1679,7 @@ impl<T: Writer> Engine<T> {
             }
             // Token extracted
             let token = source[s0..s1].to_ascii_uppercase();
-            trace!(target: "tvm", "--> {}\n", token);
+            log::trace!(target: "tvm", "--> {}\n", token);
             x -= token.chars().count();
             match self.COMPILE_ROOT.get(&token[..]) {
                 None => {
@@ -1720,7 +1721,7 @@ impl<T: Writer> Engine<T> {
 }
 
 pub fn compile_code(code: &str) -> Result<SliceData, CompileError> {
-    trace!(target: "tvm", "begin compile\n");
+    log::trace!(target: "tvm", "begin compile\n");
     Engine::<CodePage0>::new().compile(code).map(|code| code.finalize())
 }
 

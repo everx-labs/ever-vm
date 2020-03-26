@@ -12,12 +12,13 @@
 * limitations under the License.
 */
 
-use executor::gas::gas_state::Gas;
-use executor::Mask;
-use executor::types::{Instruction, InstructionOptions};
-use executor::engine::{Engine, storage::fetch_stack};
-use stack::StackItem;
-use types::Failure;
+use crate::{
+    executor::{
+        Mask, engine::{Engine, storage::fetch_stack}, gas::gas_state::Gas, 
+        types::{Instruction, InstructionOptions}
+    },
+    stack::StackItem, types::Failure
+};
 
 const STACK: u8 = 0x02;
 const CMD:   u8 = 0x04;

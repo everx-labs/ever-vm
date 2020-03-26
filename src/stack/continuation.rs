@@ -12,10 +12,12 @@
 * limitations under the License.
 */
 
-use super::{Cell, SaveList, SliceData, Stack, StackItem};
-use std::fmt;
-use std::mem;
-use types::{ExceptionCode, Result, ResultOpt, TvmError};
+use crate::{
+    error::TvmError, stack::{SliceData, Stack, StackItem, savelist::SaveList}, 
+    types::{Exception, ResultOpt}
+};
+use std::{fmt, mem};
+use ton_types::{Cell, error, Result, types::ExceptionCode};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ContinuationType {
@@ -87,7 +89,11 @@ impl ContinuationData {
             Err(_) => {
                 // TODO: combine error! and err!
                 // panic!("n >= 8 is expected, actual value: {}", self.code.remaining_bits());
-                error!(target: "tvm", "n >= 8 is expected, actual value: {}", self.code.remaining_bits());
+                log::error!(
+                    target: "tvm", 
+                    "n >= 8 is expected, actual value: {}", 
+                    self.code.remaining_bits()
+                );
                 err!(ExceptionCode::InvalidOpcode)
             }
         }

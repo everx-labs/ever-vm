@@ -12,13 +12,12 @@
 * limitations under the License.
 */
 
-use executor::engine::Engine;
-use executor::engine::storage::fetch_stack;
-use executor::types::{InstructionOptions, Instruction};
-use stack::{BuilderData, IBitstring, IntegerData, StackItem};
-use stack::HashmapE;
+use crate::{
+    executor::{engine::{Engine, storage::fetch_stack}, types::{InstructionOptions, Instruction}},
+    stack::{StackItem, integer::IntegerData}, types::Failure
+};
 use std::sync::Arc;
-use types::Failure;
+use ton_types::{BuilderData, HashmapE, IBitstring};
 
 fn execute_config_param(engine: &mut Engine, name: &'static str, opt: bool) -> Failure {
     engine.load_instruction(Instruction::new(name))

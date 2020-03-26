@@ -12,25 +12,29 @@
 * limitations under the License.
 */
 
-use executor::engine::Engine;
-use stack::integer::serialization::{
-    Encoding,
-    SignedIntegerBigEndianEncoding,
-    SignedIntegerLittleEndianEncoding,
-    UnsignedIntegerBigEndianEncoding,
-    UnsignedIntegerLittleEndianEncoding
+use crate::{
+    error::TvmError, 
+    executor::{
+        Mask, engine::{Engine, data::convert, storage::fetch_stack}, 
+        microcode::{SLICE, CELL, VAR}, types::{Ctx, InstructionOptions, Instruction}
+    },
+    stack::{
+        StackItem,
+        integer::{
+            IntegerData, 
+            serialization::{
+                Encoding, SignedIntegerBigEndianEncoding, SignedIntegerLittleEndianEncoding,
+                UnsignedIntegerBigEndianEncoding, UnsignedIntegerLittleEndianEncoding
+            }
+        },
+        serialization::Deserializer
+    },
+    types::{Exception, Failure}
 };
-use stack::serialization::Deserializer;
-use stack::{Cell, StackItem, IntegerData, SliceData, BuilderData};
-use ton_types::GasConsumer;
-use types::{ExceptionCode, Failure, Result, TvmError, UInt256};
-use executor::engine::data::convert;
-use executor::engine::storage::fetch_stack;
-use executor::microcode::{SLICE, CELL, VAR};
-use executor::types::{Ctx, InstructionOptions, Instruction};
-use executor::Mask;
-use std::sync::Arc;
-use std::collections::HashSet;
+use ton_types::{
+    BuilderData, Cell, error, GasConsumer, Result, SliceData, types::{ExceptionCode, UInt256}
+};
+use std::{collections::HashSet, sync::Arc};
 
 const QUIET: u8 = 0x01; // quiet variant
 const STACK: u8 = 0x02; // length of int in stack

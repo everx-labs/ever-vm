@@ -12,12 +12,12 @@
 * limitations under the License.
 */
 
-use executor::engine::Engine;
-use executor::engine::storage::fetch_stack;
-use stack::{StackItem, IntegerData, SliceData};
-use types::{Failure};
-use executor::types::Instruction;
+use crate::{
+    executor::{engine::{Engine, storage::fetch_stack}, types::Instruction},
+    stack::{StackItem, integer::IntegerData}, types::Failure,
+};
 use std::sync::Arc;
+use ton_types::SliceData;
 
 fn unary<F>(engine: &mut Engine, name: &'static str, operation: F) -> Failure 
 where 

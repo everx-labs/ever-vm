@@ -12,7 +12,6 @@
 * limitations under the License.
 */
 
-
 macro_rules! declare {
     ($mnemonic:ident, $value:expr) => {
         pub(super) const $mnemonic: u16 = $value;

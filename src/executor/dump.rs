@@ -12,14 +12,13 @@
 * limitations under the License.
 */
 
-use executor::engine::Engine;
-use executor::types::{Ctx, Instruction, InstructionOptions};
-use executor::Mask;
-use stack::{StackItem, SliceData};
-use types::{ExceptionCode, Failure, Result, TvmError};
-use std::cmp;
-use std::str;
-use std::sync::Arc;
+use crate::{
+    error::TvmError, 
+    executor::{Mask, engine::Engine, types::{Ctx, Instruction, InstructionOptions}},
+    stack::StackItem, types::{Exception, Failure}
+};
+use ton_types::{error, Result, SliceData, types::ExceptionCode};
+use std::{cmp, str, sync::Arc};
 
 const STR:   u8 = 0x01;
 const HEX:   u8 = 0x02;
@@ -27,7 +26,6 @@ const BIN:   u8 = 0x04;
 const DEPTH: u8 = 0x08; // integer 1..15
 const INDEX: u8 = 0x10; // integer 0..15
 const FLUSH: u8 = 0x20; // flush
-
 
 fn dump_var(item: &StackItem, how: u8) -> String {
     if how.bit(HEX) {

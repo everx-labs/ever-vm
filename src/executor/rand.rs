@@ -12,15 +12,19 @@
 * limitations under the License.
 */
 
-use executor::engine::Engine;
-use executor::engine::storage::fetch_stack;
-use executor::types::Instruction;
-use num::BigInt;
-use types::Failure;
+use crate::{
+    executor::{engine::{Engine, storage::fetch_stack}, types::Instruction},
+    stack::{
+        StackItem, 
+        integer::{
+            IntegerData,
+            serialization::{Encoding, IntoSliceExt, UnsignedIntegerBigEndianEncoding}
+        },
+        serialization::Deserializer
+    },
+    types::Failure
+};
 use sha2::Digest;
-use stack::{IntegerData, StackItem};
-use stack::serialization::{Deserializer};
-use stack::integer::serialization::{Encoding, IntoSliceExt, UnsignedIntegerBigEndianEncoding};
 use std::sync::Arc;
 
 // (x - )
@@ -51,7 +55,11 @@ pub(crate) fn execute_rand(engine: &mut Engine) -> Failure {
             .into_builder::<UnsignedIntegerBigEndianEncoding>(256)?.data());
         let sha512 = hasher.result();
         let rand = ctx.engine.cmd.var(0).as_integer()?.take_value_of(|value|
-            Some(BigInt::from_bytes_be(num::bigint::Sign::Plus, &sha512[32..]) * value >> 256))?;
+            Some(
+                num::BigInt::from_bytes_be(
+                    num::bigint::Sign::Plus, &sha512[32..]) * value >> 256
+                )
+            )?;
             ctx.engine.cc.stack.push(StackItem::Integer(Arc::new(IntegerData::from(rand)?)));
         ctx.engine.set_rand(UnsignedIntegerBigEndianEncoding::new(256)
             .deserialize(&sha512[..32]))?;

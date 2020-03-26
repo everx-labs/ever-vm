@@ -1,3 +1,4 @@
+
 /*
 * Copyright 2018-2020 TON DEV SOLUTIONS LTD.
 *
@@ -12,23 +13,17 @@
 * limitations under the License.
 */
 
+use crate::{stack::integer::behavior::OperationBehavior, types::ResultOpt};
+use ton_types::Result;
+
+use core::mem;
+use num_traits::{One, Signed, Zero};
+use std::cmp;
+use std::cmp::Ordering;
+
 #[macro_use]
 pub mod behavior;
 mod fmt;
-
-use self::utils::*;
-pub use self::fmt::*;
-use std::cmp;
-use std::cmp::Ordering;
-use stack::integer::behavior::OperationBehavior;
-
-use num::{bigint::Sign, Zero, Signed, BigUint};
-use types::{
-    Result,
-    ResultOpt
-};
-use core::mem;
-use num_traits::One;
 
 type Int = num::BigInt;
 
@@ -65,6 +60,7 @@ pub struct IntegerData {
 }
 
 impl IntegerData {
+
     /// Constructs new (set to 0) value. This is just a wrapper for Self::zero().
     #[inline]
     pub fn new() -> IntegerData {
@@ -92,7 +88,10 @@ impl IntegerData {
     pub fn minus_one() -> IntegerData {
         IntegerData {
             value: IntegerValue::Value(
-                Int::from_biguint(Sign::Minus, BigUint::one())
+                Int::from_biguint(
+                    num::bigint::Sign::Minus,
+                    num::BigUint::one()
+                )
             )
         }
     }
@@ -167,15 +166,15 @@ impl IntegerData {
     /// Determines a fewest bits necessary to express signed value.
     #[inline]
     pub fn bitsize(&self) -> usize {
-        process_value(&self, |value| {
-            bitsize(value)
+        utils::process_value(&self, |value| {
+            utils::bitsize(value)
         })
     }
 
     /// Determines a fewest bits necessary to express unsigned value.
     #[inline]
     pub fn ubitsize(&self) -> usize {
-        process_value(&self, |value| {
+        utils::process_value(&self, |value| {
             debug_assert!(!value.is_negative());
             value.bits()
         })
@@ -306,7 +305,8 @@ pub mod utils {
 
     #[inline]
     pub fn bitsize(value: &Int) -> usize {
-        if value.is_zero() || *value == Int::from_biguint(Sign::Minus, BigUint::one()) {
+        if value.is_zero() || 
+           (value == &Int::from_biguint(num::bigint::Sign::Minus, num::BigUint::one())) {
             return 1;
         }
         let res = value.bits();

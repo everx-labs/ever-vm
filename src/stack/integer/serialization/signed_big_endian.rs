@@ -12,28 +12,21 @@
 * limitations under the License.
 */
 
-use super::{
-    IntegerData,
-    common::*,
-    Encoding 
-};
-use types::{
-    ExceptionCode,
-    Result,
-    TvmError,
-};
-use stack::BuilderData;
-use stack::serialization::{
-    Serializer,
-    Deserializer
-};
-use num::{
-    bigint::{
-        ToBigInt,
+use crate::{
+    error::TvmError, 
+    stack::{
+        BuilderData, 
+        integer::{
+            IntegerData, 
+            serialization::{Encoding, common::{calc_excess_bits, extend_buffer_be}}
+        }, 
+        serialization::{Serializer, Deserializer}
     },
-    BigInt,
+    types::Exception
 };
+use num::bigint::ToBigInt;
 use num_traits::Signed;
+use ton_types::{error, Result, types::ExceptionCode};
 
 pub struct SignedIntegerBigEndianEncoding {
     length_in_bits: usize
@@ -75,7 +68,7 @@ impl Deserializer<IntegerData> for SignedIntegerBigEndianEncoding {
     fn deserialize(&self, data: &[u8]) -> IntegerData {
         debug_assert!(data.len() * 8 >= self.length_in_bits);
 
-        let mut value = BigInt::from_signed_bytes_be(data);
+        let mut value = num::BigInt::from_signed_bytes_be(data);
         let excess_bits = calc_excess_bits(self.length_in_bits);
         if excess_bits != 0 {
             value >>= 8 - excess_bits;

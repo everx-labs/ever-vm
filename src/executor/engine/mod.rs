@@ -13,10 +13,10 @@
 */
 
 mod core;
-pub(in executor) mod data;
+pub(in crate::executor) mod data;
 mod handlers;
 #[macro_use]
-pub(in executor) mod storage;
+pub(in crate::executor) mod storage;
 
 pub use self::core::Engine;
 

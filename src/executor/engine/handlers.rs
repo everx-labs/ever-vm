@@ -12,37 +12,20 @@
 * limitations under the License.
 */
 
-use executor::blockchain::*;
-use executor::continuation::*;
-use executor::crypto::*;
-use executor::currency::*;
-use executor::dictionary::*;
-use executor::engine::core::ExecuteHandler;
-use executor::dump::*;
-use executor::engine::storage::fetch_stack;
-use executor::exceptions::*;
-use executor::globals::*;
-use executor::math::*;
-use executor::slice_comparison::*;
-use executor::stack::*;
-use executor::gas::*;
-use executor::null::*;
-use executor::tuple::*;
-use executor::config::*;
-use executor::rand::*;
-use executor::types::{InstructionOptions, Instruction};
-use executor::Engine;
-use stack::ContinuationData;
-use std::fmt;
-use std::ops::Range;
-use types::{ExceptionCode, Failure, Result, TvmError};
-use executor::serialization::*;
-use executor::deserialization::*;
-
-use stack::integer::behavior::{
-    Signaling,
-    Quiet
+use crate::{
+    error::TvmError, 
+    executor::{
+        engine::{Engine, core::ExecuteHandler, storage::fetch_stack}, 
+        blockchain::*, config::*, continuation::*, crypto::*, currency::*, deserialization::*, 
+        dictionary::*, dump::*, exceptions::*, gas::*, globals::*, math::*, null::*, 
+        rand::*, serialization::*, slice_comparison::*, stack::*, tuple::*, 
+        types::{InstructionOptions, Instruction}
+    },
+    stack::{continuation::ContinuationData, integer::behavior::{Signaling, Quiet}},
+    types::{Exception, Failure}
 };
+use std::{fmt, ops::Range};
+use ton_types::{error, Result, types::ExceptionCode};
 
 // ( - )
 fn execute_nop(engine: &mut Engine) -> Failure {
@@ -76,7 +59,7 @@ fn execute_setcpx(engine: &mut Engine) -> Failure {
 
 fn execute_unknown(engine: &mut Engine) -> Failure {
     let code = engine.cc.last_cmd();
-    trace!(target: "tvm", "Invalid code: {} ({:#X})\n", code, code);
+    log::trace!(target: "tvm", "Invalid code: {} ({:#X})\n", code, code);
     err_opt!(ExceptionCode::InvalidOpcode)
 }
 
@@ -807,6 +790,10 @@ impl Handlers {
                 .set(0xB5, execute_subdictrpget)
                 .set(0xB6, execute_subdictirpget)
                 .set(0xB7, execute_subdicturpget)
+                .set(0xBC, execute_dictigetjmpz)
+                .set(0xBD, execute_dictugetjmpz)
+                .set(0xBE, execute_dictigetexecz)
+                .set(0xBF, execute_dictugetexecz)
             )
     }
     

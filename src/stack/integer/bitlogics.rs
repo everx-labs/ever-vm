@@ -12,14 +12,16 @@
 * limitations under the License.
 */
 
-use stack::behavior;
-
-use super::*;
+use crate::stack::integer::{
+    IntegerData, behavior::OperationBehavior, 
+    utils::{binary_op, construct_single_nan, process_single_result, unary_op}
+};
+use ton_types::Result;
 
 impl IntegerData {
     pub fn and<T>(&self, other: &IntegerData) -> Result<IntegerData>
     where
-        T: behavior::OperationBehavior
+        T: OperationBehavior
     {
         binary_op::<T, _, _, _, _, _>(
             &self,
@@ -32,7 +34,7 @@ impl IntegerData {
 
     pub fn or<T>(&self, other: &IntegerData) -> Result<IntegerData>
     where
-        T: behavior::OperationBehavior
+        T: OperationBehavior
     {
         binary_op::<T, _, _, _, _, _>(
             &self,
@@ -45,7 +47,7 @@ impl IntegerData {
 
     pub fn xor<T>(&self, other: &IntegerData) -> Result<IntegerData>
     where
-        T: behavior::OperationBehavior
+        T: OperationBehavior
     {
         binary_op::<T, _, _, _, _, _>(
             &self,
@@ -58,7 +60,7 @@ impl IntegerData {
 
     pub fn not<T>(&self) -> Result<IntegerData>
     where
-        T: behavior::OperationBehavior
+        T: OperationBehavior
     {
         unary_op::<T, _, _, _, _, _>(
             &self,
@@ -70,7 +72,7 @@ impl IntegerData {
 
     pub fn shl<T>(&self, shift: usize) -> Result<IntegerData>
     where
-        T: behavior::OperationBehavior
+        T: OperationBehavior
     {
         unary_op::<T, _, _, _, _, _>(
             &self,
@@ -82,7 +84,7 @@ impl IntegerData {
 
     pub fn shr<T>(&self, shift: usize) -> Result<IntegerData>
     where
-        T: behavior::OperationBehavior
+        T: OperationBehavior
     {
         unary_op::<T, _, _, _, _, _>(
             &self,

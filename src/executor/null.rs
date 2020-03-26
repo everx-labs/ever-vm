@@ -12,13 +12,11 @@
 * limitations under the License.
 */
 
-use types::Failure;
-use executor::engine::Engine;
-use executor::types::Instruction;
-use stack::{StackItem, IntegerData};
-use executor::engine::storage::fetch_stack;
+use crate::{
+    executor::{Mask, engine::{Engine, storage::fetch_stack}, types::Instruction},
+    stack::{StackItem, integer::IntegerData}, types::Failure
+};
 use std::sync::Arc;
-use super::Mask;
 
 pub(super) fn execute_null(engine: &mut Engine) -> Failure {
     engine.load_instruction(

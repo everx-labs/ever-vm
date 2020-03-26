@@ -36,9 +36,8 @@ mod null;
 mod config;
 mod rand;
 
-pub use self::engine::Engine;
-use types::Result;
-use ton_types::{BuilderData, Cell, IBitstring};
+pub use engine::Engine;
+use ton_types::{BuilderData, Cell, IBitstring, Result};
 
 
 pub trait Mask {

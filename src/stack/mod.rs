@@ -12,36 +12,18 @@
 * limitations under the License.
 */
 
-use std::fmt;
-use std::mem;
-use std::ops::Range;
-use std::sync::Arc;
-use std::slice::Iter;
-use types::{
-//    Exception,
-    ExceptionCode,
-    Result,
-    ResultMut,
-    ResultOpt,
-    ResultRef,
-    ResultVec,
-    Status,
-    TvmError,
+use crate::{
+    error::TvmError, stack::{continuation::ContinuationData, integer::IntegerData},
+    types::{Exception, ResultMut, ResultOpt, ResultRef, ResultVec, Status}
 };
+use std::{fmt, mem, ops::Range, slice::Iter, sync::Arc};
+use ton_types::{BuilderData, Cell, error, SliceData, Result, types::ExceptionCode};
 
 pub mod serialization;
-
-mod savelist;
-pub use self::savelist::*;
-
-mod continuation;
-pub use self::continuation::*;
-
+pub mod savelist;
+pub mod continuation;
 #[macro_use]
 pub mod integer;
-pub use self::integer::*;
-
-pub use ton_types::{BuilderData, Cell, IBitstring, SliceData, HashmapE, PfxHashmapE, HashmapType, HashmapRemover};
 
 #[macro_export]
 macro_rules! int {
@@ -354,7 +336,11 @@ impl Stack {
     pub fn drop_top(&mut self, n: usize) {
         let depth = self.depth();
         if depth < n {
-            error!(target: "tvm", "Corrupted stack state. This method can only be called when stack state is well known.");
+            log::error!(
+                 target: "tvm", 
+                 "Corrupted stack state. This method can only be called \
+                  when stack state is well known."
+            );
         } else {
             self.storage.split_off(depth - n);
         }

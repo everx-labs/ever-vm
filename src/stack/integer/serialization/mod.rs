@@ -12,9 +12,15 @@
 * limitations under the License.
 */
 
-use types::{ExceptionCode, Result, TvmError};
-use stack::serialization::{Serializer, Deserializer};
-use stack::{BuilderData, IntegerData, SliceData};
+use crate::{
+    error::TvmError, 
+    stack::{
+        BuilderData, SliceData, integer::IntegerData, 
+        serialization::{Serializer, Deserializer}
+    },
+    types::Exception
+};
+use ton_types::{error, Result, types::ExceptionCode};
 
 pub trait Encoding : Serializer<IntegerData> + Deserializer<IntegerData>
 {

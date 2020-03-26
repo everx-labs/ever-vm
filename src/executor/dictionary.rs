@@ -12,20 +12,29 @@
 * limitations under the License.
 */
 
-use executor::continuation::{callx, switch};
-use executor::engine::storage::{fetch_stack};
-use executor::engine::Engine;
-use executor::Mask;
-use executor::microcode::VAR;
-use executor::types::{Ctx, Instruction, InstructionOptions};
-use stack::{HashmapE, PfxHashmapE, HashmapType};
-use stack::integer::serialization::{
-    Encoding, IntoSliceExt, SignedIntegerBigEndianEncoding, UnsignedIntegerBigEndianEncoding,
+use crate::{
+    error::TvmError, 
+    executor::{
+        Mask, continuation::{callx, switch}, engine::{Engine, storage::{fetch_stack}}, 
+        microcode::VAR, types::{Ctx, Instruction, InstructionOptions}
+    },
+    stack::{
+        StackItem, continuation::ContinuationData, 
+        integer::{
+            IntegerData, 
+            serialization::{
+                Encoding, IntoSliceExt, SignedIntegerBigEndianEncoding, 
+                UnsignedIntegerBigEndianEncoding
+            }
+        },
+        serialization::Deserializer
+    },
+    types::{Exception, Failure}
 };
-use stack::serialization::Deserializer;
-use stack::{BuilderData, ContinuationData, IntegerData, SliceData, StackItem};
-use ton_types::GasConsumer;
-use types::{ExceptionCode, Failure, Result, TvmError};
+use ton_types::{
+    BuilderData, error, GasConsumer, HashmapE, HashmapType, PfxHashmapE, Result, SliceData,
+    types::ExceptionCode
+};
 use std::sync::Arc;
 
 fn try_unref_leaf(slice: &SliceData) -> Result<StackItem> {
@@ -46,6 +55,7 @@ const SET: u8 = 0x20;     // SET value to dictionary
 const SETGET: u8 = GET | SET | RET;
 
 // Extensions
+const STAY: u8 = 0x20;  // STAY argument on stack in failure case
 const CALLX: u8 = 0x40;   // CALLX to found value
 const SWITCH: u8 = 0x80;  // SWITCH to found value
 
@@ -132,21 +142,24 @@ fn dictcont(
         let nbits = ctx.engine.cmd.var(0).as_integer()?.into(0..=1023)?;
         let dict = HashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?.cloned());
         let key = keyreader(ctx.engine.cmd.var(2), nbits)?;
-        match dict.get_with_gas(key, ctx.engine)? {
-            Some(data) => {
-                ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-                    ContinuationData::with_code(data)
-                )));
-                let n = ctx.engine.cmd.var_count() - 1;
-                if how.bit(SWITCH) {
-                    switch(ctx, var!(n))
-                } else if how.bit(CALLX) {
-                    callx(ctx, n)
-                } else {
-                    unimplemented!()
-                }
+        if let Some(data) = dict.get_with_gas(key, ctx.engine)? {
+            ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
+                ContinuationData::with_code(data)
+            )));
+            let n = ctx.engine.cmd.var_count() - 1;
+            if how.bit(SWITCH) {
+                switch(ctx, var!(n))
+            } else if how.bit(CALLX) {
+                callx(ctx, n)
+            } else {
+                unimplemented!()
             }
-            None => Ok(ctx)
+        } else if how.bit(STAY) {
+            let var = ctx.engine.cmd.vars.remove(2);
+            ctx.engine.cc.stack.push(var);
+            Ok(ctx)
+        } else {
+            Ok(ctx)
         }
     })
     .err()
@@ -1178,9 +1191,19 @@ pub(super) fn execute_dictigetjmp(engine: &mut Engine) -> Failure {
     dictcont(engine, "DICTIGETJMP", keyreader_from_int, SWITCH)
 }
 
+// (int slice nbits - int or nothing)
+pub(super) fn execute_dictigetjmpz(engine: &mut Engine) -> Failure {
+    dictcont(engine, "DICTIGETJMPZ", keyreader_from_int, SWITCH | STAY)
+}
+
 // (uint slice nbits - )
 pub(super) fn execute_dictugetjmp(engine: &mut Engine) -> Failure {
     dictcont(engine, "DICTUGETJMP", keyreader_from_uint, SWITCH)
+}
+
+// (uint slice nbits - int or nothing)
+pub(super) fn execute_dictugetjmpz(engine: &mut Engine) -> Failure {
+    dictcont(engine, "DICTUGETJMPZ", keyreader_from_uint, SWITCH | STAY)
 }
 
 // (int slice nbits - )
@@ -1188,9 +1211,19 @@ pub(super) fn execute_dictigetexec(engine: &mut Engine) -> Failure {
     dictcont(engine, "DICTIGETEXEC", keyreader_from_int, CALLX)
 }
 
+// (int slice nbits - int or nothing)
+pub(super) fn execute_dictigetexecz(engine: &mut Engine) -> Failure {
+    dictcont(engine, "DICTIGETEXECZ", keyreader_from_int, CALLX | STAY)
+}
+
 // (uint slice nbits - )
 pub(super) fn execute_dictugetexec(engine: &mut Engine) -> Failure {
     dictcont(engine, "DICTUGETEXEC", keyreader_from_uint, CALLX)
+}
+
+// (uint slice nbits - int or nothing)
+pub(super) fn execute_dictugetexecz(engine: &mut Engine) -> Failure {
+    dictcont(engine, "DICTUGETEXECZ", keyreader_from_uint, CALLX | STAY)
 }
 
 // (value key slice nbits - slice -1|0)

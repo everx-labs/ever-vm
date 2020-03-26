@@ -12,14 +12,15 @@
 * limitations under the License.
 */
 
-use self::utils::*;
-use super::*;
-use types::{
-    Result
+use crate::stack::integer::{
+    IntegerData, IntegerValue, behavior::OperationBehavior, 
+    utils::{
+        binary_op, construct_double_nan, construct_single_nan, process_double_result, 
+        process_single_result, unary_op
+    }
 };
-use num::{
-    Integer,
-};
+use num_traits::Zero;
+use ton_types::Result;
 
 // [x / y] -> (q, r)  :  q*y + r = x  :  |r| < |y|
 #[derive(Copy, Clone, PartialEq)]
@@ -109,7 +110,7 @@ impl IntegerData {
 
         unary_op::<T, _, _, _, _, _>(
             &self,
-            |dividend| divmod(dividend, divisor, rounding),
+            |dividend| utils::divmod(dividend, divisor, rounding),
             construct_double_nan,
             process_double_result::<T, _>
         )
@@ -120,7 +121,7 @@ impl IntegerData {
     {
         unary_op::<T, _, _, _, _, _>(
             &self,
-            |dividend| div_by_shift(dividend, shift, rounding),
+            |dividend| utils::div_by_shift(dividend, shift, rounding),
             construct_double_nan,
             process_double_result::<T, _>
         )
@@ -128,23 +129,25 @@ impl IntegerData {
 }
 
 pub mod utils {
-    use super::*;
-    use num::{
-        One,
-    };
+    
+    use crate::stack::integer::{Int, math::Round};
+    use num_traits::{One, Signed, Zero};
+    use std::cmp::Ordering;
 
     #[inline]
     pub fn divmod(dividend: &Int, divisor: &Int, rounding: Round) -> (Int, Int) {
         match rounding {
-            Round::FloorToNegativeInfinity => Integer::div_mod_floor(dividend, divisor),
-            Round::FloorToZero => Integer::div_rem(dividend, divisor),
+            Round::FloorToNegativeInfinity => 
+                num::Integer::div_mod_floor(dividend, divisor),
+            Round::FloorToZero => 
+                num::Integer::div_rem(dividend, divisor),
             Round::Ceil => {
-                let (mut quotient, mut remainder) = Integer::div_rem(dividend, divisor);
+                let (mut quotient, mut remainder) = num::Integer::div_rem(dividend, divisor);
                 round_ceil(&mut quotient, &mut remainder, dividend, divisor);
                 (quotient, remainder)
             }
             Round::Nearest => {
-                let (mut quotient, mut remainder) = Integer::div_rem(dividend, divisor);
+                let (mut quotient, mut remainder) = num::Integer::div_rem(dividend, divisor);
                 round_nearest(&mut quotient, &mut remainder, dividend, divisor);
                 (quotient, remainder)
             }
@@ -155,17 +158,21 @@ pub mod utils {
     pub fn div_by_shift(dividend: &Int, shift: usize, rounding: Round) -> (Int, Int) {
         let divisor = Int::one() << shift;
         let remainder_mask = divisor.clone() - 1;
-        let (mut quotient, mut remainder) = if dividend.sign() == Sign::Minus {
+        let (mut quotient, mut remainder) = if dividend.sign() == num::bigint::Sign::Minus {
             let dividend = dividend.abs();
             (-(dividend.clone() >> shift), -(dividend & &remainder_mask))
         } else {
             (dividend >> shift, dividend & &remainder_mask)
         };
         match rounding {
-            Round::FloorToNegativeInfinity => round_floor_to_negative_infinity(
-                &mut quotient, &mut remainder, dividend, &divisor),
-            Round::Ceil => round_ceil(&mut quotient, &mut remainder, dividend, &divisor),
-            Round::Nearest => round_nearest(&mut quotient, &mut remainder, dividend, &divisor),
+            Round::FloorToNegativeInfinity => 
+                round_floor_to_negative_infinity(
+                    &mut quotient, &mut remainder, dividend, &divisor
+                ),
+            Round::Ceil => 
+                round_ceil(&mut quotient, &mut remainder, dividend, &divisor),
+            Round::Nearest => 
+                round_nearest(&mut quotient, &mut remainder, dividend, &divisor),
             _ => {}
         }
         (quotient, remainder)

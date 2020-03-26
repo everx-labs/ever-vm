@@ -12,28 +12,19 @@
 * limitations under the License.
 */
 
-use super::{
-    IntegerData,
-    common::*,
-    Encoding
+use crate::{
+    error::TvmError,
+    stack::{
+        BuilderData, 
+        integer::{IntegerData, serialization::{Encoding, common::extend_buffer_le}},
+        serialization::{Serializer, Deserializer}
+    },
+    types::Exception
+
 };
-use types::{
-    ExceptionCode,
-    Result,
-    TvmError,
-};
-use stack::BuilderData;
-use stack::serialization::{
-    Deserializer,
-    Serializer,
-};
-use num::{
-    BigInt,
-    bigint::{
-        ToBigInt, 
-    }
-};
+use num::bigint::ToBigInt;
 use num_traits::Signed;
+use ton_types::{error, Result, types::ExceptionCode};
 
 pub struct SignedIntegerLittleEndianEncoding {
     length_in_bits: usize
@@ -69,7 +60,7 @@ impl Deserializer<IntegerData> for SignedIntegerLittleEndianEncoding {
     fn deserialize(&self, data: &[u8]) -> IntegerData {
         debug_assert!(data.len() * 8 >= self.length_in_bits);
 
-        let value = BigInt::from_signed_bytes_le(data);
+        let value = num::BigInt::from_signed_bytes_le(data);
         IntegerData::from(value).expect("Should always fit")
     }
 }

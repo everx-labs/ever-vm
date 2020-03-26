@@ -12,8 +12,9 @@
 * limitations under the License.
 */
 
+use crate::{error::TvmError, types::Exception};
 use std::cmp::{max, min};
-use types::{ExceptionCode, Result, TvmError};
+use ton_types::{error, Result, types::ExceptionCode};
 
 // TODO: it seems everything should be unsigned
 // Application-specific primitives - A.10; Gas-related primitives - A.10.2

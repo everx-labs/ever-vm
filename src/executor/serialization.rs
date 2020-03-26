@@ -12,23 +12,27 @@
 * limitations under the License.
 */
 
-use executor::engine::Engine;
-use executor::engine::data::convert;
-use executor::engine::storage::{fetch_stack, fetch_reference};
-use executor::gas::gas_state::Gas;
-use executor::microcode::{BUILDER, CC, CELL, VAR};
-use executor::Mask;
-use executor::types::{Ctx, InstructionOptions, Instruction};
-use stack::{StackItem, IntegerData, BuilderData, IBitstring};
-use stack::integer::serialization::{
-    Encoding,
-    IntoSliceExt,
-    SignedIntegerBigEndianEncoding,
-    SignedIntegerLittleEndianEncoding,
-    UnsignedIntegerBigEndianEncoding,
-    UnsignedIntegerLittleEndianEncoding
+use crate::{
+    error::TvmError,
+    executor::{
+    	Mask, engine::{Engine, data::convert, storage::{fetch_stack, fetch_reference}},
+        gas::gas_state::Gas, microcode::{BUILDER, CC, CELL, VAR},
+        types::{Ctx, InstructionOptions, Instruction}
+    },
+    stack::{
+        StackItem,
+        integer::{
+            IntegerData, 
+            serialization::{
+                Encoding, IntoSliceExt, SignedIntegerBigEndianEncoding, 
+                SignedIntegerLittleEndianEncoding, UnsignedIntegerBigEndianEncoding,
+                UnsignedIntegerLittleEndianEncoding
+            }
+        }
+    },
+    types::{Exception, Failure}
 };
-use types::{ExceptionCode, Failure, Result, TvmError};
+use ton_types::{BuilderData, error, IBitstring, Result, types::ExceptionCode};
 use std::sync::Arc;
 
 const QUIET: u8 = 0x01; // quiet variant
