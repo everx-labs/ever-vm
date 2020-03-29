@@ -56,7 +56,7 @@ fn init_try_catch(ctx: Ctx) -> Result<Ctx> {
      // special swaping for callx - it calls cont from var0, but now in var0 - catch cont
     .and_then(|ctx| swap(ctx, var!(0), var!(1)))
     .and_then(|ctx| swap(ctx, ctrl!(2), var!(1)))
-    .and_then(|ctx| callx(ctx, 0))
+    .and_then(|ctx| callx(ctx, 0, false))
     .and_then(|ctx| copy_to_var(ctx, ctrl!(0)))
     .and_then(|ctx| {
         let length = ctx.engine.cmd.var_count();

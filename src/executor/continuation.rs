@@ -114,12 +114,14 @@ fn callcc(ctx: Ctx, callee: usize) -> Result<Ctx> {
 //     continuation.savelist[0] = cc
 // }
 // cc = continuation, c[*] = cc.savelist[*]
-pub(super) fn callx(ctx: Ctx, callee: usize) -> Result<Ctx> {
+pub(super) fn callx(ctx: Ctx, callee: usize, need_convert: bool) -> Result<Ctx> {
     let vars = ctx.engine.cmd.var_count();
     if  vars < callee {
         unimplemented!()
     } else if vars == callee {
         fetch_stack(ctx, 1)
+    } else if need_convert && ctx.engine.cmd.var(callee).as_cell().is_ok() {
+        convert(ctx, var!(callee), CONTINUATION, CELL)
     } else {
         Ok(ctx)
     }
@@ -266,8 +268,13 @@ fn setcont(ctx: Ctx, v: usize, need_to_convert: bool) -> Result<Ctx> {
 }
 
 // switch to continuation from var!(0)
-fn jmpx(ctx: Ctx) -> Result<Ctx> {
-    pop_all(ctx, var!(0))
+fn jmpx(ctx: Ctx, need_convert: bool) -> Result<Ctx> {
+    if need_convert && ctx.engine.cmd.var(0).as_cell().is_ok() {
+        convert(ctx, var!(0), CONTINUATION, CELL)
+    } else {
+        Ok(ctx)
+    }
+    .and_then(|ctx| pop_all(ctx, var!(0)))
     .and_then(|ctx| swap(ctx, var!(0), CC))
     .and_then(|ctx| apply_savelist(ctx, 0..2))
 }
@@ -436,7 +443,7 @@ pub(super) fn execute_booleval(engine: &mut Engine) -> Failure {
         )));
         Ok(ctx)
     })
-    .and_then(|ctx| callx(ctx, 0))
+    .and_then(|ctx| callx(ctx, 0, false))
     .and_then(|ctx| {
         let has_save_c0 = !ctx.engine.cc.can_put_to_savelist_once(0);
         if has_save_c0 {
@@ -473,7 +480,7 @@ fn execute_call(engine: &mut Engine, name: &'static str, range: Range<isize>, ho
             .and_then(|ctx| {
                 match how {
                     SWITCH => switch(ctx, var!(0)),
-                    CALLX => callx(ctx, 0),
+                    CALLX => callx(ctx, 0, false),
                     _ => unimplemented!("how: 0x{:X}", how)
                 }
             })
@@ -538,7 +545,7 @@ pub(super) fn execute_callref(engine: &mut Engine) -> Failure {
     )
     .and_then(|ctx| fetch_reference(ctx, CC))
     .and_then(|ctx| convert(ctx, var!(0), CONTINUATION, CELL))
-    .and_then(|ctx| callx(ctx, 0))
+    .and_then(|ctx| callx(ctx, 0, false))
     .err()
 }
 
@@ -547,7 +554,7 @@ pub(super) fn execute_callx(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("CALLX")
     )
-    .and_then(|ctx| callx(ctx, 0))
+    .and_then(|ctx| callx(ctx, 0, false))
     .err()
 }
 
@@ -563,7 +570,7 @@ pub(super) fn execute_callxargs(engine: &mut Engine) -> Failure {
             }
         )
     )
-    .and_then(|ctx| callx(ctx, 0))
+    .and_then(|ctx| callx(ctx, 0, false))
     .err()
 }
 
@@ -574,7 +581,7 @@ pub(super) fn execute_callxva(engine: &mut Engine) -> Failure {
     )
     .and_then(|ctx| fetch_stack(ctx, 3))
     .and_then(|ctx| fetch_nargs_pargs(ctx, -1..=254, -1..=254))
-    .and_then(|ctx| callx(ctx, 2))
+    .and_then(|ctx| callx(ctx, 2, false))
     .err()
 }
 
@@ -673,32 +680,38 @@ pub(super) fn execute_condselchk(engine: &mut Engine) -> Failure {
     .err()
 }
 
+const CALL:  u8 = 0x00; // call cont
 const JMP:   u8 = 0x01; // jump to cont
-const CALL:  u8 = 0x02; // call cont
 const RET:   u8 = 0x04; // ret to c0
 const ALT:   u8 = 0x08; // ret to c1
 const REF:   u8 = 0x10; // use refslice as cont
+const REF2:  u8 = 0x02; // use refslice as second cont
 const INV:   u8 = 0x20; // condition not
-const BOTH:  u8 = 0x40; // IFELSE
+const ELSE:  u8 = 0x40; // IFELSE
 const THROW: u8 = 0x80; // checks if condition is NaN then throw IntegerOverflow
 
 fn execute_if_mask(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     let mut params = 2;
+    if how.bit(ELSE) {
+        params += 1;
+    }
     if how.bit(REF) {
+        params -= 1;
+    }
+    if how.bit(REF2) {
         params -= 1;
     }
     if how.bit(RET) {
         params -= 1;
     }
-    if how.bit(BOTH) {
-        params += 1;
-    }
 
-    engine.load_instruction(
-        Instruction::new(name)
-    )
+    engine.load_instruction(Instruction::new(name))
     .and_then(|ctx| match how.bit(REF) {
-        true => fetch_reference(ctx, CC).and_then(|ctx| convert(ctx, var!(0), CONTINUATION, CELL)),
+        true => fetch_reference(ctx, CC),
+        false => Ok(ctx)
+    })
+    .and_then(|ctx| match how.bit(REF2) {
+        true => fetch_reference(ctx, CC),
         false => Ok(ctx)
     })
     .and_then(|ctx| fetch_stack(ctx, params))
@@ -708,13 +721,23 @@ fn execute_if_mask(engine: &mut Engine, name: &'static str, how: u8) -> Failure 
         Ok(ctx)
     })
     .and_then(|ctx| match ctx.engine.cmd.vars.last().unwrap().as_bool()? ^ how.bit(INV) {
-        false if how.bit(BOTH) => callx(ctx, 1),
+        false if how.bit(ELSE) => {
+            if !how.bit(REF) {
+                ctx.engine.cmd.var(0).as_continuation()?;
+            }
+            callx(ctx, 1, how.bit(REF2))
+        }
         false => Ok(ctx),
-        true if how.bit(CALL) => callx(ctx, 0),
-        true if how.bit(JMP ) => jmpx(ctx),
+        true if how.bit(ELSE) => {
+            if !how.bit(REF2) {
+                ctx.engine.cmd.var(1).as_continuation()?;
+            }
+            callx(ctx, 0, how.bit(REF))
+        }
+        true if how.bit(JMP ) => jmpx(ctx, how.bit(REF)),
         true if how.bit(ALT ) => retalt(ctx),
         true if how.bit(RET ) => ret(ctx),
-        _ => unimplemented!("how = 0x{:X}", how)
+        true                  => callx(ctx, 0, how.bit(REF)),
     })
     .err()
 }
@@ -726,7 +749,12 @@ pub(super) fn execute_if(engine: &mut Engine) -> Failure {
 
 // (condition continuation1 continuation2 - ): if condition != 0 callx continuation1 else callx continuation2
 pub(super) fn execute_ifelse(engine: &mut Engine) -> Failure {
-    execute_if_mask(engine, "IFELSE", CALL | BOTH | INV)
+    execute_if_mask(engine, "IFELSE", CALL | ELSE | INV)
+}
+
+// (condition continuation - ): equivalent to PUSHREFCONT; IFELSE
+pub(super) fn execute_ifelseref(engine: &mut Engine) -> Failure {
+    execute_if_mask(engine, "IFELSEREF", CALL | ELSE | INV | REF)
 }
 
 // (condition continuation - ): switch if condition != 0
@@ -769,6 +797,16 @@ pub(super) fn execute_ifref(engine: &mut Engine) -> Failure {
     execute_if_mask(engine, "IFREF", CALL | REF)
 }
 
+// (condition continuation - ): equivalent to PUSHREFCONT; SWAP; IFELSE
+pub(super) fn execute_ifrefelse(engine: &mut Engine) -> Failure {
+    execute_if_mask(engine, "IFREFELSE", CALL | ELSE | REF)
+}
+
+// (condition - ): equivalent to PUSHREFCONT; PUSHREFCONT; IFELSE
+pub(super) fn execute_ifrefelseref(engine: &mut Engine) -> Failure {
+    execute_if_mask(engine, "IFREFELSEREF", CALL | ELSE | REF | REF2)
+}
+
 // (condition - ): switch if condition != 0
 pub(super) fn execute_ifret(engine: &mut Engine) -> Failure {
     execute_if_mask(engine, "IFRET", RET | THROW)
@@ -798,8 +836,7 @@ pub(super) fn execute_jmpref(engine: &mut Engine) -> Failure {
         Instruction::new("JMPREF")
     )
     .and_then(|ctx| fetch_reference(ctx, CC))
-    .and_then(|ctx| convert(ctx, var!(0), CONTINUATION, CELL))
-    .and_then(|ctx| jmpx(ctx))
+    .and_then(|ctx| jmpx(ctx, true))
     .err()
 }
 
@@ -819,19 +856,13 @@ pub(super) fn execute_jmpx(engine: &mut Engine) -> Failure {
         Instruction::new("JMPX")
     )
     .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| jmpx(ctx))
+    .and_then(|ctx| jmpx(ctx, false))
     .err()
 }
 
-fn execute_ifbit_mask(engine: &mut Engine, how: u8) -> Failure {
+fn execute_ifbit_mask(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     engine.load_instruction(
-        Instruction::new(
-            if how.bit(INV) {
-                "IFNBITJMPREF"
-            } else {
-                "IFBITJMPREF"
-            })
-            .set_opts(InstructionOptions::Integer(0..32))
+        Instruction::new(name).set_opts(InstructionOptions::Integer(0..32))
     )
     .and_then(|ctx| if how.bit(REF) {
         fetch_reference(ctx, CC)
@@ -854,11 +885,8 @@ fn execute_ifbit_mask(engine: &mut Engine, how: u8) -> Failure {
         };
         if is_zero ^ how.bit(INV) {
             Ok(ctx)
-        } else if how.bit(REF) {
-            convert(ctx, var!(0), CONTINUATION, CELL)
-            .and_then(|ctx| jmpx(ctx))
         } else {
-            jmpx(ctx)
+            jmpx(ctx, how.bit(REF))
         }
     })
     .err()
@@ -866,22 +894,22 @@ fn execute_ifbit_mask(engine: &mut Engine, how: u8) -> Failure {
 
 // (x continuation - x), switch if n's bit of x is set
 pub(super) fn execute_ifbitjmp(engine: &mut Engine) -> Failure {
-    execute_ifbit_mask(engine, 0)
+    execute_ifbit_mask(engine, "IFBITJMP", 0)
 }
 
 // (x continuation - x), switch if n's bit of x is not set
 pub(super) fn execute_ifnbitjmp(engine: &mut Engine) -> Failure {
-    execute_ifbit_mask(engine, INV)
+    execute_ifbit_mask(engine, "IFNBITJMP", INV)
 }
 
 // (x - x), switch pattern if n'th bit is set
 pub(super) fn execute_ifbitjmpref(engine: &mut Engine) -> Failure {
-    execute_ifbit_mask(engine, REF)
+    execute_ifbit_mask(engine, "IFBITJMPREF", REF)
 }
 
 // (x - x), switch pattern if n'th bit is not set
 pub(super) fn execute_ifnbitjmpref(engine: &mut Engine) -> Failure {
-    execute_ifbit_mask(engine, REF | INV)
+    execute_ifbit_mask(engine, "IFNBITJMPREF", REF | INV)
 }
 
 // (continuation - ), continuation.nargs = cmd.pargs, then switch pattern

@@ -538,6 +538,9 @@ impl Handlers {
                 .set(0x05, execute_condselchk)
                 .set(0x08, execute_ifretalt)
                 .set(0x09, execute_ifnotretalt)
+                .set(0x0D, execute_ifrefelse)
+                .set(0x0E, execute_ifelseref)
+                .set(0x0F, execute_ifrefelseref)
                 .set_range(0x80..0xA0, execute_ifbitjmp)
                 .set_range(0xA0..0xC0, execute_ifnbitjmp)
                 .set_range(0xC0..0xE0, execute_ifbitjmpref)
@@ -826,8 +829,10 @@ impl Handlers {
                 .set(0x33, execute_config_opt_param)
                 .set(0x40, execute_getglobvar)
                 .set_range(0x41..0x5F, execute_getglob)
+                .set(0x5F, execute_getglob)
                 .set(0x60, execute_setglobvar)
                 .set_range(0x61..0x7F, execute_setglob)
+                .set(0x7F, execute_setglob)
             )
     }
     

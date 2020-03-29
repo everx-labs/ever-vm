@@ -926,7 +926,10 @@ impl<T: Writer> Engine<T> {
         INC                                  => 0xA4
         INTSORT2                             => 0xB6, 0x0A
         INVERT                               => 0xED, 0xF8
+        IFELSEREF                            => 0xE3, 0x0E
         IFREF                                => 0xE3, 0x00
+        IFREFELSE                            => 0xE3, 0x0D
+        IFREFELSEREF                         => 0xE3, 0x0F
         IFNOTREF                             => 0xE3, 0x01
         IFJMPREF                             => 0xE3, 0x02
         IFNOTJMPREF                          => 0xE3, 0x03

@@ -150,7 +150,7 @@ fn dictcont(
             if how.bit(SWITCH) {
                 switch(ctx, var!(n))
             } else if how.bit(CALLX) {
-                callx(ctx, n)
+                callx(ctx, n, false)
             } else {
                 unimplemented!()
             }
@@ -319,7 +319,7 @@ fn pfxdictget(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
                 if how.bit(SWITCH) {
                     Ok(switch(ctx, var!(n - 1)).unwrap())
                 } else if how.bit(CALLX) {
-                    Ok(callx(ctx, n - 1).unwrap())
+                    Ok(callx(ctx, n - 1, false).unwrap())
                 } else { 
                     unimplemented!()
                 }
