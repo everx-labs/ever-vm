@@ -344,31 +344,7 @@ pub(super) fn execute_again(engine: &mut Engine) -> Failure {
     .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) ) // cc.savelist[0] = c[0]
     .and_then(|ctx| copy_to_var(ctx, CC) )
     .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)) ) // again.savelist[0] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // body.savelist[0] = again
-    .and_then(|ctx| switch(ctx, var!(0)))
-    .err()
-}
-
-// Continuation related instructions ******************************************
-// (c - ), execute C infinitely with break
-pub(super) fn execute_again_break(engine: &mut Engine) -> Failure {
-    engine.load_instruction(
-        Instruction::new("AGAINBRK")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::AgainLoopBody(body))
-        )));
-        Ok(ctx)
-    })
-    .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) ) // cc.savelist[0] = c[0]
-    .and_then(|ctx| copy_to_var(ctx, CC) )                  // var[2] = cc
-    .and_then(|ctx| copy_to_var(ctx, var!(2)) )             // var[3] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)) ) // again.savelist[0] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // body.savelist[0] = again
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 1), var!(3)) ) // body.savelist[1] = cc
+    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // continuation.savelist[0] = again
     .and_then(|ctx| switch(ctx, var!(0)))
     .err()
 }
@@ -391,32 +367,7 @@ pub(super) fn execute_againend(engine: &mut Engine) -> Failure {
     .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) ) // cc.savelist[0] = c[0]
     .and_then(|ctx| copy_to_var(ctx, CC) )
     .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)) ) // again.savelist[0] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // body.savelist[0] = again
-    .and_then(|ctx| switch(ctx, var!(0)))
-    .err()
-}
-
-// ( - ), execute CC infinitely
-pub(super) fn execute_againend_break(engine: &mut Engine) -> Failure {
-    engine.load_instruction(
-        Instruction::new("AGAINENDBRK")
-    )
-    .and_then(|ctx| {
-        let body = ctx.engine.cc.code_mut().withdraw();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_code(body.clone())
-        )));
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::AgainLoopBody(body))
-        )));
-        Ok(ctx)
-    })
-    .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) )     // cc.savelist[0] = c[0]
-    .and_then(|ctx| copy_to_var(ctx, CC) )                      // var[2] = cc
-    .and_then(|ctx| copy_to_var(ctx, var!(2) ) )                // var[3] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)) ) // again.savelist[0] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // body.savelist[0] = again
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 1), var!(3)) ) // body.savelist[1] = cc
+    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // continuation.savelist[0] = again
     .and_then(|ctx| switch(ctx, var!(0)))
     .err()
 }
@@ -982,9 +933,8 @@ pub(super) fn execute_jmpxva(engine: &mut Engine) -> Failure {
 }
 
 // (integer_repeat_count body_continuation - )
+// body.savelist[0] = cc
 // cc.savelist[0] = c[0]
-// ec_repeat.savelist[0] = cc
-// body.savelist[0] = ec_repeat
 pub(super) fn execute_repeat(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("REPEAT")
@@ -1009,40 +959,9 @@ pub(super) fn execute_repeat(engine: &mut Engine) -> Failure {
     .err()
 }
 
-// (integer_repeat_count body_continuation - )
-// cc.savelist[0] = c[0]
-// ec_repeat.savelist[0] = cc
-// body.savelist[0] = ec_repeat
-// body.savelist[1] = cc
-pub(super) fn execute_repeat_break(engine: &mut Engine) -> Failure {
-    engine.load_instruction(
-        Instruction::new("REPEATBRK")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 2))
-    .and_then(|ctx| {
-        let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        let counter = ctx.engine.cmd.var(1).as_integer()?.into(-0x80000000..=0x7FFFFFFF)?;
-        if counter <= 0 {
-            Ok(ctx)
-        } else {
-            ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-                ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter))
-            )));
-            swap(ctx, savelist!(CC, 0), ctrl!(0)) // cc.savelist[0] = c[0]
-            .and_then(|ctx| copy_to_var(ctx, CC))
-            .and_then(|ctx| copy_to_var(ctx, var!(3)))
-            .and_then(|ctx| swap(ctx, savelist!(var!(2), 0), var!(3))) // ec_repeat.savelist[0] = cc
-            .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(2))) // body.savelist[0] = ec_repeat
-            .and_then(|ctx| swap(ctx, savelist!(var!(0), 1), var!(4))) // body.savelist[1] = cc
-            .and_then(|ctx| switch(ctx, var!(0)))
-        }
-    })
-    .err()
-}
-
 // (integer_repeat_count - )
-// ec_repeat.savelist[0] = c[0]
-// body.savelist[0] = ec_repeat
+// body.savelist[0] = cc
+// cc.savelist[0] = c[0]
 pub(super) fn execute_repeatend(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("REPEATEND")
@@ -1062,37 +981,6 @@ pub(super) fn execute_repeatend(engine: &mut Engine) -> Failure {
             )));
             swap(ctx, savelist!(var!(2), 0), ctrl!(0))                 // ec_repeat.savelist[0] = c[0]
             .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2))) // body.savelist[0] = ec_repeat
-            .and_then(|ctx| switch(ctx, var!(1)))
-        }
-    })
-    .err()
-}
-
-// (integer_repeat_count - )
-// ec_repeat.savelist[0] = c[0]
-// body.savelist[0] = ec_repeat
-// body.savelist[1] = c[0]
-pub(super) fn execute_repeatend_break(engine: &mut Engine) -> Failure {
-    engine.load_instruction(
-        Instruction::new("REPEATENDBRK")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let body = ctx.engine.cc.code().clone();
-        let counter = ctx.engine.cmd.var(0).as_integer()?.into(-0x80000000..=0x7FFFFFFF)?;
-        if counter <= 0 {
-            ret(ctx)
-        } else {
-            ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-                ContinuationData::with_code(body.clone())
-            )));
-            ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-                ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter))
-            )));
-            copy_to_var(ctx, ctrl!(0))
-            .and_then(|ctx| swap(ctx, savelist!(var!(2), 0), ctrl!(0))) // ec_repeat.savelist[0] = c[0]
-            .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)))  // body.savelist[0] = ec_repeat
-            .and_then(|ctx| swap(ctx, savelist!(var!(1), 1), var!(3)))  // body.savelist[1] = c[0]
             .and_then(|ctx| switch(ctx, var!(1)))
         }
     })
@@ -1385,8 +1273,8 @@ pub(super) fn execute_thenretalt(engine: &mut Engine) -> Failure {
 
 // (body - )
 // cc.savelist[0] = c[0]
-// ec_until.savelist[0] = cc
-// body.savelist[0] = ec_until
+// condition.savelist[0] = cc
+// body.savelist[0] = condition
 // switch to body
 pub(super) fn execute_until(engine: &mut Engine) -> Failure {
     engine.load_instruction(
@@ -1408,37 +1296,9 @@ pub(super) fn execute_until(engine: &mut Engine) -> Failure {
     .err()
 }
 
-// (body - )
-// cc.savelist[0] = c[0]
-// ec_until.savelist[0] = cc
-// body.savelist[0] = ec_until
-// body.savelist[1] = cc
-// switch to body
-pub(super) fn execute_until_break(engine: &mut Engine) -> Failure {
-    engine.load_instruction(
-        Instruction::new("UNTILBRK")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::UntilLoopCondition(body))
-        )));
-        Ok(ctx)
-    })
-    .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) )     // cc.savelist[0] = c[0]
-    .and_then(|ctx| copy_to_var(ctx, CC) )
-    .and_then(|ctx| copy_to_var(ctx, var!(2)) )
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)) ) // ec_until.savelist[0] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // body.savelist[0] = ec_until
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 1), var!(3)) ) // body.savelist[1] = cc
-    .and_then(|ctx| switch(ctx, var!(0)))
-    .err()
-}
-
 // cc is body
-// ec_until.savelist[0] = c[0]
-// body.savelist[0] = ec_until
+// condition.savelist[0] = c[0]
+// body.savelist[0] = condition
 // switch to body
 pub(super) fn execute_untilend(engine: &mut Engine) -> Failure {
     engine.load_instruction(
@@ -1459,36 +1319,6 @@ pub(super) fn execute_untilend(engine: &mut Engine) -> Failure {
     .and_then(|ctx| switch(ctx, var!(0)))
     .err()
 }
-
-// cc is body
-// ec_until.savelist[0] = c[0]
-// body.savelist[0] = ec_until
-// body.savelist[1] = c[0]
-// switch to body
-pub(super) fn execute_untilend_break(engine: &mut Engine) -> Failure {
-    engine.load_instruction(
-        Instruction::new("UNTILENDBRK")
-    )
-    .and_then(|ctx| {
-        let body = ctx.engine.cc.code_mut().withdraw();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_code(body.clone())
-        )));
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::UntilLoopCondition(body))
-        )));
-        Ok(ctx)
-    })
-    .and_then(|ctx| copy_to_var(ctx, ctrl!(0)) )
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), ctrl!(0)) ) // ec_until.savelist[0] = c[0]
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // body.savelist[0] = ec_until
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 1), var!(2)) ) // body.savelist[1] = c[0]
-    .and_then(|ctx| switch(ctx, var!(0)))
-    .err()
-}
-// .set(0x18, execute_while_break)
-// .set(0x19, execute_whileend_break)
-
 
 // (condition body - )
 // cc.savelist[0] = c[0]
@@ -1516,40 +1346,10 @@ pub(super) fn execute_while(engine: &mut Engine) -> Failure {
     .err()
 }
 
-// (condition body - )
-// cc.savelist[0] = c[0]
-// ec_while.savelist[0] = cc
-// condition.savelist[0] = ec_while
-// condition.savelist[1] = cc
-// switch to condition
-pub(super) fn execute_while_break(engine: &mut Engine) -> Failure {
-    engine.load_instruction(
-        Instruction::new("WHILEBRK")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 2))
-    .and_then(|ctx| {
-        let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        let cond = ctx.engine.cmd.var(1).as_continuation()?.code().clone();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::WhileLoopCondition(body, cond))
-        )));
-        Ok(ctx)
-    })
-    .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) )     // cc.savelist[0] = c[0]
-    .and_then(|ctx| copy_to_var(ctx, CC))
-    .and_then(|ctx| copy_to_var(ctx, var!(3)))
-    .and_then(|ctx| swap(ctx, savelist!(var!(2), 0), var!(3)) ) // ec_while.savelist[0] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)) ) // condition.savelist[0] = ec_while
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 1), var!(4)) ) // condition.savelist[1] = cc
-    .and_then(|ctx| switch(ctx, var!(1)))
-    .err()
-}
-
 // cc is body
 // (condition - )
 // condition.savelist[0] = c[0]
 // ec_while.savelist[0] = condition
-// condition.savelist[1] = cc
 // switch to condition
 pub(super) fn execute_whileend(engine: &mut Engine) -> Failure {
     engine.load_instruction(
@@ -1566,32 +1366,6 @@ pub(super) fn execute_whileend(engine: &mut Engine) -> Failure {
     })
     .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), ctrl!(0)) ) // ec_while.savelist[0] = c[0]
     .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // condition.savelist[0] = ec_while
-    .and_then(|ctx| switch(ctx, var!(0)))
-    .err()
-}
-
-// cc is body
-// (condition - )
-// condition.savelist[0] = c[0]
-// ec_while.savelist[0] = condition
-// switch to condition
-pub(super) fn execute_whileend_break(engine: &mut Engine) -> Failure {
-    engine.load_instruction(
-        Instruction::new("WHILEENDBRK")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let body = ctx.engine.cc.code_mut().withdraw();
-        let cond = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::WhileLoopCondition(body, cond))
-        )));
-        Ok(ctx)
-    })
-    .and_then(|ctx| copy_to_var(ctx, ctrl!(0)))
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), ctrl!(0)) ) // ec_while.savelist[0] = c[0]
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // condition.savelist[0] = ec_while
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 1), var!(2)) ) // condition.savelist[0] = ec_while
     .and_then(|ctx| switch(ctx, var!(0)))
     .err()
 }
