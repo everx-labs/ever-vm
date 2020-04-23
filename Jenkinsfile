@@ -113,7 +113,7 @@ pipeline {
                     steps {
                         script {
                             sh """
-                                (cat Cargo.toml | sed 's/ton_types = .*/ton_types = { path = \"\\/tonlabs\\/ton-labs-types\" }/g') > tmp.toml
+                                (cat Cargo.toml | sed  -E 's/git *= *\\"(https|ssh)\\:\\/\\/(git@)?github.com\\/tonlabs\\/(ton.*)\\.git\\"/path = \\"\\/tonlabs\\/\\3\\"/g') > tmp.toml
                                 rm Cargo.toml
                                 mv ./tmp.toml ./Cargo.toml
                             """
