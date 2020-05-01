@@ -96,7 +96,7 @@ def buildBranchesMap() {
     }
 
     if (params.branch_ton_labs_block == '') {
-        G_branches.put('ton-labs-block', "releassdkbinaries-ws.tonlabs.io
+        G_branches.put('ton-labs-block', "release-candidate")
     } else {
         G_branches.put('ton-labs-block', params.branch_ton_labs_block)
     }
