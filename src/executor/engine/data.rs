@@ -29,17 +29,17 @@ fn convert_any(ctx: &mut Ctx, x: u16, to: u16, from: u16) -> Status {
                 BUILDER => {
                     let var = ctx.engine.cmd.var_mut(storage_index!(x));
                     let builder = var.as_builder_mut()?;
-                    let cell = ctx.engine.finalize_cell(builder);
+                    let cell = ctx.engine.finalize_cell(builder)?;
                     match to {
                         CELL => StackItem::Cell(cell),
-                        SLICE => StackItem::Slice(ctx.engine.load_cell(cell)),
+                        SLICE => StackItem::Slice(ctx.engine.load_cell(cell)?),
                         _ => unimplemented!()
                     }
                 }
                 CELL => {
                     let var = ctx.engine.cmd.var(storage_index!(x));
                     let cell = var.as_cell()?.clone();
-                    let slice = ctx.engine.load_cell(cell);
+                    let slice = ctx.engine.load_cell(cell)?;
                     match to {
                         CONTINUATION => StackItem::Continuation(Arc::new(ContinuationData::with_code(slice))),
                         SLICE => StackItem::Slice(slice),

@@ -57,7 +57,7 @@ pub(super) fn execute_hashsu(engine: &mut Engine) -> Failure {
         .and_then(|ctx| fetch_stack(ctx, 1))
         .and_then(|ctx| {
             let builder = BuilderData::from_slice(ctx.engine.cmd.var(0).as_slice()?);
-            let cell = ctx.engine.finalize_cell(builder);
+            let cell = ctx.engine.finalize_cell(builder)?;
             let hash_int = hash_to_uint(&cell.repr_hash());
             ctx.engine.cc.stack.push(StackItem::Integer(hash_int));
             Ok(ctx)

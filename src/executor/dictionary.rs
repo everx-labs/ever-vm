@@ -47,11 +47,11 @@ fn try_unref_leaf(slice: &SliceData) -> Result<StackItem> {
 // Utilities ******************************************************************
 
 const CNV: u8 = 0x01;     // CoNVert input value (from builder to slice)
-const DEL: u8 = 0x02;     // DELete key 
+const SET: u8 = 0x02;     // SET value to dictionary
 const GET: u8 = 0x04;     // GET value from dictionary upon successful call
 const INV: u8 = 0x08;     // INVert rule to get output value: get it upon unsuccessful call
 const RET: u8 = 0x10;     // RETurn success flag
-const SET: u8 = 0x20;     // SET value to dictionary
+const DEL: u8 = 0x20;     // DELete key 
 const SETGET: u8 = GET | SET | RET;
 
 // Extensions
@@ -62,9 +62,6 @@ const SWITCH: u8 = 0x80;  // SWITCH to found value
 const CMD: u8 = 0x01;     // Get key from CMD
 
 type KeyReader = fn(&StackItem, usize) -> Result<SliceData>;
-type KeyWriter = fn(&mut Ctx, BuilderData) -> StackItem;
-type KeyValFinder = fn(&mut Ctx, &HashmapE) -> Result<(Option<BuilderData>, Option<StackItem>)>;
-type KeyValReader = fn(&mut Ctx, &HashmapE, SliceData) -> Result<(Option<BuilderData>, Option<StackItem>)>;
 type ValAccessor = fn(&mut Ctx, &mut HashmapE, SliceData) -> Result<Option<StackItem>>;
 
 // Legend: ret = 0 if INV or -1
@@ -166,13 +163,7 @@ fn dictcont(
 }
 
 // (key slice nbits - (value' key' -1) | (0))
-fn dictiter(
-    engine: &mut Engine,
-    name: &'static str,
-    keyreader: KeyReader,
-    valreader: KeyValReader,
-    keywriter: KeyWriter
-) -> Failure {
+fn dictiter(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     engine.load_instruction(
         Instruction::new(name)
     )
@@ -180,18 +171,18 @@ fn dictiter(
     .and_then(|mut ctx| {
         let nbits = ctx.engine.cmd.var(0).as_integer()?.into(0..=1023)?;
         let dict = HashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?.cloned());
-        let key = keyreader(ctx.engine.cmd.var(2), nbits)?;
-        if key.is_empty() {
-            ctx.engine.cc.stack.push(boolean!(false));
+        let result = match read_key(ctx.engine.cmd.var(2), nbits, how)? {
+            (Some(key), _) => iter_reader(&mut ctx, &dict, key, how)?,
+            (None, neg) if !neg ^ how.bit(MIN) => finder(&mut ctx, &dict, how)?,
+            _ => (None, None)
+        };
+        if let (Some(key), Some(value)) = result {
+            ctx.engine.cc.stack.push(value);
+            let key = write_key(&mut ctx, key, how)?;
+            ctx.engine.cc.stack.push(key);
+            ctx.engine.cc.stack.push(boolean!(true));
         } else {
-            if let (Some(key), Some(value)) = valreader(&mut ctx, &dict, key)? {
-                ctx.engine.cc.stack.push(value);
-                let key = keywriter(&mut ctx, key);
-                ctx.engine.cc.stack.push(key);
-                ctx.engine.cc.stack.push(boolean!(true));
-            } else {
-                ctx.engine.cc.stack.push(boolean!(false));
-            }
+            ctx.engine.cc.stack.push(boolean!(false));
         }
         Ok(ctx)
     })
@@ -202,9 +193,7 @@ fn dictiter(
 fn find(
     engine: &mut Engine,
     name: &'static str,
-    remove: bool,
-    valfinder: KeyValFinder,
-    keywriter: KeyWriter
+    how: u8,
 ) -> Failure {
     engine.load_instruction(
         Instruction::new(name)
@@ -213,17 +202,17 @@ fn find(
     .and_then(|mut ctx| {
         let nbits = ctx.engine.cmd.var(0).as_integer()?.into(0..=1023)?;
         let mut dict = HashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?.cloned());
-        if let (Some(key), Some(value)) = valfinder(&mut ctx, &dict)? {
-            if remove {
+        if let (Some(key), Some(value)) = finder(&mut ctx, &dict, how)? {
+            if how.bit(DEL) {
                 dict.remove_with_gas(SliceData::from(&key), ctx.engine)?;
                 ctx.engine.cc.stack.push(dict!(dict));
             }
             ctx.engine.cc.stack.push(value);
-            let key = keywriter(&mut ctx, key);
+            let key = write_key(&mut ctx, key, how)?;
             ctx.engine.cc.stack.push(key);
             ctx.engine.cc.stack.push(boolean!(true));
         } else {
-            if remove {
+            if how.bit(DEL) {
                 ctx.engine.cc.stack.push(dict!(dict));
             }
             ctx.engine.cc.stack.push(boolean!(false));
@@ -366,6 +355,22 @@ fn keyreader_from_uint(key: &StackItem, nbits: usize) -> Result<SliceData> {
     key.into_builder::<UnsignedIntegerBigEndianEncoding>(nbits).map(|builder| builder.into())
 }
 
+fn read_key(key: &StackItem, nbits: usize, how: u8) -> Result<(Option<SliceData>, bool)> {
+    if how.bit(SLC) {
+        return Ok((Some(keyreader_from_slice(key, nbits)?), false))
+    } else if how.bit(SIGN) {
+        if let Ok(key) = keyreader_from_int(key, nbits) {
+            return Ok((Some(key), false))
+        }
+    } else {
+        if let Ok(key) = keyreader_from_uint(key, nbits) {
+            return Ok((Some(key), false))
+        }
+    }
+
+    Ok((None, key.as_integer()?.is_neg()))
+}
+
 fn valreader_from_slice(ctx: &mut Ctx, dict: &mut HashmapE, key: SliceData) -> Result<Option<StackItem>> {
     Ok(dict.get_with_gas(key, ctx.engine)?.map(|val| StackItem::Slice(val)))
 }
@@ -496,94 +501,32 @@ fn valwriter_to_ref(
     dict.setref_with_gas(key, &val, ctx.engine)?.map(|val| try_unref_leaf(&val)).transpose()
 }
 
+const PREV: u8 = 0x00;
 const NEXT: u8 = 0x01;
 const SAME: u8 = 0x02;
-const SIGNED : u8 = 0x04;
+// const SLC:  u8 = 0x04;
+const SIGN: u8 = 0x08;
+const REF:  u8 = 0x10;
+// const DEL: u8 = 0x20;     // DELete key 
+const MAX:  u8 = 0x00; // same as PREV
+const MIN:  u8 = 0x01; // same as NEXT
 
 fn iter_reader(
     ctx: &mut Ctx,
     dict: &HashmapE,
-    how: u8, 
-    key: SliceData
+    key: SliceData,
+    how: u8,
 ) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    let (key, val) = dict.find_leaf(key, how.bit(NEXT), how.bit(SAME), how.bit(SIGNED), ctx.engine)?;
+    let (key, val) = dict.find_leaf(key, how.bit(NEXT), how.bit(SAME), how.bit(SIGN), ctx.engine)?;
     let val = val.map(|val| StackItem::Slice(val));
     Ok((key, val))
 }
 
-fn eq_next_reader(
-    ctx: &mut Ctx,
-    dict: &HashmapE,
-    key: SliceData
-) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    iter_reader(ctx, dict, NEXT | SAME, key)
-}
-
-fn eq_prev_reader(
-    ctx: &mut Ctx,
-    dict: &HashmapE,
-    key: SliceData
-) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    iter_reader(ctx, dict, SAME, key)
-}
-
-fn next_reader(
-    ctx: &mut Ctx,
-    dict: &HashmapE,
-    key: SliceData
-) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    iter_reader(ctx, dict, NEXT, key)
-}
-
-fn prev_reader(
-    ctx: &mut Ctx,
-    dict: &HashmapE,
-    key: SliceData
-) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    iter_reader(ctx, dict, 0, key)
-}
-
-fn signed_next_reader(
-    ctx: &mut Ctx,
-    dict: &HashmapE,
-    key: SliceData
-) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    iter_reader(ctx, dict, NEXT | SIGNED, key)
-}
-
-fn signed_eq_next_reader(
-    ctx: &mut Ctx,
-    dict: &HashmapE,
-    key: SliceData
-) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    iter_reader(ctx, dict, NEXT | SAME | SIGNED, key)
-}
-
-fn signed_prev_reader(
-    ctx: &mut Ctx,
-    dict: &HashmapE,
-    key: SliceData
-) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    iter_reader(ctx, dict, SIGNED, key)
-}
-
-fn signed_eq_prev_reader(
-    ctx: &mut Ctx,
-    dict: &HashmapE,
-    key: SliceData
-) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    iter_reader(ctx, dict, SAME | SIGNED, key)
-}
-
-const MIN: u8 = 0x01;
-const REF: u8 = 0x02;
-const SIG: u8 = 0x04;
-
 fn finder(ctx: &mut Ctx, dict: &HashmapE, how: u8) -> Result<(Option<BuilderData>, Option<StackItem>)> {
     let (key, val) = if how.bit(MIN) {
-        dict.get_min(how.bit(SIG), ctx.engine)?
+        dict.get_min(how.bit(SIGN), ctx.engine)?
     } else {
-        dict.get_max(how.bit(SIG), ctx.engine)?
+        dict.get_max(how.bit(SIGN), ctx.engine)?
     };
     val.map(|val| if how.bit(REF) {
         try_unref_leaf(&val)
@@ -592,53 +535,19 @@ fn finder(ctx: &mut Ctx, dict: &HashmapE, how: u8) -> Result<(Option<BuilderData
     }).transpose().map(|val| (key, val))
 }
 
-fn finder_max(ctx: &mut Ctx, dict: &HashmapE) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    finder(ctx, dict, 0)
-}
-
-fn finder_max_ref(ctx: &mut Ctx, dict: &HashmapE) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    finder(ctx, dict, REF)
-}
-
-fn finder_min(ctx: &mut Ctx, dict: &HashmapE) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    finder(ctx, dict, MIN)
-}
-
-fn finder_min_ref(ctx: &mut Ctx, dict: &HashmapE) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    finder(ctx, dict, MIN | REF)
-}
-
-fn finder_imax(ctx: &mut Ctx, dict: &HashmapE) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    finder(ctx, dict, SIG)
-}
-
-fn finder_imax_ref(ctx: &mut Ctx, dict: &HashmapE) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    finder(ctx, dict, REF | SIG)
-}
-
-fn finder_imin(ctx: &mut Ctx, dict: &HashmapE) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    finder(ctx, dict, MIN | SIG)
-}
-
-fn finder_imin_ref(ctx: &mut Ctx, dict: &HashmapE) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    finder(ctx, dict, MIN | REF | SIG)
-}
-
-fn keywriter_to_int(_ctx: &mut Ctx, key: BuilderData) -> StackItem {
-    let encoding = SignedIntegerBigEndianEncoding::new(key.length_in_bits());
-    let ret = encoding.deserialize(key.data());
-    StackItem::Integer(Arc::new(ret))
-}
-
-fn keywriter_to_uint(_ctx: &mut Ctx, key: BuilderData) -> StackItem {
-    let encoding = UnsignedIntegerBigEndianEncoding::new(key.length_in_bits());
-    let ret = encoding.deserialize(key.data());
-    StackItem::Integer(Arc::new(ret))
-}
-
-fn keywriter_to_slice(ctx: &mut Ctx, key: BuilderData) -> StackItem {
-    let cell = ctx.engine.finalize_cell(key);
-    StackItem::Slice(cell.into())
+fn write_key(ctx: &mut Ctx, key: BuilderData, how: u8) -> Result<StackItem> {
+    if how.bit(SLC) {
+        let cell = ctx.engine.finalize_cell(key)?;
+        Ok(StackItem::Slice(cell.into()))
+    } else if how.bit(SIGN) {
+        let encoding = SignedIntegerBigEndianEncoding::new(key.length_in_bits());
+        let ret = encoding.deserialize(key.data());
+        Ok(StackItem::Integer(Arc::new(ret)))
+    } else {
+        let encoding = UnsignedIntegerBigEndianEncoding::new(key.length_in_bits());
+        let ret = encoding.deserialize(key.data());
+        Ok(StackItem::Integer(Arc::new(ret)))
+    }
 }
 
 // Dictionary manipulation primitives *****************************************
@@ -695,22 +604,22 @@ pub(super) fn execute_dictget(engine: &mut Engine) -> Failure {
 
 // (key slice nbits - (value key -1) | (0))
 pub(super) fn execute_dictgetnext(engine: &mut Engine) -> Failure {
-    dictiter(engine, "DICTGETNEXT", keyreader_from_slice, next_reader, keywriter_to_slice)
+    dictiter(engine, "DICTGETNEXT", NEXT | SLC)
 }
 
 // (key slice nbits - (value key -1) | (0))
 pub(super) fn execute_dictgetnexteq(engine: &mut Engine) -> Failure {
-    dictiter(engine, "DICTGETNEXTEQ", keyreader_from_slice, eq_next_reader, keywriter_to_slice)
+    dictiter(engine, "DICTGETNEXTEQ", NEXT | SAME | SLC)
 }
 
 // (key slice nbits - (value key -1) | (0))
 pub(super) fn execute_dictgetprev(engine: &mut Engine) -> Failure {
-    dictiter(engine, "DICTGETPREV", keyreader_from_slice, prev_reader, keywriter_to_slice)
+    dictiter(engine, "DICTGETPREV", PREV | SLC)
 }
 
 // (key slice nbits - (value key -1) | (0))
 pub(super) fn execute_dictgetpreveq(engine: &mut Engine) -> Failure {
-    dictiter(engine, "DICTGETPREVEQ", keyreader_from_slice, eq_prev_reader, keywriter_to_slice)
+    dictiter(engine, "DICTGETPREVEQ", PREV | SAME | SLC)
 }
 
 // (key slice nbits - (cell -1) | (0))
@@ -770,22 +679,22 @@ pub(super) fn execute_dictiget(engine: &mut Engine) -> Failure {
 
 // (int slice nbits - (value key -1) | (0))
 pub(super) fn execute_dictigetnext(engine: &mut Engine) -> Failure {
-    dictiter(engine, "DICTIGETNEXT", keyreader_from_int, signed_next_reader, keywriter_to_int)
+    dictiter(engine, "DICTIGETNEXT", SIGN | NEXT)
 }
 
 // (int slice nbits - (value key -1) | (0))
 pub(super) fn execute_dictigetnexteq(engine: &mut Engine) -> Failure {
-    dictiter(engine, "DICTIGETNEXTEQ", keyreader_from_int, signed_eq_next_reader, keywriter_to_int)
+    dictiter(engine, "DICTIGETNEXTEQ", SIGN | NEXT | SAME)
 }
 
 // (int slice nbits - (value key -1) | (0))
 pub(super) fn execute_dictigetprev(engine: &mut Engine) -> Failure {
-    dictiter(engine, "DICTIGETPREV", keyreader_from_int, signed_prev_reader, keywriter_to_int)
+    dictiter(engine, "DICTIGETPREV", SIGN | PREV)
 }
 
 // (int slice nbits - (value key -1) | (0))
 pub(super) fn execute_dictigetpreveq(engine: &mut Engine) -> Failure {
-    dictiter(engine, "DICTIGETPREVEQ", keyreader_from_int, signed_eq_prev_reader, keywriter_to_int)
+    dictiter(engine, "DICTIGETPREVEQ", SIGN | PREV | SAME)
 }
 
 // (int slice nbits - (cell -1) | (0))
@@ -795,42 +704,42 @@ pub(super) fn execute_dictigetref(engine: &mut Engine) -> Failure {
 
 // (slice nbits - (value int -1) | (0))
 pub(super) fn execute_dictimax(engine: &mut Engine) -> Failure {
-    find(engine, "DICTIMAX", false, finder_imax, keywriter_to_int)
+    find(engine, "DICTIMAX", MAX | SIGN)
 }
 
 // (slice nbits - (cell int -1) | (0))
 pub(super) fn execute_dictimaxref(engine: &mut Engine) -> Failure {
-    find(engine, "DICTIMAXREF", false, finder_imax_ref, keywriter_to_int)
+    find(engine, "DICTIMAXREF", MAX | REF | SIGN)
 }
 
 // (slice nbits - (value int -1) | (0))
 pub(super) fn execute_dictimin(engine: &mut Engine) -> Failure {
-    find(engine, "DICTIMIN", false, finder_imin, keywriter_to_int)
+    find(engine, "DICTIMIN", MIN | SIGN)
 }
 
 // (slice nbits - (cell int -1) | (0))
 pub(super) fn execute_dictiminref(engine: &mut Engine) -> Failure {
-    find(engine, "DICTIMINREF", false, finder_imin_ref, keywriter_to_int)
+    find(engine, "DICTIMINREF", MIN | REF | SIGN)
 }
 
 // (slice nbits - (slice value int -1) | (0))
 pub(super) fn execute_dictiremmax(engine: &mut Engine) -> Failure {
-    find(engine, "DICTIREMMAX", true, finder_imax, keywriter_to_int)
+    find(engine, "DICTIREMMAX", DEL | MAX | SIGN)
 }
 
 // (slice nbits - (slice cell int -1) | (0))
 pub(super) fn execute_dictiremmaxref(engine: &mut Engine) -> Failure {
-    find(engine, "DICTIREMMAXREF", true, finder_imax_ref, keywriter_to_int)
+    find(engine, "DICTIREMMAXREF", DEL | MAX | REF | SIGN)
 }
 
 // (slice nbits - (slice value int -1) | (0))
 pub(super) fn execute_dictiremmin(engine: &mut Engine) -> Failure {
-    find(engine, "DICTIREMMIN", true, finder_imin, keywriter_to_int)
+    find(engine, "DICTIREMMIN", DEL | MIN | SIGN)
 }
 
 // (slice nbits - (slice cell int -1) | (0))
 pub(super) fn execute_dictiremminref(engine: &mut Engine) -> Failure {
-    find(engine, "DICTIREMMINREF", true, finder_imin_ref, keywriter_to_int)
+    find(engine, "DICTIREMMINREF", DEL | MIN | REF | SIGN)
 }
 
 // (value int slice nbits - (slice -1) | (slice 0))
@@ -895,42 +804,42 @@ pub(super) fn execute_dictisetref(engine: &mut Engine) -> Failure {
 
 // (slice nbits - (value key -1) | (0))
 pub(super) fn execute_dictmax(engine: &mut Engine) -> Failure {
-    find(engine, "DICTMAX", false, finder_max, keywriter_to_slice)
+    find(engine, "DICTMAX", MAX | SLC)
 }
 
 // (slice nbits - (cell key -1) | (0))
 pub(super) fn execute_dictmaxref(engine: &mut Engine) -> Failure {
-    find(engine, "DICTMAXREF", false, finder_max_ref, keywriter_to_slice)
+    find(engine, "DICTMAXREF", MAX | REF | SLC)
 }
 
 // (slice nbits - (value key -1) | (0))
 pub(super) fn execute_dictmin(engine: &mut Engine) -> Failure {
-    find(engine, "DICTMIN", false, finder_min, keywriter_to_slice)
+    find(engine, "DICTMIN", MIN | SLC)
 }
 
 // (slice nbits - (cell key -1) | (0))
 pub(super) fn execute_dictminref(engine: &mut Engine) -> Failure {
-    find(engine, "DICTMINREF", false, finder_min_ref, keywriter_to_slice)
+    find(engine, "DICTMINREF", MIN | REF | SLC)
 }
 
 // (slice nbits - (slice value key -1) | (0))
 pub(super) fn execute_dictremmax(engine: &mut Engine) -> Failure {
-    find(engine, "DICTREMMAX", true, finder_max, keywriter_to_slice)
+    find(engine, "DICTREMMAX", DEL | MAX | SLC)
 }
 
 // (slice nbits - (slice cell key -1) | (0))
 pub(super) fn execute_dictremmaxref(engine: &mut Engine) -> Failure {
-    find(engine, "DICTREMMAXREF", true, finder_max_ref, keywriter_to_slice)
+    find(engine, "DICTREMMAXREF", DEL | MAX | REF | SLC)
 }
 
 // (slice nbits - (slice value key -1) | (0))
 pub(super) fn execute_dictremmin(engine: &mut Engine) -> Failure {
-    find(engine, "DICTREMMIN", true, finder_min, keywriter_to_slice)
+    find(engine, "DICTREMMIN", DEL | MIN | SLC)
 }
 
 // (slice nbits - (slice cell key -1) | (0))
 pub(super) fn execute_dictremminref(engine: &mut Engine) -> Failure {
-    find(engine, "DICTREMMINREF", true, finder_min_ref, keywriter_to_slice)
+    find(engine, "DICTREMMINREF", DEL | MIN | REF | SLC)
 }
 
 // (value key slice nbits - (slice -1) | (slice 0))
@@ -1045,22 +954,22 @@ pub(super) fn execute_dictuget(engine: &mut Engine) -> Failure {
 
 // (uint slice nbits - (value key -1) | (0))
 pub(super) fn execute_dictugetnext(engine: &mut Engine) -> Failure {
-    dictiter(engine, "DICTUGETNEXT", keyreader_from_uint, next_reader, keywriter_to_uint)
+    dictiter(engine, "DICTUGETNEXT", NEXT)
 }
 
 // (uint slice nbits - (value key -1) | (0))
 pub(super) fn execute_dictugetnexteq(engine: &mut Engine) -> Failure {
-    dictiter(engine, "DICTUGETNEXTEQ", keyreader_from_uint, eq_next_reader, keywriter_to_uint)
+    dictiter(engine, "DICTUGETNEXTEQ", NEXT | SAME)
 }
 
 // (uint slice nbits - (value key -1) | (0))
 pub(super) fn execute_dictugetprev(engine: &mut Engine) -> Failure {
-    dictiter(engine, "DICTUGETPREV", keyreader_from_uint, prev_reader, keywriter_to_uint)
+    dictiter(engine, "DICTUGETPREV", PREV)
 }
 
 // (uint slice nbits - (value key -1) | (0))
 pub(super) fn execute_dictugetpreveq(engine: &mut Engine) -> Failure {
-    dictiter(engine, "DICTUGETPREVEQ", keyreader_from_uint, eq_prev_reader, keywriter_to_uint)
+    dictiter(engine, "DICTUGETPREVEQ", PREV | SAME)
 }
 
 // (uint slice nbits - (cell -1) | (0))
@@ -1070,42 +979,42 @@ pub(super) fn execute_dictugetref(engine: &mut Engine) -> Failure {
 
 // (slice nbits - (value uint -1) | (0))
 pub(super) fn execute_dictumax(engine: &mut Engine) -> Failure {
-    find(engine, "DICTUMAX", false, finder_max, keywriter_to_uint)
+    find(engine, "DICTUMAX", MAX)
 }
 
 // (slice nbits - (cell uint -1) | (0))
 pub(super) fn execute_dictumaxref(engine: &mut Engine) -> Failure {
-    find(engine, "DICTUMAXREF", false, finder_max_ref, keywriter_to_uint)
+    find(engine, "DICTUMAXREF", MAX | REF)
 }
 
 // (slice nbits - (value uint -1) | (0))
 pub(super) fn execute_dictumin(engine: &mut Engine) -> Failure {
-    find(engine, "DICTUMIN", false, finder_min, keywriter_to_uint)
+    find(engine, "DICTUMIN", MIN)
 }
 
 // (slice nbits - (cell uint -1) | (0))
 pub(super) fn execute_dictuminref(engine: &mut Engine) -> Failure {
-    find(engine, "DICTUMINREF", false, finder_min_ref, keywriter_to_uint)
+    find(engine, "DICTUMINREF", MIN | REF)
 }
 
 // (slice nbits - (slice value uint -1) | (0))
 pub(super) fn execute_dicturemmax(engine: &mut Engine) -> Failure {
-    find(engine, "DICTUREMMAX", true, finder_max, keywriter_to_uint)
+    find(engine, "DICTUREMMAX", DEL | MAX)
 }
 
 // (slice nbits - (slice cell uint -1) | (0))
 pub(super) fn execute_dicturemmaxref(engine: &mut Engine) -> Failure {
-    find(engine, "DICTUREMMAXREF", true, finder_max_ref, keywriter_to_uint)
+    find(engine, "DICTUREMMAXREF", DEL | MAX | REF)
 }
 
 // (slice nbits - (slice value uint -1) | (0))
 pub(super) fn execute_dicturemmin(engine: &mut Engine) -> Failure {
-    find(engine, "DICTUREMMIN", true, finder_min, keywriter_to_uint)
+    find(engine, "DICTUREMMIN", DEL | MIN)
 }
 
 // (slice nbits - (slice cell uint -1) | (0))
 pub(super) fn execute_dicturemminref(engine: &mut Engine) -> Failure {
-    find(engine, "DICTUREMMINREF", true, finder_min_ref, keywriter_to_uint)
+    find(engine, "DICTUREMMINREF", DEL | MIN | REF)
 }
 
 // (value uint slice nbits - (slice -1) | (slice 0))
@@ -1272,9 +1181,9 @@ pub(super) fn execute_pfxdictswitch(engine: &mut Engine) -> Failure {
 }
 
 const QUIET: u8 = 0x01; // quiet variant
-const DICT: u8 = 0x02; // dictionary
-const SLC: u8 = 0x04; // slice
-const REST: u8 = 0x08; // remainder
+const DICT:  u8 = 0x02; // dictionary
+const SLC:   u8 = 0x04; // slice
+const REST:  u8 = 0x08; // remainder
 
 fn load_dict(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     engine.load_instruction(

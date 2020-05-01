@@ -99,16 +99,16 @@ impl CommittedState {
 }
 
 impl GasConsumer for Engine {
-    fn finalize_cell(&mut self, builder: BuilderData) -> Cell {
-        self.gas.use_gas(Gas::finalize_price());
-        builder.into()
+    fn finalize_cell(&mut self, builder: BuilderData) -> Result<Cell> {
+        self.gas.try_use_gas(Gas::finalize_price())?;
+        Ok(builder.into())
     }
-    fn load_cell(&mut self, cell: Cell) -> SliceData {
-        self.load_cell(cell)
+    fn load_cell(&mut self, cell: Cell) -> Result<SliceData> {
+        self.load_hashed_cell(cell)
     }
-    fn finalize_cell_and_load(&mut self, builder: BuilderData) -> SliceData {
-        let cell = self.finalize_cell(builder);
-        self.load_cell(cell)
+    fn finalize_cell_and_load(&mut self, builder: BuilderData) -> Result<SliceData> {
+        let cell = self.finalize_cell(builder)?;
+        self.load_hashed_cell(cell)
     }
 }
 
@@ -249,7 +249,7 @@ impl Engine {
                     err_opt!(ExceptionCode::InvalidOpcode)
                 } else {
                     self.gas.try_use_gas(Gas::implicit_jmp_price())?;
-                    *self.cc.code_mut() = self.load_cell(reference);
+                    *self.cc.code_mut() = self.load_hashed_cell(reference)?;
                     None
                 }
             } else { //TODO: put every case in functions
@@ -385,10 +385,10 @@ impl Engine {
     }
 
     /// Loads cell to slice cheking in precashed map
-    pub fn load_cell(&mut self, cell: Cell) -> SliceData {
+    pub fn load_hashed_cell(&mut self, cell: Cell) -> Result<SliceData> {
         let first = self.visited_cells.insert(cell.repr_hash());
-        self.gas.use_gas(Gas::load_cell_price(first));
-        cell.into()
+        self.gas.try_use_gas(Gas::load_cell_price(first))?;
+        Ok(cell.into())
     }
 
     pub fn get_committed_state(&self) -> &CommittedState {
