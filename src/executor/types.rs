@@ -137,15 +137,18 @@ pub(super) enum InstructionOptions {              // What will be set:
     Bitstring(usize, usize, usize, usize),        // SliceData from code
     StackRegister(Range<usize>),                  // StackRegister
     StackRegisterPair(WhereToGetParams),          // StackRegisterPair
-    StackRegisterTrio(usize),                     // StackRegisterTrio
+    StackRegisterTrio(WhereToGetParams),          // StackRegisterTrio
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(super) enum WhereToGetParams {
     GetFromLastByte2Bits,
     GetFromLastByte,
     GetFromNextByte,
     GetFromNextByteLong,
+    GetFromNextByteMinusOne,
+    GetFromNextByteMinusOneMinusOne,
+    GetFromNextByteMinusOneMinusTwo,
 }
 
 #[derive(Debug)]
@@ -332,10 +335,33 @@ impl Instruction {
                 format!(" {}", self.ictx.rargs()?),
             Some(InstructionOptions::StackRegister(_)) =>
                 format!(" S{}", self.ictx.sreg()?),
+            Some(InstructionOptions::StackRegisterPair(WhereToGetParams::GetFromNextByteMinusOne)) =>
+                format!(" S{}, S{}",
+                    self.ictx.sregs()?.ra,
+                    self.ictx.sregs()?.rb as isize - 1
+                ),
             Some(InstructionOptions::StackRegisterPair(_)) =>
                 format!(" S{}, S{}",
                     self.ictx.sregs()?.ra,
                     self.ictx.sregs()?.rb
+                ),
+            Some(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByteMinusOne)) =>
+                format!(" S{}, S{}, S{}",
+                    self.ictx.sregs3()?.ra,
+                    self.ictx.sregs3()?.rb,
+                    self.ictx.sregs3()?.rc as isize - 1,
+                ),
+            Some(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByteMinusOneMinusOne)) =>
+                format!(" S{}, S{}, S{}",
+                    self.ictx.sregs3()?.ra,
+                    self.ictx.sregs3()?.rb as isize - 1,
+                    self.ictx.sregs3()?.rc as isize - 1,
+                ),
+            Some(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByteMinusOneMinusTwo)) =>
+                format!(" S{}, S{}, S{}",
+                    self.ictx.sregs3()?.ra,
+                    self.ictx.sregs3()?.rb as isize - 1,
+                    self.ictx.sregs3()?.rc as isize - 2,
                 ),
             Some(InstructionOptions::StackRegisterTrio(_)) =>
                 format!(" S{}, S{}, S{}",
