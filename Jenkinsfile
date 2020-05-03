@@ -96,7 +96,7 @@ def buildBranchesMap() {
     }
 
     if (params.branch_ton_labs_block == '') {
-        G_branches.put('ton-labs-block', "releassdkbinaries-ws.tonlabs.io
+        G_branches.put('ton-labs-block', "release-candidate"
     } else {
         G_branches.put('ton-labs-block', params.branch_ton_labs_block)
     }
@@ -321,6 +321,7 @@ pipeline {
             steps {
                 sshagent([G_gitcred]) {
                     script {
+                        sh "git fetch && git pull"
                         G_giturl = env.GIT_URL
                         G_commit = GIT_COMMIT
                         echo "${G_giturl}"
