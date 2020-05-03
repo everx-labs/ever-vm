@@ -266,7 +266,7 @@ pub fn execute_ldrefrtos(engine: &mut Engine) -> Failure {
     )
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| proc_slice(ctx, 0, STAY | INV, |slice, gas_consumer|
-        Ok(StackItem::Slice(gas_consumer.load_cell(slice.checked_drain_reference()?)))
+        Ok(StackItem::Slice(gas_consumer.load_cell(slice.checked_drain_reference()?)?))
     ))
     .err()
 }
@@ -884,27 +884,27 @@ impl DataCounter {
             refs: 0
         }
     }
-    fn count_cell(&mut self, cell: Cell, engine: &mut Engine) -> bool {
+    fn count_cell(&mut self, cell: Cell, engine: &mut Engine) -> Result<bool> {
         if !self.visited.insert(cell.repr_hash()) {
-            return true
+            return Ok(true)
         }
         if self.max == 0 {
-            return false
+            return Ok(false)
         }
         self.max -= 1;
         self.cells += 1;
-        self.count_slice(engine.load_cell(cell), engine)
+        self.count_slice(engine.load_cell(cell)?, engine)
     }
-    fn count_slice(&mut self, slice: SliceData, engine: &mut Engine) -> bool {
+    fn count_slice(&mut self, slice: SliceData, engine: &mut Engine) -> Result<bool> {
         let refs = slice.remaining_references();
         self.refs += refs;
         self.bits += slice.remaining_bits();
         for i in 0..refs {
-            if !self.count_cell(slice.reference(i).unwrap().clone(), engine) {
-                return false
+            if !self.count_cell(slice.reference(i).unwrap().clone(), engine)? {
+                return Ok(false)
             }
         }
-        true
+        Ok(true)
     }
 }
 
@@ -918,12 +918,12 @@ fn datasize(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
         let mut counter = DataCounter::new(n);
         let result = if !how.bit(CEL) {
             let slice = ctx.engine.cmd.var(1).as_slice()?.clone();
-            counter.count_slice(slice, &mut ctx.engine)
+            counter.count_slice(slice, &mut ctx.engine)?
         } else if ctx.engine.cmd.var(1).is_null() {
             true
         } else {
             let cell = ctx.engine.cmd.var(1).as_cell()?.clone();
-            counter.count_cell(cell, &mut ctx.engine)
+            counter.count_cell(cell, &mut ctx.engine)?
         };
         if result {
             ctx.engine.cc.stack.push(int!(counter.cells));

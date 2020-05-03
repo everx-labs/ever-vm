@@ -46,7 +46,7 @@ fn add_action(ctx: Ctx, action_id: u32, cell: Option<Cell>, suffix: BuilderData)
     if let Some(cell) = cell {
         new_action.append_reference_cell(cell);
     }
-    let cell = ctx.engine.finalize_cell(new_action);
+    let cell = ctx.engine.finalize_cell(new_action)?;
     ctx.engine.ctrls.put(5, &mut StackItem::Cell(cell))?;
     Ok(ctx)
 }
@@ -231,7 +231,7 @@ pub(super) fn execute_rewrite_var_addr<T: OperationBehavior>(engine: &mut Engine
                     let mut b = BuilderData::from_slice(rewrite_pfx);
                     addr.shrink_data(bits..);
                     b.append_bytestring(&addr)?;
-                    addr = gas_consumer.finalize_cell_and_load(b);
+                    addr = gas_consumer.finalize_cell_and_load(b)?;
                 }
             };
             let x = tuple[2].clone();
