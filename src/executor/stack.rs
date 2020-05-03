@@ -322,14 +322,16 @@ pub(super) fn execute_popsave(engine: &mut Engine) -> Failure {
 // PU2XC s(i), s(j-1), s(k-2), equal to PUSH s(i); SWAP; PUSH s(j); SWAP; XCHG s(k)
 pub(super) fn execute_pu2xc(engine: &mut Engine) -> Failure {
     engine.load_instruction(
-        Instruction::new("PU2XC")
-            .set_opts(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByteMinusOneMinusTwo))
+        Instruction::new("PU2XC").set_opts(InstructionOptions::StackRegisterTrio(4))
     )
     .and_then(|ctx| {
         let ra = ctx.engine.cmd.sregs3().ra;
         let rb = ctx.engine.cmd.sregs3().rb;
         let rc = ctx.engine.cmd.sregs3().rc; 
-        if ctx.engine.cc.stack.depth() + 1 < cmp::max(rc, cmp::max(ra + 2, rb + 1)) {
+        if (rb < 1) || (rc < 2) {
+            return err!(ExceptionCode::InvalidOpcode)
+        }
+        if ctx.engine.cc.stack.depth() <= cmp::max(rc - 2, cmp::max(ra, rb - 1)) {
             return err!(ExceptionCode::StackUnderflow)
         }
         ctx.engine.cc.stack.push_copy(ra)?;
@@ -391,8 +393,7 @@ pub(super) fn execute_push2(engine: &mut Engine) -> Failure {
 // (x ... y ... z ...  - x ... y ... z... x y z)
 pub(super) fn execute_push3(engine: &mut Engine) -> Failure {
     engine.load_instruction(
-        Instruction::new("PUSH3")
-            .set_opts(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByte))
+        Instruction::new("PUSH3").set_opts(InstructionOptions::StackRegisterTrio(4))
     )
     .and_then(|ctx| {
         let ra = ctx.engine.cmd.sregs3().ra;
@@ -636,7 +637,10 @@ pub(super) fn execute_puxc(engine: &mut Engine) -> Failure {
     .and_then(|ctx| {
         let ra = ctx.engine.cmd.sregs().ra;
         let rb = ctx.engine.cmd.sregs().rb;
-        if ctx.engine.cc.stack.depth() < cmp::max(ra + 1, rb) {
+        if rb < 1 {
+            return err!(ExceptionCode::InvalidOpcode)
+        } 
+        if ctx.engine.cc.stack.depth() <= cmp::max(ra, rb - 1) {
             return err!(ExceptionCode::StackUnderflow)
         } 
         ctx.engine.cc.stack.push_copy(ra)?;
@@ -651,14 +655,16 @@ pub(super) fn execute_puxc(engine: &mut Engine) -> Failure {
 // PUXC2 s(i), s(j-1), s(k-1): equivalent to PUSH s(i); XCHG s2; XCHG2 s(j), s(k)
 pub(super) fn execute_puxc2(engine: &mut Engine) -> Failure {
     engine.load_instruction(
-        Instruction::new("PUXC2")
-            .set_opts(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByteMinusOneMinusOne))
+        Instruction::new("PUXC2").set_opts(InstructionOptions::StackRegisterTrio(4))
     )
     .and_then(|ctx| {
         let ra = ctx.engine.cmd.sregs3().ra;
         let rb = ctx.engine.cmd.sregs3().rb;
         let rc = ctx.engine.cmd.sregs3().rc;
-        if ctx.engine.cc.stack.depth() < cmp::max(2, cmp::max(cmp::max(ra + 1, rb), rc)) {
+        if (rb < 1) || (rc < 1) {
+            return err!(ExceptionCode::InvalidOpcode)
+        } 
+        if ctx.engine.cc.stack.depth() <= cmp::max(1, cmp::max(cmp::max(ra, rb - 1), rc - 1)) {
             return err!(ExceptionCode::StackUnderflow)
         }
         ctx.engine.cc.stack.push_copy(ra)?;
@@ -674,14 +680,16 @@ pub(super) fn execute_puxc2(engine: &mut Engine) -> Failure {
 // PUXCPU s(i), s(j-1), s(k-1): equivalent to PUSH s(i); SWAP; XCHG s(j); PUSH s(k)
 pub(super) fn execute_puxcpu(engine: &mut Engine) -> Failure {
     engine.load_instruction(
-        Instruction::new("PUXCPU")
-            .set_opts(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByteMinusOneMinusOne))
+        Instruction::new("PUXCPU").set_opts(InstructionOptions::StackRegisterTrio(4))
     )
     .and_then(|ctx| {
         let ra = ctx.engine.cmd.sregs3().ra;
         let rb = ctx.engine.cmd.sregs3().rb;
         let rc = ctx.engine.cmd.sregs3().rc; 
-        if ctx.engine.cc.stack.depth() < cmp::max(rc, cmp::max(ra + 1, rb)) {
+        if (rb < 1) || (rc < 1) {
+            return err!(ExceptionCode::InvalidOpcode)
+        }
+        if ctx.engine.cc.stack.depth() <= cmp::max(rc - 1, cmp::max(ra, rb - 1)) {
             return err!(ExceptionCode::StackUnderflow)
         }
         ctx.engine.cc.stack.push_copy(ra)?;
@@ -828,7 +836,7 @@ pub(super) fn execute_tuck(engine: &mut Engine) -> Failure {
 pub(super) fn execute_xc2pu(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("XC2PU")
-            .set_opts(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByte))
+            .set_opts(InstructionOptions::StackRegisterTrio(4))
     )
     .and_then(|ctx| {
         let ra = ctx.engine.cmd.sregs3().ra;
@@ -910,8 +918,7 @@ pub(super) fn execute_xchg2(engine: &mut Engine) -> Failure {
 // XCHG s(2), s(i); XCHG s(1) s(j); XCHG s(0), s(k)
 pub(super) fn execute_xchg3(engine: &mut Engine) -> Failure {
     engine.load_instruction(
-        Instruction::new("XCHG3")
-            .set_opts(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByte))
+        Instruction::new("XCHG3").set_opts(InstructionOptions::StackRegisterTrio(4))
     )
     .and_then(|ctx| {
         let ra = ctx.engine.cmd.sregs3().ra;
@@ -969,8 +976,7 @@ pub(super) fn execute_xcpu(engine: &mut Engine) -> Failure {
 // XCHG s(i), PUSH s(j), PUSH s(k+1)
 pub(super) fn execute_xcpu2(engine: &mut Engine) -> Failure {
     engine.load_instruction(
-        Instruction::new("XCPU2")
-            .set_opts(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByte))
+        Instruction::new("XCPU2").set_opts(InstructionOptions::StackRegisterTrio(4))
     )
     .and_then(|ctx| {
         let ra = ctx.engine.cmd.sregs3().ra;
@@ -992,13 +998,16 @@ pub(super) fn execute_xcpu2(engine: &mut Engine) -> Failure {
 pub(super) fn execute_xcpuxc(engine: &mut Engine) -> Failure {
     engine.load_instruction(
         Instruction::new("XCPUXC")
-            .set_opts(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByteMinusOne))
+            .set_opts(InstructionOptions::StackRegisterTrio(4))
     )
     .and_then(|ctx| {
         let ra = ctx.engine.cmd.sregs3().ra;
         let rb = ctx.engine.cmd.sregs3().rb;
         let rc = ctx.engine.cmd.sregs3().rc;
-        if ctx.engine.cc.stack.depth() < cmp::max(2, cmp::max(rc, cmp::max(ra, rb) + 1)) {
+        if rc < 1 {
+            return err!(ExceptionCode::InvalidOpcode)
+        }
+        if ctx.engine.cc.stack.depth() <= cmp::max(1, cmp::max(rc - 1, cmp::max(ra, rb))) {
             return err!(ExceptionCode::StackUnderflow)
         }
         ctx.engine.cc.stack.swap(1, ra)?;

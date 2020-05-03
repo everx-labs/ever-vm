@@ -13,7 +13,7 @@
 */
 
 use crate::{error::TvmError, stack::integer::IntegerData};
-use std::{collections::HashMap, marker::PhantomData, ops::{Range, RangeInclusive}};
+use std::{collections::HashMap, marker::PhantomData, ops::Range};
 use ton_types::{SliceData, types::ExceptionCode};
 
 mod errors;
@@ -57,23 +57,23 @@ impl CommandBehaviourModifier for Quiet {
 
 trait EnsureParametersCountInRange {
     fn assert_empty(&self) -> Result<(), OperationError>;
-    fn assert_len(&self, _n: usize) -> Result<(), OperationError>;
-    fn assert_len_in(&self, _r: RangeInclusive<usize>) -> Result<(), OperationError>;
+    fn assert_len(&self, n: usize) -> Result<(), OperationError>;
+    fn assert_len_in(&self, _: Range<usize>) -> Result<(), OperationError>;
 }
 
 impl<T> EnsureParametersCountInRange for Vec<T>{
     fn assert_empty(&self) -> Result<(), OperationError> {
-        self.assert_len_in(0..=0)
+        self.assert_len_in(0..1)
     }
 
     fn assert_len(&self, n: usize) -> Result<(), OperationError> {
-        self.assert_len_in(n..=n)
+        self.assert_len_in(n..(n+1))
     }
 
-    fn assert_len_in(&self, range: RangeInclusive<usize>) -> Result<(), OperationError> {
-        if &self.len() < range.start() {
+    fn assert_len_in(&self, range: Range<usize>) -> Result<(), OperationError> {
+        if self.len() < range.start {
             Err(OperationError::MissingRequiredParameters)
-        } else if &self.len() > range.end() {
+        } else if self.len() >= range.end {
             Err(OperationError::TooManyParameters)
         } else {
             Ok(())
@@ -84,11 +84,11 @@ impl<T> EnsureParametersCountInRange for Vec<T>{
 fn compile_with_register<T: Writer>(
     register: &str,
     symbol: char,
-    range: Range<isize>,
+    range: Range<usize>,
     code: &[u8],
     destination: &mut T
 ) -> CompileResult {
-    let reg = parse_register(register, symbol, range).parameter("arg 0")? as u8;
+    let reg = parse_register(register, symbol, range).parameter("arg 0")?;
     let mut ret = code.to_vec();
     ret[code.len() - 1] |= reg;
     destination.write_command(ret.as_slice())
@@ -192,7 +192,7 @@ macro_rules! div_variant {
                 par: &Vec<&str>,
                 destination: &mut T
             ) -> CompileResult {
-                par.assert_len_in(0..=1)?;
+                par.assert_len_in(0..2)?;
                 destination.write_command(
                     &M::modify({
                         if par.len() == 1 {
@@ -246,7 +246,7 @@ div_variant!(
 
 impl<M: CommandBehaviourModifier> Div<M> {
     pub fn lshift<T: Writer>(_engine: &mut Engine<T>, par: &Vec<&str>, destination: &mut T) -> CompileResult {
-        par.assert_len_in(0..=1)?;
+        par.assert_len_in(0..2)?;
         destination.write_command(
             &M::modify({
                 if par.len() == 1 {
@@ -259,7 +259,7 @@ impl<M: CommandBehaviourModifier> Div<M> {
     }
 
     fn rshift<T: Writer>(_engine: &mut Engine<T>, par: &Vec<&str>, destination: &mut T) -> CompileResult {
-        par.assert_len_in(0..=1)?;
+        par.assert_len_in(0..2)?;
         let command = if par.len() == 1 {
             vec![0xAB, parse_const_u8_plus_one(par[0]).parameter("value")?]
         } else {
@@ -271,7 +271,7 @@ impl<M: CommandBehaviourModifier> Div<M> {
 }
 
 fn compile_setcontargs<T: Writer>(_engine: &mut Engine<T>, par: &Vec<&str>, destination: &mut T) -> CompileResult {
-    par.assert_len_in(1..=2)?;
+    par.assert_len_in(1..3)?;
     let rargs = parse_const_u4(par[0]).parameter("register")?;
     let nargs = if par.len() == 2 {
         parse_const_i4(par[1]).parameter("arg 1")?
@@ -434,15 +434,15 @@ fn slice_cutting(mut long_slice: Vec<u8>, len: usize) -> SliceData {
 
 fn compile_xchg<T: Writer>(_engine: &mut Engine<T>, par: &Vec<&str>, destination: &mut T)
 -> CompileResult {
-    par.assert_len_in(0..=2)?;
+    par.assert_len_in(0..3)?;
     if par.len() == 0 {
         destination.write_command(&[0x01])
     } else if par.len() == 1 {
         compile_with_register(par[0], 'S', 1..16, &[0x00], destination)
     } else {
         // 2 parameters
-        let reg1 = parse_register(par[0], 'S', 0..16).parameter("arg 0")? as u8;
-        let reg2 = parse_register(par[1], 'S', 0..256).parameter("arg 1")? as u8;
+        let reg1 = parse_register(par[0], 'S', 0..16).parameter("arg 0")?;
+        let reg2 = parse_register(par[1], 'S', 0..256).parameter("arg 1")?;
         if reg1 >= reg2 {
             Err(OperationError::LogicErrorInParameters(
                 "arg 1 should be greater than arg 0"
@@ -1127,12 +1127,12 @@ impl<T: Writer> Engine<T> {
         PUSHROOT                             => 0xED, 0x44
         PUXC   
             s1 = parse_stack_register_u4;
-            s2 = parse_stack_register_u4_minus_one
+            s2 = parse_stack_register_u4_minus_one  
                                              => 0x52, (s1 << 4) | s2
         PUXC2  
             s1 = parse_stack_register_u4;
             s2 = parse_stack_register_u4_minus_one;
-            s3 = parse_stack_register_u4_minus_one
+            s3 = parse_stack_register_u4_minus_one  
                                              => 0x54, 0x40 | s1, (s2 << 4) | s3
         PUXCPU 
             s1 = parse_stack_register_u4;

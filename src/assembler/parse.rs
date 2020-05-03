@@ -131,24 +131,24 @@ pub(super) fn parse_const_u8_240(par: &str) -> Result<u8, ParameterError> {
 }
 
 pub(super) fn parse_control_register(par: &str) -> Result<u8, ParameterError> {
-    Ok(parse_register(par, 'C', 0..16)? as u8)
+    parse_register(par, 'C', 0..16)
 }
 
 pub(super) fn parse_register(
     register: &str,
     symbol: char,
-    range: Range<isize>,
-) -> Result<isize, ParameterError> {
+    range: Range<usize>,
+) -> Result<u8, ParameterError> {
     if register.len() <= 1 {
         Err(ParameterError::UnexpectedType)
     } else if register.chars().next().unwrap().to_ascii_uppercase() != symbol {
         Err(ParameterError::UnexpectedType)
     } else {
-        match isize::from_str_radix(&register[1..], 10) {
-            Ok(number) => if (number < range.start) || (number >= range.end) {
+        match u128::from_str_radix(&register[1..], 10) {
+            Ok(number) => if (number < range.start as u128) || (number >= range.end as u128) {
                 Err(ParameterError::OutOfRange)
             } else {
-                Ok(number)
+                Ok(number as u8)
             },
             Err(_e) => Err(ParameterError::UnexpectedType)
         }
@@ -211,15 +211,15 @@ pub fn parse_slice_base(slice: &str, mut bits: usize, base: u32) -> Result<Vec<u
 }
 
 pub(super) fn parse_stack_register_u4(par: &str) -> Result<u8, ParameterError> {
-    Ok(parse_register(par, 'S', 0..16)? as u8)
+    parse_register(par, 'S', 0..16)
 }
 
 pub(super) fn parse_stack_register_u4_minus_one(par: &str) -> Result<u8, ParameterError> {
-    Ok((parse_register(par, 'S', -1..15)? + 1) as u8)
+    parse_register(par, 'S', 0..15).map(|r| r + 1)
 }
 
 pub(super) fn parse_stack_register_u4_minus_two(par: &str) -> Result<u8, ParameterError> {
-    Ok((parse_register(par, 'S', -2..14)? + 2) as u8)
+    parse_register(par, 'S', 0..14).map(|r| r + 2)
 }
 
 pub(super) fn parse_plduz_parameter(par: &str) -> Result<u8, ParameterError> {
