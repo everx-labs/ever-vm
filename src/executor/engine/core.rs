@@ -207,9 +207,10 @@ impl Engine {
             if self.trace_bit(Engine::TRACE_CODE) {
                 log::trace!(
                     target: "tvm", 
-                    "{}: {}\n", 
+                    "{}: {}\n{}\n", 
                     self.step, 
-                    self.cmd.dump_with_params().unwrap_or_default()
+                    self.cmd.dump_with_params().unwrap_or_default(),
+                    self.cmd_code.to_hex_string(),
                 );
             }
             if self.trace_bit(Engine::TRACE_GAS) {
@@ -823,6 +824,7 @@ impl Engine {
                         let rb = self.cc.next_cmd()?;
                         (0,rb)
                     }
+                    _ => (0, 0)
                 };
                 self.use_gas(0);
                 self.cmd.ictx.params.push(
@@ -834,19 +836,21 @@ impl Engine {
                     )
                 )
             },
-            Some(InstructionOptions::StackRegisterTrio(bits)) => {
-                let (ra, rb, rc) = if bits == 4 {
-                    // Three-arguments functions are 2-byte 4ijk XCHG3 instructions
-                    // And 54[0-7]ijk long-form XCHG3 - PUSH3
-                    // We assume that in the second case 0x54 byte is already consumed,
-                    // and we have to deal with *ijk layout for arguments
-                    let opcode_ra = self.cc.last_cmd();
-                    let rb_rc = self.cc.next_cmd()?;
-                    (opcode_ra & 0x0F, rb_rc >> 4, rb_rc & 0x0F)
-                } else {
-                    // INDEX3 2 bits per index
-                    let opcode = self.cc.last_cmd();
-                    ((opcode >> 4) & 0x03, (opcode >> 2) & 0x03, opcode & 0x03)
+            Some(InstructionOptions::StackRegisterTrio(ref place)) => {
+                let last = self.cc.last_cmd();
+                let (ra, rb, rc) = match place {
+                    WhereToGetParams::GetFromLastByte2Bits => {
+                        // INDEX3 2 bits per index
+                        ((last >> 4) & 0x03, (last >> 2) & 0x03, last & 0x03)
+                    }
+                    _ => {
+                        // Three-arguments functions are 2-byte 4ijk XCHG3 instructions
+                        // And 54[0-7]ijk long-form XCHG3 - PUSH3
+                        // We assume that in the second case 0x54 byte is already consumed,
+                        // and we have to deal with *ijk layout for arguments
+                        let rb_rc = self.cc.next_cmd()?;
+                        (last & 0x0F, rb_rc >> 4, rb_rc & 0x0F)
+                    }
                 };
                 self.use_gas(0);
                 self.cmd.ictx.params.push(

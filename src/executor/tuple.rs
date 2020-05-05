@@ -69,7 +69,7 @@ fn tuple_index(engine: &mut Engine, how: u8) -> Failure {
         0 => Instruction::new("INDEXVAR"),
         1 => Instruction::new("INDEX" ).set_opts(InstructionOptions::Length(0..16)),
         2 => Instruction::new("INDEX2").set_opts(InstructionOptions::StackRegisterPair(WhereToGetParams::GetFromLastByte2Bits)),
-        3 => Instruction::new("INDEX3").set_opts(InstructionOptions::StackRegisterTrio(2)),
+        3 => Instruction::new("INDEX3").set_opts(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromLastByte2Bits)),
         _ => return err_opt!(ExceptionCode::FatalError)
     })
     .and_then(|ctx| fetch_stack(ctx, params))
