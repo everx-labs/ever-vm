@@ -49,7 +49,7 @@ pub struct Engine {
     pub(in crate::executor) gas: Gas,
     code_page: isize,
     debug_on: isize, // status of debug can be recursively incremented
-    step: usize, // number of executable command
+    step: u32, // number of executable command
     debug_buffer: String,
     cmd_code: SliceData, // start of current cmd
     trace: u8,
@@ -183,6 +183,10 @@ impl Engine {
 
     pub fn commit(&mut self) {
         self.cstate = CommittedState::with_params(self.get_root(), self.get_actions());
+    }
+
+    pub fn steps(&self) -> u32 {
+        self.step
     }
 
     pub fn execute(&mut self) -> Result<i32> {
