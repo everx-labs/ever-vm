@@ -248,6 +248,7 @@ impl Engine {
             let mut log_string = None;
             let gas = self.gas_used();
             let err = if let Ok(reference) = self.cc.code().reference(0) {
+                self.step += 1;
                 log_string = Some("IMPLICIT JMPREF");
                 if reference.bit_length() % 8 != 0 {
                     err_opt!(ExceptionCode::InvalidOpcode)
@@ -263,10 +264,12 @@ impl Engine {
                         if self.ctrls.get(0).is_none() {
                             return Ok(Some(0))
                         }
+                        self.step += 1;
                         log_string = Some("IMPLICIT RET");
                         switch(Ctx{engine: self}, ctrl!(0)).err()
                     }
                     ContinuationType::PushInt(code) => {
+                        self.step += 1;
                         log_string = Some("IMPLICIT PUSHINT");
                         self.cc.stack.push(int!(code));
                         switch(Ctx{engine: self}, ctrl!(0)).err()
@@ -275,6 +278,7 @@ impl Engine {
                         return Ok(Some(exit_code))
                     }
                     ContinuationType::TryCatch => {
+                        self.step += 1;
                         log_string = Some("IMPLICIT RET FROM TRY-CATCH");
                         self.gas.try_use_gas(Gas::implicit_ret_price())?;
                         self.ctrls.remove(2).unwrap();
@@ -360,7 +364,6 @@ impl Engine {
                 }
             };
             if let Some(log_string) = log_string {
-                self.step += 1;
                 if self.trace_bit(Engine::TRACE_CODE) {
                     log::trace!(target: "tvm", "{}: {}\n", self.step, log_string);
                 }
