@@ -331,10 +331,6 @@ pipeline {
                         C_AUTHOR = sh (script: 'git show -s --format=%an ${GIT_COMMIT}', returnStdout: true).trim()
                         C_HASH = sh (script: 'git show -s --format=%h ${GIT_COMMIT}', returnStdout: true).trim()
                     
-                        DiscordURL = "https://discordapp.com/api/webhooks/496992026932543489/4exQIw18D4U_4T0H76bS3Voui4SyD7yCQzLP9IRQHKpwGRJK1-IFnyZLyYzDmcBKFTJw"
-                        string DiscordFooter = "Build duration is ${currentBuild.durationString}"
-                        DiscordTitle = "Job ${JOB_NAME} from GitHub ${C_PROJECT}"
-                        
                         def buildCause = currentBuild.getBuildCauses()[0].shortDescription
                         echo "Build cause: ${buildCause}"
                         
@@ -475,19 +471,6 @@ pipeline {
         always {
             node('master') {
                 script {
-                    DiscordDescription = """${C_COMMITER} pushed commit ${C_HASH} by ${C_AUTHOR} with a message '${C_TEXT}'
-Build number ${BUILD_NUMBER}
-Build: **${G_build}**
-Tests: **${G_test}**"""
-                    
-                    discordSend(
-                        title: DiscordTitle, 
-                        description: DiscordDescription, 
-                        footer: DiscordFooter, 
-                        link: RUN_DISPLAY_URL, 
-                        successful: currentBuild.resultIsBetterOrEqualTo('SUCCESS'), 
-                        webhookURL: DiscordURL
-                    )
                     cleanWs notFailBuild: true
                 }
             } 
