@@ -40,8 +40,9 @@ impl Exception {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "{}, file {}:{}",
-            exception_message(self.number, &self.value),
+            "{}, value {}, file {}:{}",
+            exception_message(self.number),
+            self.value,
             self.file,
             self.line
         )
@@ -71,10 +72,10 @@ impl Exception {
     }
 }
 
-pub fn exception_message(number: usize, value: &StackItem) -> String {
+pub fn exception_message(number: usize) -> String {
     match ExceptionCode::from_usize(number) {
-        Some(code) => format!("{}", code),
-        _ => format!("unknown exception (number {}, value {})", number, value),
+        Some(code) => format!("{}, code {}", code, number),
+        _ => format!("code {}", number),
     }
 }
 
@@ -137,7 +138,7 @@ macro_rules! to_opt {
 
 impl fmt::Display for Exception {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Exception::fmt(self, f)
+        write!(f, "{}", exception_message(self.number))
     }
 }
 
