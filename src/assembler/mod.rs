@@ -673,7 +673,9 @@ impl<T: Writer> Engine<T> {
         ADDCONST z = parse_const_i8          => 0xA6, z
         ADDRAND                              => 0xF8, 0x15
         AGAIN                                => 0xEA
+        AGAINBRK                             => 0xE3, 0x1A
         AGAINEND                             => 0xEB
+        AGAINENDBRK                          => 0xE3, 0x1B
         AND                                  => 0xB0
         ATEXIT                               => 0xED, 0xF3
         ATEXITALT                            => 0xED, 0xF4
@@ -1200,7 +1202,9 @@ impl<T: Writer> Engine<T> {
         RAWRESERVE                           => 0xFB, 0x02
         RAWRESERVEX                          => 0xFB, 0x03
         REPEAT                               => 0xE4
+        REPEATBRK                            => 0xE3, 0x14
         REPEATEND                            => 0xE5
+        REPEATENDBRK                         => 0xE3, 0x15
         RET                                  => 0xDB, 0x30
         RETALT                               => 0xDB, 0x31
         RETARGS r = parse_const_u4           => 0xDB, 0x20 | r
@@ -1401,12 +1405,16 @@ impl<T: Writer> Engine<T> {
         UNPAIR                               => 0x6F, 0x22
         UNSINGLE                             => 0x6F, 0x21
         UNTIL                                => 0xE6
+        UNTILBRK                             => 0xE3, 0x16
         UNTILEND                             => 0xE7
+        UNTILENDBRK                          => 0xE3, 0x17
         UNTRIPLE                             => 0x6F, 0x23
         UNTUPLE c = parse_const_u4           => 0x6F, 0x20 | c
         UNTUPLEVAR                           => 0x6F, 0x82
         WHILE                                => 0xE8
+        WHILEBRK                             => 0xE3, 0x18
         WHILEEND                             => 0xE9
+        WHILEENDBRK                          => 0xE3, 0x19
         XC2PU 
             s1 = parse_stack_register_u4;
             s2 = parse_stack_register_u4;
