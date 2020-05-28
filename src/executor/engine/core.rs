@@ -12,7 +12,7 @@
 */
 
 use crate::{
-    error::TvmError, 
+    error::{tvm_exception, TvmError},
     executor::{
         continuation::switch, engine::{handlers::Handlers, storage::{swap, copy_to_var}}, 
         gas::gas_state::Gas, math::DivMode, microcode::{VAR, SAVELIST, CC, CTRL},
@@ -52,11 +52,6 @@ pub struct Engine {
     debug_buffer: String,
     cmd_code: SliceData, // start of current cmd
     trace: u8,
-}
-
-pub trait Priced {
-    fn price(engine: &mut Engine) -> u128;
-    fn execute(engine: &mut Engine) -> Failure;
 }
 
 #[derive(Debug)]
@@ -189,6 +184,7 @@ impl Engine {
     }
 
     pub fn execute(&mut self) -> Result<i32> {
+        // log::debug!(target: "tvm", "start code: {:X}\n", self.cmd_code);
         loop {
             if let Some(result) = self.seek_next_cmd()? {
                 if self.gas.get_gas_credit() != 0 &&
@@ -234,12 +230,7 @@ impl Engine {
             if self.gas.get_gas_remaining() < 0 {
                 return err!(ExceptionCode::OutOfGas)
             }
-            if let Some(err) = execution_result {
-                if let TvmError::TvmExceptionFull(err) = err.downcast()? {
-                    self.undo();
-                    self.raise_exception(err)?;
-                }
-            }
+            self.raise_exception(execution_result, true)?;
         }
     }
 
@@ -382,11 +373,7 @@ impl Engine {
                     log::trace!(target: "tvm", "{}", self.dump_ctrls(true));
                 }
             }
-            if let Some(err) = err {
-                if let TvmError::TvmExceptionFull(err) = err.downcast()? {
-                    self.raise_exception(err)?;
-                }
-            }
+            self.raise_exception(err, false)?;
         }
         Ok(None)
     }
@@ -902,8 +889,14 @@ impl Engine {
 
     // raises the exception and tries to dispatch it via c(2).
     // If c(2) is not set, returns that exception, otherwise, returns None
-    fn raise_exception(&mut self, exception: Exception) -> Status {
-        self.step += 1;
+    fn raise_exception(&mut self, err_opt: Option<failure::Error>, undo: bool) -> Status {
+        let exception = match err_opt {
+            Some(err) => tvm_exception(err)?,
+            None => return Ok(())
+        };
+        if undo {
+            self.undo();
+        }
         if self.trace_bit(Engine::TRACE_CODE) {
             log::trace!(target: "tvm", "\n{}: EXCEPTION: {}\n", self.step, exception);
         }
@@ -911,17 +904,25 @@ impl Engine {
             log::trace!(target: "tvm", "{}\n", self.dump_stack("Stack trace", false));
         }
         self.gas.try_use_gas(Gas::exception_price(exception.code))?;
-        if self.ctrls.get(2).is_none() {
+        let n = self.cmd.vars.len();
+        if let Some(c2) = self.ctrls.get_mut(2) {
+            self.cc.stack.push(exception.value);
+            self.cc.stack.push(int!(exception.number));
+            c2.as_continuation_mut().map(|cdata| cdata.nargs = 2)?;
+            switch(Ctx::new(self), ctrl!(2))?;
+        } else if exception.code == ExceptionCode::NormalTermination
+            || exception.code == ExceptionCode::AlternativeTermination {
+            self.cmd.push_var(StackItem::Continuation(Arc::new(
+                ContinuationData::with_type(ContinuationType::Quit(exception.number as i32))
+            )));
+            self.cc.stack.push(exception.value);
+            self.cmd.vars[n].as_continuation_mut().map(|cdata| cdata.nargs = 1)?;
+            switch(Ctx::new(self), var!(n))?;
+        } else {
             log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code);
             fail!(TvmError::TvmExceptionFull(exception))
         }
-        self.cc.stack.push(exception.value);
-        self.cc.stack.push(int!(exception.number));
-        // set c(2).nargs to 2 in case it was not initialized through TRY* primitives
-        self.ctrls.get_mut(2).unwrap().as_continuation_mut()
-        .map(|cdata| cdata.nargs = 2)
-        .and_then(|_| switch(Ctx::new(self), ctrl!(2)))
-        .map(|_|())
+        Ok(())
     }
 
     /// Set code page for interpret bytecode. now only code page 0 is supported
@@ -943,9 +944,9 @@ impl Engine {
         let mut tuple = self.ctrl_mut(7)?.as_tuple_mut()?;
         let mut t1 = tuple.first_mut().ok_or(exception!(ExceptionCode::RangeCheckError))?.as_tuple_mut()?;
         *t1.get_mut(6).ok_or(exception!(ExceptionCode::RangeCheckError))? = StackItem::Integer(Arc::new(rand));
-        self.gas.use_gas(Gas::tuple_gas_price(t1.len()));
+        self.gas.try_use_gas(Gas::tuple_gas_price(t1.len()))?;
         *tuple.first_mut().ok_or(exception!(ExceptionCode::RangeCheckError))? = StackItem::Tuple(t1);
-        self.gas.use_gas(Gas::tuple_gas_price(tuple.len()));
+        self.gas.try_use_gas(Gas::tuple_gas_price(tuple.len()))?;
         *self.ctrl_mut(7)? = StackItem::Tuple(tuple);
         Ok(())
     }

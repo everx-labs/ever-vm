@@ -11,8 +11,8 @@
 * limitations under the License.
 */
 
-use ton_types::types::ExceptionCode;
-use crate::types::Exception;
+use ton_types::{error, fail, Result, ExceptionCode};
+use crate::{types::Exception, stack::StackItem};
 
 #[derive(Debug, failure::Fail)]
 pub enum TvmError {
@@ -36,11 +36,41 @@ pub enum TvmError {
     TvmExceptionFull(Exception),
 }
 
-#[allow(dead_code)]
-pub(crate) fn exception_code(err: failure::Error) -> Option<ExceptionCode> {
-    if let Some(TvmError::TvmExceptionFull(err)) = err.downcast_ref() {
-        Some(err.code)
-    } else {
-        None
+pub fn tvm_exception(err: failure::Error) -> Result<Exception> {
+    match err.downcast::<TvmError>() {
+        Ok(TvmError::TvmExceptionFull(err)) => Ok(err),
+        Ok(TvmError::TvmException(err)) => Ok(Exception::from(err)),
+        Ok(err) => fail!(err),
+        Err(err) => if let Some(err) = err.downcast_ref::<ton_types::types::ExceptionCode>() {
+            Ok(Exception::from(*err))
+        } else {
+            Err(err)
+        }
+    }
+}
+
+pub fn tvm_exception_code(err: &failure::Error) -> ExceptionCode {
+    match err.downcast_ref::<TvmError>() {
+        Some(TvmError::TvmExceptionFull(err)) => err.code,
+        Some(TvmError::TvmException(err)) => *err,
+        Some(_) => ExceptionCode::UnknownError,
+        None => if let Some(err) = err.downcast_ref::<ton_types::types::ExceptionCode>() {
+            *err
+        } else {
+            ExceptionCode::UnknownError
+        }
+    }
+}
+
+pub fn tvm_exception_code_and_value(err: &failure::Error) -> (i32, StackItem) {
+    match err.downcast_ref::<TvmError>() {
+        Some(TvmError::TvmExceptionFull(err)) => (err.number as i32, err.value.clone()),
+        Some(TvmError::TvmException(err)) => (*err as i32, StackItem::None),
+        Some(_) => (-1, StackItem::None),
+        None => if let Some(err) = err.downcast_ref::<ton_types::types::ExceptionCode>() {
+            (*err as i32, StackItem::None)
+        } else {
+            (-1, StackItem::None)
+        }
     }
 }

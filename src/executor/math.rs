@@ -12,7 +12,7 @@
 */
 
 use crate::{
-    error::TvmError, 
+    error::{tvm_exception_code, TvmError},
     executor::{
         engine::{Engine, storage::fetch_stack}, types::{Ctx, InstructionOptions, Instruction}
     },
@@ -806,15 +806,12 @@ where
         |x| {
             match x.into(0..=1023) {
                 Ok(shift) => IntegerData::one().shl::<T>(shift),
-                Err(exception) => if let Some(TvmError::TvmExceptionFull(err)) = exception.downcast_ref() {
-                    if err.code == ExceptionCode::IntegerOverflow {
+                Err(exception) => match tvm_exception_code(&exception) {
+                    ExceptionCode::IntegerOverflow => {
                         on_integer_overflow!(T)?;
                         Ok(IntegerData::nan())
-                    } else {
-                        Err(exception)
                     }
-                } else {
-                    Err(exception)
+                    _ => Err(exception)
                 }
             }
         }

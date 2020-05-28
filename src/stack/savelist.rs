@@ -28,7 +28,8 @@ impl SaveList {
     }
     pub fn can_put(index: usize, value: &StackItem) -> bool {
         match index {
-            0..=3 => value.as_continuation().is_ok(),
+            0 | 1 | 3 => value.as_continuation().is_ok(),
+            2 => value.as_continuation().is_ok() || value.is_null(),
             4 | 5 => value.as_cell().is_ok(),
             7 => value.as_tuple().is_ok(),
             8..=15 => true,
@@ -53,6 +54,8 @@ impl SaveList {
     pub fn put(&mut self, index: usize, value: &mut StackItem) -> ResultOpt<StackItem> {
         if !SaveList::can_put(index, value) {
             err!(ExceptionCode::TypeCheckError)
+        } else if value.is_null() {
+            Ok(self.storage.remove(&index))
         } else {
             Ok(self.storage.insert(index, value.withdraw())) 
         }
