@@ -236,15 +236,15 @@ pub(crate) fn execute_dump_string(engine: &mut Engine) -> Failure {
     let length = 1 + (0x0F & engine.cc.last_cmd() as usize);
     match engine.cc.next_cmd() {
         Ok(0) if length == 1 => internal_dump_string(engine, "LOGFLUSH", FLUSH, |ctx, _string| {
-                Ok(ctx)
+            Ok(ctx)
         }),
         Ok(0) => internal_dump_string(engine, "LOGSTR", 0, |ctx, string| {
-                ctx.engine.dump(string);
-                Ok(ctx)
+            ctx.engine.dump(string);
+            Ok(ctx)
         }),
         Ok(1) => internal_dump_string(engine, "PRINTSTR", FLUSH, |ctx, string| {
-                ctx.engine.dump(string);
-                Ok(ctx)
+            ctx.engine.dump(string);
+            Ok(ctx)
         }),
         // TODO: dump s0 as TL-B supported type
         Ok(_) => internal_dump_string(engine, "DUMPTOSFMT", 0, |ctx, string| {
