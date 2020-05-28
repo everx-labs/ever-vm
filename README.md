@@ -1,5 +1,4 @@
-# TVM
-TON Virtual Machine implementation
+# ton-labs-vm
 
 ## Prerequisites
 
