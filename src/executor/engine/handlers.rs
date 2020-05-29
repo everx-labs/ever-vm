@@ -586,6 +586,8 @@ impl Handlers {
                 .set(0xF7, execute_thenretalt)
                 .set(0xF8, execute_invert)
                 .set(0xF9, execute_booleval)
+                .set(0xFA, execute_samealt)
+                .set(0xFB, execute_samealt_save)
             )
             .set(0xEE, execute_blessargs)
             .set(0xF0, execute_call_short)

@@ -1225,6 +1225,8 @@ impl<T: Writer> Engine<T> {
         ROLLREV c = parse_const_u4_plus_one  => 0x55, c << 4
         ROLLX                                => 0x61
         ROLLREVX                             => 0x62
+        SAMEALT                              => 0xED, 0xFA
+        SAMEALTSAV                           => 0xED, 0xFB
         SAVE z = parse_control_register      => 0xED, 0xA0 | z
         SAVEALT z = parse_control_register   => 0xED, 0xB0 | z
         SAVEALTCTR z=parse_control_register  => 0xED, 0xB0 | z

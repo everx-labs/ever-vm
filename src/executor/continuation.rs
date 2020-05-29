@@ -305,7 +305,9 @@ pub(super) fn switch(ctx: Ctx, continuation: u16) -> Result<Ctx> {
                 ctx.engine.ctrls.remove(0);
             }
             if drop_c1 {
-                ctx.engine.ctrls.remove(1);
+                ctx.engine.ctrls.put(1, &mut StackItem::Continuation(Arc::new(
+                    ContinuationData::with_type(ContinuationType::Quit(1))
+                )))?;
             }
             Ok(ctx)
         })
@@ -1096,6 +1098,28 @@ pub(super) fn execute_returnva(engine: &mut Engine) -> Failure {
             pop_range(ctx, drop, save, ctrl!(0))
         }
     })
+    .err()
+}
+
+
+// ( - ), c[1] = c[0]
+pub(super) fn execute_samealt(engine: &mut Engine) -> Failure {
+    engine.load_instruction(
+        Instruction::new("SAMEALT")
+    )
+    .and_then(|ctx| copy_to_var(ctx, ctrl!(0)) )
+    .and_then(|ctx| swap(ctx, ctrl!(1), var!(0)) )
+    .err()
+}
+
+// ( - ), c[0].savelist[1] = c[1], c[1] = c[0]
+pub(super) fn execute_samealt_save(engine: &mut Engine) -> Failure {
+    engine.load_instruction(
+        Instruction::new("SAMEALTSAV")
+    )
+    .and_then(|ctx| swap(ctx, savelist!(ctrl!(0), 1), ctrl!(1)) )
+    .and_then(|ctx| copy_to_var(ctx, ctrl!(0)) )
+    .and_then(|ctx| swap(ctx, ctrl!(1), var!(0)) )
     .err()
 }
 
