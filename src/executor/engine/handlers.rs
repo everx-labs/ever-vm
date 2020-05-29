@@ -540,6 +540,14 @@ impl Handlers {
                 .set(0x0D, execute_ifrefelse)
                 .set(0x0E, execute_ifelseref)
                 .set(0x0F, execute_ifrefelseref)
+                .set(0x14, execute_repeat_break)
+                .set(0x15, execute_repeatend_break)
+                .set(0x16, execute_until_break)
+                .set(0x17, execute_untilend_break)
+                .set(0x18, execute_while_break)
+                .set(0x19, execute_whileend_break)
+                .set(0x1A, execute_again_break)
+                .set(0x1B, execute_againend_break)
                 .set_range(0x80..0xA0, execute_ifbitjmp)
                 .set_range(0xA0..0xC0, execute_ifnbitjmp)
                 .set_range(0xC0..0xE0, execute_ifbitjmpref)
@@ -873,7 +881,9 @@ impl Handlers {
     }
 
     pub(super) fn get_handler(&self, cc: &mut ContinuationData) -> Result<ExecuteHandler> {
-        match self.directs[cc.next_cmd()? as usize] {
+        let cmd = cc.next_cmd()?;
+        // log::debug!(target: "tvm", "get_handler cmd: {:X}\n", cmd);
+        match self.directs[cmd as usize] {
             Handler::Direct(handler) => Ok(handler),
             Handler::Subset(i) => self.subsets[i].get_handler(cc),
         }
