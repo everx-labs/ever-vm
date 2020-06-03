@@ -173,9 +173,9 @@ fn dictiter(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
         let result = match read_key(ctx.engine.cmd.var(2), nbits, how)? {
             (Some(key), _) => iter_reader(&mut ctx, &dict, key, how)?,
             (None, neg) if !neg ^ how.bit(MIN) => finder(&mut ctx, &dict, how)?,
-            _ => (None, None)
+            _ => None
         };
-        if let (Some(key), Some(value)) = result {
+        if let Some((key, value)) = result {
             ctx.engine.cc.stack.push(value);
             let key = write_key(&mut ctx, key, how)?;
             ctx.engine.cc.stack.push(key);
@@ -201,7 +201,7 @@ fn find(
     .and_then(|mut ctx| {
         let nbits = ctx.engine.cmd.var(0).as_integer()?.into(0..=1023)?;
         let mut dict = HashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?.cloned());
-        if let (Some(key), Some(value)) = finder(&mut ctx, &dict, how)? {
+        if let Some((key, value)) = finder(&mut ctx, &dict, how)? {
             if how.bit(DEL) {
                 dict.remove_with_gas(SliceData::from(&key), ctx.engine)?;
                 ctx.engine.cc.stack.push(dict!(dict));
@@ -515,23 +515,27 @@ fn iter_reader(
     dict: &HashmapE,
     key: SliceData,
     how: u8,
-) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    let (key, val) = dict.find_leaf(key, how.bit(NEXT), how.bit(SAME), how.bit(SIGN), ctx.engine)?;
-    let val = val.map(|val| StackItem::Slice(val));
-    Ok((key, val))
+) -> Result<Option<(BuilderData, StackItem)>> {
+    match dict.find_leaf(key, how.bit(NEXT), how.bit(SAME), how.bit(SIGN), ctx.engine)? {
+        Some((key, val)) => Ok(Some((key, StackItem::Slice(val)))),
+        None => Ok(None)
+    }
 }
 
-fn finder(ctx: &mut Ctx, dict: &HashmapE, how: u8) -> Result<(Option<BuilderData>, Option<StackItem>)> {
-    let (key, val) = if how.bit(MIN) {
+fn finder(ctx: &mut Ctx, dict: &HashmapE, how: u8) -> Result<Option<(BuilderData, StackItem)>> {
+    let key_val = if how.bit(MIN) {
         dict.get_min(how.bit(SIGN), ctx.engine)?
     } else {
         dict.get_max(how.bit(SIGN), ctx.engine)?
     };
-    val.map(|val| if how.bit(REF) {
-        try_unref_leaf(&val)
-    } else {
-        Ok(StackItem::Slice(val))
-    }).transpose().map(|val| (key, val))
+    match key_val {
+        Some((key, val)) => if how.bit(REF) {
+            Ok(Some((key, try_unref_leaf(&val)?)))
+        } else {
+            Ok(Some((key, StackItem::Slice(val))))
+        }
+        None => Ok(None)
+    }
 }
 
 fn write_key(ctx: &mut Ctx, key: BuilderData, how: u8) -> Result<StackItem> {
