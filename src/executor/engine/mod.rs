@@ -18,4 +18,5 @@ mod handlers;
 pub(in crate::executor) mod storage;
 
 pub use self::core::Engine;
+pub use self::core::EngineTraceInfo;
 

@@ -36,6 +36,7 @@ mod config;
 mod rand;
 
 pub use engine::Engine;
+pub use engine::EngineTraceInfo;
 use ton_types::{BuilderData, Cell, IBitstring, Result};
 
 
