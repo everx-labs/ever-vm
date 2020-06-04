@@ -28,7 +28,7 @@ use crate::{
     smart_contract_info::SmartContractInfo, 
     types::{Exception, Failure, ResultMut, ResultRef, Status}
 };
-use std::{collections::HashSet, sync::Arc, fmt};
+use std::{collections::HashSet, sync::Arc};
 use ton_types::{
     BuilderData, Cell, error, fail, GasConsumer, Result, SliceData, 
     types::{ExceptionCode, UInt256}
@@ -36,7 +36,6 @@ use ton_types::{
 
 pub(super) type ExecuteHandler = fn(&mut Engine) -> Failure;
 
-#[derive(Debug)]
 pub struct Engine {
     pub(in crate::executor) cc: ContinuationData,
     pub(in crate::executor) cmd: Instruction,
@@ -52,23 +51,14 @@ pub struct Engine {
     debug_buffer: String,
     cmd_code: SliceData, // start of current cmd
     trace: u8,
-    trace_callback: Option<EngineTraceCallback>,
+    trace_callback: Option<Box<dyn Fn(&Engine, &EngineTraceInfo)>>,
 }
 
-pub struct EngineTraceCallback {
-    callback: fn(&Engine, &EngineTraceInfo)
-}
-
-impl fmt::Debug for EngineTraceCallback {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "callback")
-    }
-}
-
-pub struct EngineTraceInfo {
+pub struct EngineTraceInfo<'a> {
     pub step: u32, // number of executable command
     pub cmd_str: String,
     pub cmd_code: SliceData, // start of current cmd
+    pub stack: &'a Stack,
     pub gas_used: i64,
     pub gas_cmd: i64,
 }
@@ -228,10 +218,11 @@ impl Engine {
                     step: self.step,
                     cmd_str: self.cmd.dump_with_params().unwrap_or_default(),
                     cmd_code: self.cmd_code.clone(),
+                    stack: &self.cc.stack,
                     gas_used: self.gas_used(),
                     gas_cmd: self.gas_used() - gas,
                 };
-                (callback.callback)(&self, &info);
+                callback(&self, &info);
             }
             if self.trace_bit(Engine::TRACE_CODE) {
                 log::trace!(
@@ -481,8 +472,8 @@ impl Engine {
         self.trace = trace_mask
     }
     
-    pub fn set_trace_callback(&mut self, callback: fn(&Engine, &EngineTraceInfo)) {
-        self.trace_callback = Some(EngineTraceCallback{callback: callback});
+    pub fn set_trace_callback(&mut self, callback: impl Fn(&Engine, &EngineTraceInfo) + 'static) {
+        self.trace_callback = Some(Box::new(callback));
     }
 
     fn trace_bit(&self, trace_mask: u8) -> bool {
