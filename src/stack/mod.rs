@@ -341,7 +341,7 @@ impl Stack {
                   when stack state is well known."
             );
         } else {
-            self.storage.split_off(depth - n);
+            self.storage.truncate(depth - n);
         }
     }
 
