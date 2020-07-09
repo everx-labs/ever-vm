@@ -891,6 +891,7 @@ impl<T: Writer> Engine<T> {
         DUP2                                 => 0x5C
         ENDC                                 => 0xC9
         ENDCST                               => 0xCD
+        ENDXC                                => 0xCF, 0x23
         ENDS                                 => 0xD1
         EQUAL                                => 0xBA
         EQINT z = parse_const_i8             => 0xC0, z
