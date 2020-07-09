@@ -82,30 +82,18 @@ pub fn exception_message(number: usize) -> String {
 #[macro_export]
 macro_rules! exception {
     ($code:expr) => {
-        error!(TvmError::TvmExceptionFull(Exception::from_code($code, file!(), line!()), String::new()))
-    };
-    ($code:expr, $msg:literal, $($arg:tt)*) => {
-        error!(TvmError::TvmExceptionFull(Exception::from_code($code, file!(), line!()), format!($msg, $($arg)*)))
-    };
-    ($code:expr, $msg:literal) => {
-        error!(TvmError::TvmExceptionFull(Exception::from_code($code, file!(), line!()), format!($msg)))
+        error!(TvmError::TvmExceptionFull(Exception::from_code($code, file!(), line!())))
     };
     ($code:expr, $file:expr, $line:expr) => {
-        error!(TvmError::TvmExceptionFull(Exception::from_code($code, $file, $line), String::new()))
+        error!(TvmError::TvmExceptionFull(Exception::from_code($code, $file, $line)))
     };
 }
 
 #[macro_export]
 macro_rules! err {
     ($code:expr) => {
-        Err(exception!($code))
+        Err(exception!($code, file!(), line!()))
     };
-    ($code:expr, $msg:literal, $($arg:tt)*) => {{
-        Err(exception!($code, $msg, $($arg)*))
-    }};
-    ($code:expr, $msg:literal) => {{
-        Err(exception!($code, $msg))
-    }};
     ($code:expr, $file:expr, $line:expr) => {
         Err(exception!($code, $file, $line))
     };

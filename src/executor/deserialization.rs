@@ -31,7 +31,7 @@ use crate::{
     types::{Exception, Failure}
 };
 use ton_types::{
-    BuilderData, Cell, CellType, error, GasConsumer, Result, SliceData, types::{ExceptionCode, UInt256}
+    BuilderData, Cell, error, GasConsumer, Result, SliceData, types::{ExceptionCode, UInt256}
 };
 use std::{collections::HashSet, sync::Arc};
 
@@ -169,54 +169,6 @@ pub fn execute_ctos(engine: &mut Engine) -> Failure {
     .and_then(|ctx| convert(ctx, var!(0), SLICE, CELL))
     .and_then(|ctx| {
         ctx.engine.cc.stack.push(ctx.engine.cmd.vars.remove(0));
-        Ok(ctx)
-    })
-    .err()
-}
-
-// (cell - slice ?)
-pub fn execute_xctos(engine: &mut Engine) -> Failure {
-    engine.load_instruction(
-        Instruction::new("XCTOS")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let cell = ctx.engine.cmd.var(0).as_cell()?.clone();
-        let special = cell.cell_type() != CellType::Ordinary;
-        let slice = ctx.engine.load_hashed_cell(cell, false)?;
-        ctx.engine.cc.stack.push(StackItem::Slice(slice));
-        ctx.engine.cc.stack.push(boolean!(special));
-        Ok(ctx)
-    })
-    .err()
-}
-
-// (cell - cell)
-pub fn execute_xload(engine: &mut Engine) -> Failure {
-    engine.load_instruction(
-        Instruction::new("XLOAD")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        // now it does nothing as Durov's code
-        let cell = ctx.engine.cmd.var(0).as_cell()?.clone();
-        ctx.engine.cc.stack.push(StackItem::Cell(cell));
-        Ok(ctx)
-    })
-    .err()
-}
-
-// (cell - cell -1 or 0)
-pub fn execute_xloadq(engine: &mut Engine) -> Failure {
-    engine.load_instruction(
-        Instruction::new("XLOADQ")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        // now it does nothing as Durov's code
-        let cell = ctx.engine.cmd.var(0).as_cell()?.clone();
-        ctx.engine.cc.stack.push(StackItem::Cell(cell));
-        ctx.engine.cc.stack.push(boolean!(true));
         Ok(ctx)
     })
     .err()

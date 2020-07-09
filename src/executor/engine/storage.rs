@@ -351,7 +351,7 @@ pub(in crate::executor) fn pop_all(ctx: Ctx, dst: u16) -> Result<Ctx> {
         pargs.unwrap_or(depth)
     } else if let Some(pargs) = pargs {
         if pargs < nargs as usize {
-            return err!(ExceptionCode::StackUnderflow, "depth: {}, pargs: {}, nargs: {}", depth, pargs, nargs)
+            return err!(ExceptionCode::StackUnderflow)
         }
         pargs
     } else {

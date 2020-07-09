@@ -12,7 +12,7 @@
 */
 
 use crate::{
-    error::{tvm_exception_code_and_value, TvmError},
+    error::{tvm_exception, TvmError},
     executor::{
         continuation::switch, engine::{handlers::Handlers, storage::{swap, copy_to_var}}, 
         gas::gas_state::Gas, math::DivMode, microcode::{VAR, SAVELIST, CC, CTRL},
@@ -30,7 +30,7 @@ use crate::{
 };
 use std::{collections::HashSet, sync::Arc};
 use ton_types::{
-    BuilderData, Cell, CellType, error, GasConsumer, Result, SliceData, HashmapE,
+    BuilderData, Cell, error, fail, GasConsumer, Result, SliceData, 
     types::{ExceptionCode, UInt256}
 };
 
@@ -40,7 +40,6 @@ pub struct Engine {
     pub(in crate::executor) cc: ContinuationData,
     pub(in crate::executor) cmd: Instruction,
     pub(in crate::executor) ctrls: SaveList,
-    pub(in crate::executor) libraries: Vec<HashmapE>, // 256 bit dictionaries
     visited_cells: HashSet<UInt256>,
     cstate: CommittedState,
     handlers: Handlers,
@@ -105,14 +104,14 @@ impl CommittedState {
 impl GasConsumer for Engine {
     fn finalize_cell(&mut self, builder: BuilderData) -> Result<Cell> {
         self.gas.try_use_gas(Gas::finalize_price())?;
-        builder.into_cell()
+        Ok(builder.into())
     }
     fn load_cell(&mut self, cell: Cell) -> Result<SliceData> {
-        self.load_hashed_cell(cell, true)
+        self.load_hashed_cell(cell)
     }
     fn finalize_cell_and_load(&mut self, builder: BuilderData) -> Result<SliceData> {
         let cell = self.finalize_cell(builder)?;
-        self.load_hashed_cell(cell, true)
+        self.load_hashed_cell(cell)
     }
 }
 
@@ -130,7 +129,6 @@ impl Engine {
             cc: ContinuationData::new_empty(),
             cmd: Instruction::new("NOP"),
             ctrls: SaveList::new(),
-            libraries: Vec::new(),
             visited_cells: HashSet::new(),
             cstate: CommittedState::new_empty(),
             handlers: Handlers::new_code_page_0(),
@@ -268,7 +266,7 @@ impl Engine {
                     err_opt!(ExceptionCode::InvalidOpcode)
                 } else {
                     self.gas.try_use_gas(Gas::implicit_jmp_price())?;
-                    *self.cc.code_mut() = self.load_hashed_cell(reference, true)?;
+                    *self.cc.code_mut() = self.load_hashed_cell(reference)?;
                     None
                 }
             } else { //TODO: put every case in functions
@@ -401,36 +399,11 @@ impl Engine {
         Ok(None)
     }
 
-
-    pub fn load_library_cell(&mut self, cell: Cell) -> Result<Cell> {
-        let mut hash = SliceData::from(cell);
-        hash.move_by(8)?;
-        for library in &self.libraries.clone() {
-            if let Some(lib) = library.get_with_gas(hash.clone(), self)? {
-                return lib.reference(0)
-            }
-        }
-        err!(ExceptionCode::CellUnderflow, "Libraries do not contain code with hash {}", hash.to_hex_string())
-    }
-
     /// Loads cell to slice cheking in precashed map
-    pub fn load_hashed_cell(&mut self, cell: Cell, check_special: bool) -> Result<SliceData> {
+    pub fn load_hashed_cell(&mut self, cell: Cell) -> Result<SliceData> {
         let first = self.visited_cells.insert(cell.repr_hash());
         self.gas.try_use_gas(Gas::load_cell_price(first))?;
-        if check_special {
-            match cell.cell_type() {
-                CellType::Ordinary => {
-                    Ok(cell.into())
-                }
-                CellType::LibraryReference => {
-                    let cell = self.load_library_cell(cell)?;
-                    self.load_hashed_cell(cell, true)
-                }
-                cell_type => err!(ExceptionCode::CellUnderflow, "Wrong cell type {}", cell_type)
-            }
-        } else {
-            Ok(cell.into())
-        }
+        Ok(cell.into())
     }
 
     pub fn get_committed_state(&self) -> &CommittedState {
@@ -507,17 +480,7 @@ impl Engine {
         (self.trace & trace_mask) == trace_mask
     }
 
-    pub fn setup(self, code: SliceData, ctrls: Option<SaveList>, stack: Option<Stack>, gas: Option<Gas>) -> Self {
-        self.setup_with_libraries(code, ctrls, stack, gas, vec![])
-    }
-    pub fn setup_with_libraries(
-        mut self,
-        code: SliceData,
-        mut ctrls: Option<SaveList>,
-        stack: Option<Stack>,
-        gas: Option<Gas>,
-        libraries: Vec<HashmapE>
-    ) -> Self {
+    pub fn setup(mut self, code: SliceData, mut ctrls: Option<SaveList>, stack: Option<Stack>, gas: Option<Gas>) -> Self {
         *self.cc.code_mut() = code.clone();
         self.cmd_code = code.clone();
         if let Some(stack) = stack {
@@ -539,7 +502,6 @@ impl Engine {
         if let Some(ref mut ctrls) = ctrls {
             self.apply_savelist(ctrls).unwrap();
         }
-        self.libraries = libraries;
         self
     }
 
@@ -931,10 +893,12 @@ impl Engine {
             }
             Some(InstructionOptions::Bytestring(offset, r, x, bytes)) => {
                 self.gas.use_gas(Gas::basic_gas_price(offset + r + x, 0));
-                let slice = self.extract_slice(offset, r, x, 0, bytes)?;
-                if slice.remaining_bits() % 8 != 0 {
-                    return err!(ExceptionCode::InvalidOpcode)
-                }
+                let slice = self.extract_slice(offset, r, x, 0, bytes)
+                    .and_then(|slice| if slice.remaining_bits() % 8 != 0 {
+                        err!(ExceptionCode::InvalidOpcode)
+                    } else {
+                        Ok(slice)
+                    })?;
                 self.cmd.ictx.params.push(InstructionParameter::Slice(slice))
             }
             Some(InstructionOptions::Bitstring(offset, r, x, refs)) => {
@@ -951,39 +915,37 @@ impl Engine {
     // raises the exception and tries to dispatch it via c(2).
     // If c(2) is not set, returns that exception, otherwise, returns None
     fn raise_exception(&mut self, err_opt: Option<failure::Error>, undo: bool) -> Status {
-        let (number, value, code, err) = match err_opt {
-            Some(err) => {
-                let (number, code, value) = tvm_exception_code_and_value(&err);
-                (number, value, code, err)
-            }
+        let exception = match err_opt {
+            Some(err) => tvm_exception(err)?,
             None => return Ok(())
         };
         if undo {
             self.undo();
         }
         if self.trace_bit(Engine::TRACE_CODE) {
-            log::trace!(target: "tvm", "\n{}: EXCEPTION: {}\n", self.step, err);
+            log::trace!(target: "tvm", "\n{}: EXCEPTION: {}\n", self.step, exception);
         }
         if self.trace_bit(Engine::TRACE_STACK) {
             log::trace!(target: "tvm", "{}\n", self.dump_stack("Stack trace", false));
         }
-        self.gas.try_use_gas(Gas::exception_price(code))?;
+        self.gas.try_use_gas(Gas::exception_price(exception.code))?;
         let n = self.cmd.vars.len();
         if let Some(c2) = self.ctrls.get_mut(2) {
-            self.cc.stack.push(value);
-            self.cc.stack.push(int!(number));
+            self.cc.stack.push(exception.value);
+            self.cc.stack.push(int!(exception.number));
             c2.as_continuation_mut().map(|cdata| cdata.nargs = 2)?;
             switch(Ctx::new(self), ctrl!(2))?;
-        } else if code == ExceptionCode::NormalTermination
-            || code == ExceptionCode::AlternativeTermination {
-            let cont = ContinuationData::with_type(ContinuationType::Quit(number));
-            self.cmd.push_var(StackItem::Continuation(Arc::new(cont)));
-            self.cc.stack.push(value);
+        } else if exception.code == ExceptionCode::NormalTermination
+            || exception.code == ExceptionCode::AlternativeTermination {
+            self.cmd.push_var(StackItem::Continuation(Arc::new(
+                ContinuationData::with_type(ContinuationType::Quit(exception.number as i32))
+            )));
+            self.cc.stack.push(exception.value);
             self.cmd.vars[n].as_continuation_mut().map(|cdata| cdata.nargs = 1)?;
             switch(Ctx::new(self), var!(n))?;
         } else {
             log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code);
-            return Err(err)
+            fail!(TvmError::TvmExceptionFull(exception))
         }
         Ok(())
     }

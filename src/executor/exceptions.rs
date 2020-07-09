@@ -76,7 +76,7 @@ fn do_throw(ctx: Ctx, number_index: isize, value_index: isize) -> Result<Ctx> {
         ctx.engine.cmd.var(value_index as usize).clone()
     };
     fail!(TvmError::TvmExceptionFull(
-        Exception::from_number_and_value(number, value, file!(), line!()), String::new()
+        Exception::from_number_and_value(number, value, file!(), line!())
     ))
 }
 

@@ -16,7 +16,7 @@ use crate::{
     types::{Exception, ResultMut, ResultOpt, ResultRef, ResultVec, Status}
 };
 use std::{fmt, mem, ops::Range, slice::Iter, sync::Arc};
-use ton_types::{BuilderData, Cell, CellType, error, SliceData, Result, types::ExceptionCode};
+use ton_types::{BuilderData, Cell, error, SliceData, Result, types::ExceptionCode};
 
 pub mod serialization;
 pub mod savelist;
@@ -230,7 +230,7 @@ impl StackItem {
                 format!("BC{{{}}}", hex::encode(bytes))
             }
             StackItem::Slice(data) => {
-                let d1 = |level_mask : u8, refs_count : u8, is_special: u8| {
+                let d1 = |level_mask : u32, refs_count : u32, is_special : u32| {
                     (refs_count + 8 * is_special + 32 * level_mask) as u8
                 };
                 let d2 = |bits : u32| {
@@ -242,8 +242,7 @@ impl StackItem {
                 let refs = data.get_references();
                 let data = SliceData::from(data.cell());
                 let mut bytes = vec![];
-                let is_special = data.cell().cell_type() != CellType::Ordinary;
-                bytes.push(d1(data.cell().level_mask().mask(), data.cell().references_count() as u8, is_special as u8));
+                bytes.push(d1(data.cell().level_mask().mask() as u32, data.cell().references_count() as u32, 0));
                 bytes.push(d2(data.remaining_bits() as u32));
                 bytes.extend_from_slice(&data.storage());
                 if bytes.last() == Some(&0x80) {
@@ -358,7 +357,7 @@ impl Stack {
     pub fn drop_range(&mut self, range: Range<usize>) -> ResultVec<StackItem> {
         let depth = self.depth();
         if range.end > depth {
-            err!(ExceptionCode::StackUnderflow, "drop_range: {}..{}, depth: {}", range.start, range.end, depth)
+            err!(ExceptionCode::StackUnderflow)
         } else {
             Ok(self.storage.drain(depth - range.end..depth - range.start).rev().collect())
         }

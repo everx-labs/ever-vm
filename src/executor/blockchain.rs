@@ -32,7 +32,7 @@ use crate::{
 use std::sync::Arc;
 use ton_types::{
     BuilderData, Cell, error, GasConsumer, IBitstring, Result, SliceData, 
-    types::ExceptionCode,
+    types::ExceptionCode
 };
 
 // Blockchain related instructions ********************************************

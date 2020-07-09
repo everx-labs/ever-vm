@@ -31,7 +31,7 @@ use crate::{
     },
     types::{Exception, Failure}
 };
-use ton_types::{BuilderData, CellType, GasConsumer, error, IBitstring, Result, types::ExceptionCode};
+use ton_types::{BuilderData, error, IBitstring, Result, types::ExceptionCode};
 use std::sync::Arc;
 
 const QUIET: u8 = 0x01; // quiet variant
@@ -112,30 +112,6 @@ pub fn execute_endc(engine: &mut Engine) -> Failure {
     .and_then(|ctx| convert(ctx, var!(0), CELL, BUILDER))
     .and_then(|ctx| {
         ctx.engine.cc.stack.push(ctx.engine.cmd.vars.remove(0));
-        Ok(ctx)
-    })
-    .err()
-}
-
-// (builder x - cell)
-pub fn execute_endxc(engine: &mut Engine) -> Failure {
-    engine.load_instruction(
-        Instruction::new("ENDXC")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 2))
-    .and_then(|ctx| {
-        let special = ctx.engine.cmd.var(0).as_bool()?;
-        let mut b = ctx.engine.cmd.var_mut(1).as_builder_mut()?;
-        if special {
-            if b.length_in_bits() < 8 {
-                ctx.engine.gas.try_use_gas(Gas::finalize_price())?;
-                return err!(ExceptionCode::CellOverflow, "Not enough data for a special cell")
-            }
-            let cell_type = CellType::from(b.data()[0]);
-            b.set_type(cell_type);
-        }
-        let cell = ctx.engine.finalize_cell(b)?;
-        ctx.engine.cc.stack.push(StackItem::Cell(cell));
         Ok(ctx)
     })
     .err()
