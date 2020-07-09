@@ -402,6 +402,7 @@ pipeline {
                             }
                         }
                         stage('Build') {
+                            options { skipDefaultCheckout() }
                             agent {
                                 dockerfile {
                                     registryCredentialsId "${G_docker_creds}"
