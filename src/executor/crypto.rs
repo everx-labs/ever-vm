@@ -27,6 +27,7 @@ use crate::{
     types::{Exception, Failure}
 };
 use sha2::Digest;
+use ed25519::signature::{Signature, Verifier};
 use std::sync::Arc;
 use ton_types::{BuilderData, error, GasConsumer, types::ExceptionCode};
 
@@ -104,7 +105,7 @@ pub(super) fn execute_chksigns(engine: &mut Engine) -> Failure {
             let pub_key = ed25519_dalek::PublicKey::from_bytes(
                 &pub_key.data()[..PUBLIC_KEY_BYTES]
             ).map_err(|_| exception!(ExceptionCode::FatalError))?;
-            let signature = ed25519_dalek::Signature::from_bytes(
+            let signature = ed25519::Signature::from_bytes(
                 &ctx.engine.cmd.var(1).as_slice()?.get_bytestring(0)[..SIGNATURE_BYTES]
             ).map_err(|_| exception!(ExceptionCode::FatalError))?;
 
@@ -134,7 +135,7 @@ pub(super) fn execute_chksignu(engine: &mut Engine) -> Failure {
             let signature = ctx.engine.cmd.var(1).as_slice()?.get_bytestring(0);
 
             let mut result = false;
-            if let Ok(signature) = ed25519_dalek::Signature::from_bytes(&signature[..SIGNATURE_BYTES]) {
+            if let Ok(signature) = ed25519::Signature::from_bytes(&signature[..SIGNATURE_BYTES]) {
                 if let Ok(pub_key) = ed25519_dalek::PublicKey::from_bytes(&pub_key.data()) {
                     result = pub_key.verify(hash.data(), &signature).is_ok();
                 }

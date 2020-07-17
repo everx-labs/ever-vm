@@ -15,7 +15,6 @@ use crate::{
     executor::{microcode::{VAR, CELL, SLICE, BUILDER, CONTINUATION}, types::{Ctx, Undo}},
     stack::{StackItem, continuation::ContinuationData}, types::Status
 };
-use std::mem;
 use std::sync::Arc;
 use ton_types::{GasConsumer, Result};
 
@@ -65,7 +64,7 @@ fn convert_any(ctx: &mut Ctx, x: u16, to: u16, from: u16) -> Status {
                 }
                 _ => unimplemented!()
             };
-            mem::replace(ctx.engine.cmd.var_mut(storage_index!(x)), data);
+            *ctx.engine.cmd.var_mut(storage_index!(x)) = data;
         }
         _ => unimplemented!("x: {:X}, to: {:X}, from: {:X}", x, to, from)
     };

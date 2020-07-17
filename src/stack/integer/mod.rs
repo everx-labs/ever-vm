@@ -112,7 +112,7 @@ impl IntegerData {
     /// Replaces value to a given one.
     #[inline]
     pub fn replace(&mut self, new_value: IntegerData) {
-        mem::replace(self, new_value);
+        *self = new_value;
     }
 
     /// Checks if value is a Not-a-Number (NaN).
