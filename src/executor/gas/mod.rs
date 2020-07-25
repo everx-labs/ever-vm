@@ -41,7 +41,7 @@ pub fn execute_setgaslimit(engine: &mut Engine) -> Failure {
         .and_then(|ctx| {
             let gas_limit = ctx.engine.cmd.var(0).as_integer()?
                 .take_value_of(|x| i64::from_int(x).ok())?;
-            if gas_limit < ctx.engine.gas.get_gas_used() {
+            if gas_limit < ctx.engine.gas_used() {
                 return err!(ExceptionCode::OutOfGas);
             }
             ctx.engine.new_gas_limit(gas_limit);

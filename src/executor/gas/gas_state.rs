@@ -180,10 +180,10 @@ impl Gas {
         self.gas_remaining -= gas;
         self.gas_remaining
     }
-    pub fn try_use_gas(&mut self, gas: i64) -> Result<i64> {
+    pub fn try_use_gas(&mut self, gas: i64) -> Result<()> {
         if self.gas_remaining >= gas {
             self.gas_remaining -= gas;
-            Ok(self.gas_remaining)
+            Ok(())
         } else {
             err!(ExceptionCode::OutOfGas)
         }

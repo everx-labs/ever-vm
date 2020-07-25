@@ -45,7 +45,7 @@ pub struct Engine {
     cstate: CommittedState,
     handlers: Handlers,
     time: u64,
-    pub(in crate::executor) gas: Gas,
+    gas: Gas,
     code_page: isize,
     debug_on: isize, // status of debug can be recursively incremented
     step: u32, // number of executable command
@@ -104,7 +104,7 @@ impl CommittedState {
 
 impl GasConsumer for Engine {
     fn finalize_cell(&mut self, builder: BuilderData) -> Result<Cell> {
-        self.gas.try_use_gas(Gas::finalize_price())?;
+        self.try_use_gas(Gas::finalize_price())?;
         builder.into_cell()
     }
     fn load_cell(&mut self, cell: Cell) -> Result<SliceData> {
@@ -165,6 +165,10 @@ impl Engine {
 
     pub fn stack(&self) -> &Stack {
         &self.cc.stack
+    }
+
+    pub fn try_use_gas(&mut self, gas: i64) -> Result<()> {
+        self.gas.try_use_gas(gas)
     }
 
     pub fn gas_used(&self) -> i64 {
@@ -267,14 +271,14 @@ impl Engine {
                 if reference.bit_length() % 8 != 0 {
                     err_opt!(ExceptionCode::InvalidOpcode)
                 } else {
-                    self.gas.try_use_gas(Gas::implicit_jmp_price())?;
+                    self.try_use_gas(Gas::implicit_jmp_price())?;
                     *self.cc.code_mut() = self.load_hashed_cell(reference, true)?;
                     None
                 }
             } else { //TODO: put every case in functions
                 match self.cc.type_of.clone() {
                     ContinuationType::Ordinary => {
-                        self.gas.try_use_gas(Gas::implicit_ret_price())?;
+                        self.try_use_gas(Gas::implicit_ret_price())?;
                         if self.ctrls.get(0).is_none() {
                             return Ok(Some(0))
                         }
@@ -294,7 +298,7 @@ impl Engine {
                     ContinuationType::TryCatch => {
                         self.step += 1;
                         log_string = Some("IMPLICIT RET FROM TRY-CATCH");
-                        self.gas.try_use_gas(Gas::implicit_ret_price())?;
+                        self.try_use_gas(Gas::implicit_ret_price())?;
                         self.ctrls.remove(2).unwrap();
                         switch(Ctx{engine: self}, ctrl!(0)).err()
                     }
@@ -416,7 +420,7 @@ impl Engine {
     /// Loads cell to slice cheking in precashed map
     pub fn load_hashed_cell(&mut self, cell: Cell, check_special: bool) -> Result<SliceData> {
         let first = self.visited_cells.insert(cell.repr_hash());
-        self.gas.try_use_gas(Gas::load_cell_price(first))?;
+        self.try_use_gas(Gas::load_cell_price(first))?;
         if check_special {
             match cell.cell_type() {
                 CellType::Ordinary => {
@@ -967,7 +971,7 @@ impl Engine {
         if self.trace_bit(Engine::TRACE_STACK) {
             log::trace!(target: "tvm", "{}\n", self.dump_stack("Stack trace", false));
         }
-        self.gas.try_use_gas(Gas::exception_price(code))?;
+        self.try_use_gas(Gas::exception_price(code))?;
         let n = self.cmd.vars.len();
         if let Some(c2) = self.ctrls.get_mut(2) {
             self.cc.stack.push(value);
@@ -1007,9 +1011,9 @@ impl Engine {
         let mut tuple = self.ctrl_mut(7)?.as_tuple_mut()?;
         let mut t1 = tuple.first_mut().ok_or(exception!(ExceptionCode::RangeCheckError))?.as_tuple_mut()?;
         *t1.get_mut(6).ok_or(exception!(ExceptionCode::RangeCheckError))? = StackItem::Integer(Arc::new(rand));
-        self.gas.try_use_gas(Gas::tuple_gas_price(t1.len()))?;
+        self.try_use_gas(Gas::tuple_gas_price(t1.len()))?;
         *tuple.first_mut().ok_or(exception!(ExceptionCode::RangeCheckError))? = StackItem::Tuple(t1);
-        self.gas.try_use_gas(Gas::tuple_gas_price(tuple.len()))?;
+        self.try_use_gas(Gas::tuple_gas_price(tuple.len()))?;
         *self.ctrl_mut(7)? = StackItem::Tuple(tuple);
         Ok(())
     }
