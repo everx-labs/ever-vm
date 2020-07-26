@@ -55,7 +55,17 @@ pub struct Engine {
     trace_callback: Option<Box<dyn Fn(&Engine, &EngineTraceInfo)>>,
 }
 
+#[derive(Eq, PartialEq)]
+pub enum EngineTraceInfoType {
+    Start,
+    Normal,
+    Finish,
+    Implicit,
+    Exception,
+}
+
 pub struct EngineTraceInfo<'a> {
+    pub info_type: EngineTraceInfoType,
     pub step: u32, // number of executable command
     pub cmd_str: String,
     pub cmd_code: SliceData, // start of current cmd
@@ -142,7 +152,10 @@ impl Engine {
             debug_buffer: String::default(),
             cmd_code: SliceData::default(),
             trace: Engine::TRACE_ALL,
+            #[cfg(not(feature="verbose"))]
             trace_callback: None,
+            #[cfg(feature="verbose")]
+            trace_callback: Some(Box::new(Self::defaul_trace_callback)),
         }
     }
 
@@ -199,17 +212,59 @@ impl Engine {
         self.step
     }
 
+    fn trace_info(&self, info_type: EngineTraceInfoType, gas: i64, log_string: Option<String>) {
+        if let Some(callback) = &self.trace_callback {
+            let cmd_str = log_string.or_else(|| self.cmd.dump_with_params()).unwrap_or_default();
+            let info = EngineTraceInfo {
+                info_type,
+                step: self.step,
+                cmd_str,
+                cmd_code: self.cmd_code.clone(),
+                stack: &self.cc.stack,
+                gas_used: self.gas_used(),
+                gas_cmd: self.gas_used() - gas,
+            };
+            callback(&self, &info);
+        }
+    }
+
+    #[allow(dead_code)]
+    fn defaul_trace_callback(&self, info: &EngineTraceInfo) {
+        if self.trace_bit(Engine::TRACE_CODE) {
+            log::trace!(
+                target: "tvm", 
+                "{}: {}\n{}\n", 
+                info.step,
+                info.cmd_str,
+                info.cmd_code.to_hex_string(),
+            );
+        }
+        if self.trace_bit(Engine::TRACE_GAS) {
+            log::trace!(
+                target: "tvm", 
+                "Gas: {} ({})\n", 
+                info.gas_used, 
+                info.gas_cmd
+            );
+        }
+        if self.trace_bit(Engine::TRACE_STACK) {
+            log::trace!(target: "tvm", "{}", self.dump_stack("Stack trace", false));
+        }
+        if self.trace_bit(Engine::TRACE_CTRLS) {
+            log::trace!(target: "tvm", "{}", self.dump_ctrls(true));
+        }
+    }
+
     pub fn execute(&mut self) -> Result<i32> {
         // log::debug!(target: "tvm", "start code: {:X}\n", self.cmd_code);
+        self.trace_info(EngineTraceInfoType::Start, self.gas_used(), None);
         loop {
             if let Some(result) = self.seek_next_cmd()? {
                 if self.gas.get_gas_credit() != 0 &&
                     self.gas.get_gas_remaining() < self.gas.get_gas_credit() {
                     return err!(ExceptionCode::OutOfGas)
                 } else {
-                    if self.trace_bit(Engine::TRACE_CODE) {
-                        log::trace!(target: "tvm", "NORMAL TERMINATION\n");
-                    }
+                    self.trace_info(EngineTraceInfoType::Finish, self.gas_used(), Some(format!("NORMAL TERMINATION")));
                     self.commit();
                     return Ok(result)
                 }
@@ -219,40 +274,7 @@ impl Engine {
             self.cmd = Instruction::new("");
             let handler = self.handlers.get_handler(&mut self.cc)?;
             let execution_result = handler(self);
-            if let Some(callback) = &self.trace_callback {
-                let info = EngineTraceInfo {
-                    step: self.step,
-                    cmd_str: self.cmd.dump_with_params().unwrap_or_default(),
-                    cmd_code: self.cmd_code.clone(),
-                    stack: &self.cc.stack,
-                    gas_used: self.gas_used(),
-                    gas_cmd: self.gas_used() - gas,
-                };
-                callback(&self, &info);
-            }
-            if self.trace_bit(Engine::TRACE_CODE) {
-                log::trace!(
-                    target: "tvm", 
-                    "{}: {}\n{}\n", 
-                    self.step, 
-                    self.cmd.dump_with_params().unwrap_or_default(),
-                    self.cmd_code.to_hex_string(),
-                );
-            }
-            if self.trace_bit(Engine::TRACE_GAS) {
-                log::trace!(
-                    target: "tvm", 
-                    "Gas: {} ({})\n", 
-                    self.gas_used(), 
-                    self.gas_used() - gas
-                );
-            }
-            if self.trace_bit(Engine::TRACE_STACK) {
-                log::trace!(target: "tvm", "{}", self.dump_stack("Stack trace", false));
-            }
-            if self.trace_bit(Engine::TRACE_CTRLS) {
-                log::trace!(target: "tvm", "{}", self.dump_ctrls(true));
-            }
+            self.trace_info(EngineTraceInfoType::Normal, gas, None);
             self.cmd.ictx.clear();
             if self.gas.get_gas_remaining() < 0 {
                 return err!(ExceptionCode::OutOfGas)
@@ -283,12 +305,12 @@ impl Engine {
                             return Ok(Some(0))
                         }
                         self.step += 1;
-                        log_string = Some("IMPLICIT RET");
+                        log_string = Some("implicit RET");
                         switch(Ctx{engine: self}, ctrl!(0)).err()
                     }
                     ContinuationType::PushInt(code) => {
                         self.step += 1;
-                        log_string = Some("IMPLICIT PUSHINT");
+                        log_string = Some("implicit PUSHINT");
                         self.cc.stack.push(int!(code));
                         switch(Ctx{engine: self}, ctrl!(0)).err()
                     }
@@ -382,23 +404,7 @@ impl Engine {
                 }
             };
             if let Some(log_string) = log_string {
-                if self.trace_bit(Engine::TRACE_CODE) {
-                    log::trace!(target: "tvm", "{}: {}\n", self.step, log_string);
-                }
-                if self.trace_bit(Engine::TRACE_GAS) && gas != self.gas_used() {
-                    log::trace!(
-                        target: "tvm", 
-                        "Gas: {} ({})\n", 
-                        self.gas_used(), 
-                        self.gas_used() - gas
-                    );
-                }
-                if self.trace_bit(Engine::TRACE_STACK) {
-                    log::trace!(target: "tvm", "{}", self.dump_stack("Stack trace", false));
-                }
-                if self.trace_bit(Engine::TRACE_CTRLS) {
-                    log::trace!(target: "tvm", "{}", self.dump_ctrls(true));
-                }
+                self.trace_info(EngineTraceInfoType::Implicit, gas, Some(log_string.to_string()));
             }
             self.raise_exception(err, false)?;
         }
@@ -502,7 +508,7 @@ impl Engine {
     pub fn set_trace(&mut self, trace_mask: u8) {
         self.trace = trace_mask
     }
-    
+
     pub fn set_trace_callback(&mut self, callback: impl Fn(&Engine, &EngineTraceInfo) + 'static) {
         self.trace_callback = Some(Box::new(callback));
     }
@@ -514,6 +520,7 @@ impl Engine {
     pub fn setup(self, code: SliceData, ctrls: Option<SaveList>, stack: Option<Stack>, gas: Option<Gas>) -> Self {
         self.setup_with_libraries(code, ctrls, stack, gas, vec![])
     }
+
     pub fn setup_with_libraries(
         mut self,
         code: SliceData,
@@ -965,13 +972,8 @@ impl Engine {
         if undo {
             self.undo();
         }
-        if self.trace_bit(Engine::TRACE_CODE) {
-            log::trace!(target: "tvm", "\n{}: EXCEPTION: {}\n", self.step, err);
-        }
-        if self.trace_bit(Engine::TRACE_STACK) {
-            log::trace!(target: "tvm", "{}\n", self.dump_stack("Stack trace", false));
-        }
         self.try_use_gas(Gas::exception_price(code))?;
+        self.trace_info(EngineTraceInfoType::Exception, self.gas_used(), Some(format!("EXCEPTION: {}", err)));
         let n = self.cmd.vars.len();
         if let Some(c2) = self.ctrls.get_mut(2) {
             self.cc.stack.push(value);

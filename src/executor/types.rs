@@ -308,7 +308,7 @@ impl Instruction {
             Some(InstructionOptions::BigInteger) =>
                 format!(" {}", self.ictx.biginteger()?), // TODO: it is zero because execution withdraws it
             Some(InstructionOptions::ControlRegister) =>
-                format!(" C{}", self.ictx.creg()?),
+                format!(" c{}", self.ictx.creg()?),
             Some(InstructionOptions::DivisionMode) => {
                 let mode = self.division_mode();
                 if mode.shift_parameter() {
@@ -333,45 +333,45 @@ impl Instruction {
             Some(InstructionOptions::Rargs(_)) =>
                 format!(" {}", self.ictx.rargs()?),
             Some(InstructionOptions::StackRegister(_)) =>
-                format!(" S{}", self.ictx.sreg()?),
+                format!(" s{}", self.ictx.sreg()?),
             Some(InstructionOptions::StackRegisterPair(WhereToGetParams::GetFromNextByteMinusOne)) =>
-                format!(" S{}, S{}",
+                format!(" s{},s{}",
                     self.ictx.sregs()?.ra,
                     self.ictx.sregs()?.rb as isize - 1
                 ),
             Some(InstructionOptions::StackRegisterPair(_)) =>
-                format!(" S{}, S{}",
+                format!(" s{},s{}",
                     self.ictx.sregs()?.ra,
                     self.ictx.sregs()?.rb
                 ),
             Some(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByteMinusOne)) =>
-                format!(" S{}, S{}, S{}",
+                format!(" s{},s{},s{}",
                     self.ictx.sregs3()?.ra,
                     self.ictx.sregs3()?.rb,
                     self.ictx.sregs3()?.rc as isize - 1,
                 ),
             Some(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByteMinusOneMinusOne)) =>
-                format!(" S{}, S{}, S{}",
+                format!(" s{},s{},s{}",
                     self.ictx.sregs3()?.ra,
                     self.ictx.sregs3()?.rb as isize - 1,
                     self.ictx.sregs3()?.rc as isize - 1,
                 ),
             Some(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByteMinusOneMinusTwo)) =>
-                format!(" S{}, S{}, S{}",
+                format!(" s{},s{},s{}",
                     self.ictx.sregs3()?.ra,
                     self.ictx.sregs3()?.rb as isize - 1,
                     self.ictx.sregs3()?.rc as isize - 2,
                 ),
             Some(InstructionOptions::StackRegisterTrio(_)) =>
-                format!(" S{}, S{}, S{}",
+                format!(" s{},s{},s{}",
                     self.ictx.sregs3()?.ra,
                     self.ictx.sregs3()?.rb,
                     self.ictx.sregs3()?.rc,
                 ),
             Some(InstructionOptions::Bitstring(_, _, _, _)) =>
-                format!(" x{:x}", self.ictx.slice()?),
+                format!(" x{:X}", self.ictx.slice()?),
             Some(InstructionOptions::Bytestring(_, _, _, _)) =>
-                format!(" x{:x}", self.ictx.slice()?),
+                format!(" x{:X}", self.ictx.slice()?),
             Some(InstructionOptions::Dictionary(_, _)) =>
                 format!(" {}", self.ictx.length()?),
             None => String::default()

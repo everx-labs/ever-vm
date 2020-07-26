@@ -544,11 +544,11 @@ fn undo_execute_call(ctx: &mut Ctx, index: usize) {
 
 // 0 =< n =< 255
 pub(super) fn execute_call_short(engine: &mut Engine) -> Failure {
-    execute_call(engine, "CALL", 0..256, CALLX)
+    execute_call(engine, "CALLDICT", 0..256, CALLX)
 }
 // 0 =< n < (2 ^ 14)
 pub(super) fn execute_call_long(engine: &mut Engine) -> Failure {
-    execute_call(engine, "CALL", 0..16384, CALLX)
+    execute_call(engine, "CALLDICT", 0..16384, CALLX)
 }
 // 0 =< n < (2 ^ 14)
 pub(super) fn execute_jmp(engine: &mut Engine) -> Failure {
