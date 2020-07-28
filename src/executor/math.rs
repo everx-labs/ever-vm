@@ -807,7 +807,7 @@ where
             match x.into(0..=1023) {
                 Ok(shift) => IntegerData::one().shl::<T>(shift),
                 Err(exception) => match tvm_exception_code(&exception) {
-                    ExceptionCode::IntegerOverflow => {
+                    Some(ExceptionCode::IntegerOverflow) => {
                         on_integer_overflow!(T)?;
                         Ok(IntegerData::nan())
                     }

@@ -12,7 +12,7 @@
 */
 
 use crate::{
-    error::{tvm_exception_code_and_value, TvmError},
+    error::{tvm_exception_full, TvmError},
     executor::{
         continuation::switch, engine::{handlers::Handlers, storage::{swap, copy_to_var}}, 
         gas::gas_state::Gas, math::DivMode, microcode::{VAR, SAVELIST, CC, CTRL},
@@ -962,29 +962,36 @@ impl Engine {
     // raises the exception and tries to dispatch it via c(2).
     // If c(2) is not set, returns that exception, otherwise, returns None
     fn raise_exception(&mut self, err_opt: Option<failure::Error>, undo: bool) -> Status {
-        let (number, value, code, err) = match err_opt {
-            Some(err) => {
-                let (number, code, value) = tvm_exception_code_and_value(&err);
-                (number, value, code, err)
+        let (err, exception) = if let Some(err) = err_opt {
+            if let Some(exception) = tvm_exception_full(&err) {
+                (err, exception)
+            } else {
+                log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code);
+                return Err(err)
             }
-            None => return Ok(())
+        } else {
+            return Ok(())
         };
         if undo {
             self.undo();
         }
-        self.try_use_gas(Gas::exception_price(code))?;
+        if exception.exception_code() == Some(ExceptionCode::OutOfGas) {
+            self.step += 1;
+            log::trace!(target: "tvm", "OUT OF GAS CODE: {}\n", self.cmd_code);
+            return Err(err)
+        }
+        self.try_use_gas(Gas::exception_price())?;
         self.trace_info(EngineTraceInfoType::Exception, self.gas_used(), Some(format!("EXCEPTION: {}", err)));
         let n = self.cmd.vars.len();
         if let Some(c2) = self.ctrls.get_mut(2) {
-            self.cc.stack.push(value);
-            self.cc.stack.push(int!(number));
+            self.cc.stack.push(exception.value.clone());
+            self.cc.stack.push(int!(exception.exception_or_custom_code()));
             c2.as_continuation_mut().map(|cdata| cdata.nargs = 2)?;
             switch(Ctx::new(self), ctrl!(2))?;
-        } else if code == ExceptionCode::NormalTermination
-            || code == ExceptionCode::AlternativeTermination {
+        } else if let Some(number) = exception.is_normal_termination() {
             let cont = ContinuationData::with_type(ContinuationType::Quit(number));
             self.cmd.push_var(StackItem::Continuation(Arc::new(cont)));
-            self.cc.stack.push(value);
+            self.cc.stack.push(exception.value.clone());
             self.cmd.vars[n].as_continuation_mut().map(|cdata| cdata.nargs = 1)?;
             switch(Ctx::new(self), var!(n))?;
         } else {

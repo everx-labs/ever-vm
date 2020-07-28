@@ -12,8 +12,8 @@
 */
 
 use crate::{error::TvmError, types::Exception};
-use std::cmp::{max, min};
-use ton_types::{error, Result, types::ExceptionCode};
+use std::{cmp::{max, min}};
+use ton_types::{error, fail, Result, types::ExceptionCode};
 
 // TODO: it seems everything should be unsigned
 // Application-specific primitives - A.10; Gas-related primitives - A.10.2
@@ -134,7 +134,7 @@ impl Gas {
     }
 
     /// Compute exception cost
-    pub fn exception_price(_code: ExceptionCode) -> i64 {
+    pub fn exception_price() -> i64 {
         EXCEPTION_GAS_PRICE
     }
 
@@ -185,7 +185,14 @@ impl Gas {
             self.gas_remaining -= gas;
             Ok(())
         } else {
-            err!(ExceptionCode::OutOfGas)
+            let exception = Exception::from_code_and_value(
+                ExceptionCode::OutOfGas,
+                (self.get_gas_used() + gas) as i32,
+                file!(),
+                line!()
+            );
+            self.gas_remaining = 0;
+            fail!(TvmError::TvmExceptionFull(exception, Default::default()))
         }
     }
     // *** Getters ***

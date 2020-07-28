@@ -11,7 +11,7 @@
 * limitations under the License.
 */
 
-use crate::{error::tvm_exception, stack::integer::IntegerData};
+use crate::{error::tvm_exception_code, stack::integer::IntegerData};
 use std::{collections::HashMap, marker::PhantomData, ops::{Range, RangeInclusive}};
 use ton_types::{SliceData, types::ExceptionCode};
 
@@ -302,18 +302,13 @@ fn compile_pushint<T: Writer>(_engine: &mut Engine<T>, par: &Vec<&str>, destinat
         _ => {
             let int = match IntegerData::from_str_radix(sub_str.as_str(), radix) {
                 Ok(value) => value,
-                Err(err) => if let Ok(err) = tvm_exception(err) {
-                    match err.code {
-                        ExceptionCode::TypeCheckError => {
-                            return Err(ParameterError::UnexpectedType.parameter("arg 0"));
-                        }
-                        ExceptionCode::IntegerOverflow => {
-                            return Err(ParameterError::OutOfRange.parameter("arg 0"));
-                        }
-                        _ => unimplemented!()
-                    }
-                } else {
-                    return Err(ParameterError::UnexpectedType.parameter("arg 0"));
+                Err(err) => {
+                    let err = match tvm_exception_code(&err) {
+                        None | Some(ExceptionCode::TypeCheckError) => ParameterError::UnexpectedType,
+                        Some(ExceptionCode::IntegerOverflow) =>  ParameterError::OutOfRange,
+                        _ => ParameterError::NotSupported
+                    };
+                    return Err(err.parameter("arg 0"))
                 }
             };
             let mut int_bytes = int.to_big_endian_octet_string();

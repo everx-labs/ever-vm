@@ -20,11 +20,52 @@ pub const ACTION_SET_CODE: u32 = 0xad4de08e;
 pub const ACTION_RESERVE:  u32 = 0x36e6b809;
 pub const ACTION_CHANGE_LIB: u32 = 0x26fa1dd4;
 
+#[derive(Clone, PartialEq)]
+enum ExceptionType {
+    System(ExceptionCode),
+    Custom(i32)
+}
+
+impl ExceptionType {
+    fn is_normal_termination(&self) -> Option<i32> {
+        match self {
+            ExceptionType::System(ExceptionCode::NormalTermination) | ExceptionType::Custom(0) => Some(0),
+            ExceptionType::System(ExceptionCode::AlternativeTermination) | ExceptionType::Custom(1) => Some(1),
+            _ => None
+        }
+    }
+    fn exception_code(&self) -> Option<ExceptionCode> {
+        if let ExceptionType::System(code) = self {
+            Some(*code)
+        } else {
+            None
+        }
+    }
+    fn custom_code(&self) -> Option<i32> {
+        if let ExceptionType::Custom(code) = self {
+            Some(*code)
+        } else {
+            None
+        }
+    }
+    pub fn exception_or_custom_code(&self) -> i32 {
+        match self {
+            ExceptionType::System(code) => *code as i32,
+            ExceptionType::Custom(code) => *code
+        }
+    }
+    fn exception_message(&self) -> String {
+        match self {
+            ExceptionType::System(code) => format!("{}, code {}", code, *code as u8),
+            ExceptionType::Custom(code) => format!("code {}", code)
+        }
+    }
+}
+
 // Exceptions *****************************************************************
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Exception {
-    pub code: ExceptionCode,
-    pub number: usize,
+    exception: ExceptionType,
     pub value: StackItem,
     pub file: &'static str,
     pub line: u32,
@@ -41,41 +82,42 @@ impl Exception {
         write!(
             f,
             "{}, value {}, file {}:{}",
-            exception_message(self.number),
+            self.exception.exception_message(),
             self.value,
             self.file,
             self.line
         )
     }
     pub fn from_code(code: ExceptionCode, file: &'static str, line: u32) -> Exception {
+        Self::from_code_and_value(code, 0, file, line)
+    }
+    pub fn from_code_and_value(code: ExceptionCode, value: i32, file: &'static str, line: u32) -> Exception {
         Exception {
-            code,
-            number: code as usize,
-            value: int!(0),
+            exception: ExceptionType::System(code),
+            value: int!(value),
             file,
             line,
         }
     }
-    pub fn from_number_and_value(
-        number: usize, 
-        value: StackItem,
-        file: &'static str, 
-        line: u32
-    ) -> Exception {
+    pub fn from_number_and_value(number: usize, value: StackItem, file: &'static str, line: u32) -> Exception {
         Exception {
-            code: ExceptionCode::from_usize(number).unwrap_or(ExceptionCode::UnknownError),
-            number: number,
-            value: value,
+            exception: ExceptionType::Custom(number as i32),
+            value,
             file,
             line,
         }
     }
-}
-
-pub fn exception_message(number: usize) -> String {
-    match ExceptionCode::from_usize(number) {
-        Some(code) => format!("{}, code {}", code, number),
-        _ => format!("code {}", number),
+    pub fn exception_code(&self) -> Option<ExceptionCode> {
+        self.exception.exception_code()
+    }
+    pub fn custom_code(&self) -> Option<i32> {
+        self.exception.custom_code()
+    }
+    pub fn exception_or_custom_code(&self) -> i32 {
+        self.exception.exception_or_custom_code()
+    }
+    pub fn is_normal_termination(&self) -> Option<i32> {
+        self.exception.is_normal_termination()
     }
 }
 
@@ -150,7 +192,7 @@ macro_rules! to_opt {
 
 impl fmt::Display for Exception {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}, value: {}", exception_message(self.number), self.value)
+        write!(f, "{}, value: {}", self.exception.exception_message(), self.value)
     }
 }
 

@@ -12,7 +12,7 @@
 */
 
 use ton_types::{error, fail, Result, ExceptionCode};
-use crate::{types::Exception, stack::StackItem};
+use crate::{types::Exception};
 
 #[derive(Debug, failure::Fail)]
 pub enum TvmError {
@@ -49,28 +49,41 @@ pub fn tvm_exception(err: failure::Error) -> Result<Exception> {
     }
 }
 
-pub fn tvm_exception_code(err: &failure::Error) -> ExceptionCode {
+pub fn tvm_exception_code(err: &failure::Error) -> Option<ExceptionCode> {
     match err.downcast_ref::<TvmError>() {
-        Some(TvmError::TvmExceptionFull(err, _)) => err.code,
-        Some(TvmError::TvmException(err)) => *err,
-        Some(_) => ExceptionCode::UnknownError,
+        Some(TvmError::TvmExceptionFull(err, _)) => err.exception_code(),
+        Some(TvmError::TvmException(err)) => Some(*err),
+        Some(_) => None,
         None => if let Some(err) = err.downcast_ref::<ton_types::types::ExceptionCode>() {
-            *err
+            Some(*err)
         } else {
-            ExceptionCode::UnknownError
+            None
         }
     }
 }
 
-pub fn tvm_exception_code_and_value(err: &failure::Error) -> (i32, ExceptionCode, StackItem) {
+pub fn tvm_exception_or_custom_code(err: &failure::Error) -> i32 {
     match err.downcast_ref::<TvmError>() {
-        Some(TvmError::TvmExceptionFull(err, _)) => (err.number as i32, err.code, err.value.clone()),
-        Some(TvmError::TvmException(err)) => (*err as i32, *err, StackItem::None),
-        Some(_) => (-1, ExceptionCode::UnknownError, StackItem::None),
-        None => if let Some(err) = err.downcast_ref::<ExceptionCode>() {
-            (*err as i32, *err, StackItem::None)
+        Some(TvmError::TvmExceptionFull(err, _)) => err.exception_or_custom_code(),
+        Some(TvmError::TvmException(err)) => *err as i32,
+        Some(_) => ExceptionCode::UnknownError as i32,
+        None => if let Some(err) = err.downcast_ref::<ton_types::types::ExceptionCode>() {
+            *err as i32
         } else {
-            (-1, ExceptionCode::UnknownError, StackItem::None)
+            ExceptionCode::UnknownError as i32
+        }
+    }
+}
+
+pub fn tvm_exception_full(err: &failure::Error) -> Option<Exception> {
+    match err.downcast_ref::<TvmError>() {
+        Some(TvmError::TvmExceptionFull(err, _)) => Some(err.clone()),
+        Some(TvmError::TvmException(err)) => Some(Exception::from_code(*err, file!(), line!())),
+        Some(_) => None,
+        None => if let Some(err) = err.downcast_ref::<ton_types::types::ExceptionCode>() {
+            Some(Exception::from_code(*err, file!(), line!()))
+        } else {
+            None
         }
     }
 }
