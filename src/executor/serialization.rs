@@ -31,7 +31,7 @@ use crate::{
     },
     types::{Exception, Failure}
 };
-use ton_types::{BuilderData, CellType, GasConsumer, error, IBitstring, Result, types::ExceptionCode};
+use ton_types::{BuilderData, Cell, CellType, GasConsumer, error, IBitstring, Result, types::ExceptionCode};
 use std::sync::Arc;
 
 const QUIET: u8 = 0x01; // quiet variant
@@ -717,6 +717,71 @@ pub fn execute_stref2const(engine: &mut Engine) -> Failure {
         b.checked_append_reference(ctx.engine.cmd.var(0).as_cell()?.clone())?;
         b.checked_append_reference(ctx.engine.cmd.var(1).as_cell()?.clone())?;
         ctx.engine.cc.stack.push_builder(b);
+        Ok(ctx)
+    })
+    .err()
+}
+
+fn calc_depth(cell: &Cell) -> usize {
+    let mut depth = 0;
+    let n = cell.references_count();
+    for i in 0..n {
+        if let Ok(cell) = cell.reference(i) {
+            depth = std::cmp::max(depth, 1 + calc_depth(&cell));
+        }
+    }
+    depth
+}
+
+/// BDEPTH (b - x), returns the depth of Builder b.
+pub fn execute_bdepth(engine: &mut Engine) -> Failure {
+    engine.load_instruction(Instruction::new("BDEPTH"))
+    .and_then(|ctx| fetch_stack(ctx, 1))
+    .and_then(|ctx| {
+        let mut depth = 0;
+        let b = ctx.engine.cmd.var(0).as_builder()?;
+        for cell in b.references() {
+            depth = std::cmp::max(depth, 1 + calc_depth(cell));
+        }
+        ctx.engine.cc.stack.push(int!(depth));
+        Ok(ctx)
+    })
+    .err()
+}
+
+/// CDEPTH (c - x), returns the depth of Cell c.
+pub fn execute_cdepth(engine: &mut Engine) -> Failure {
+    engine.load_instruction(Instruction::new("CDEPTH"))
+    .and_then(|ctx| fetch_stack(ctx, 1))
+    .and_then(|ctx| {
+        let depth = if ctx.engine.cmd.var(0).is_null() {
+            0
+        } else {
+            let c = ctx.engine.cmd.var(0).as_cell()?;
+            if c.references_count() == 0 {
+                0
+            } else {
+                calc_depth(c)
+            }
+        };
+        ctx.engine.cc.stack.push(int!(depth));
+        Ok(ctx)
+    })
+    .err()
+}
+
+/// SDEPTH (s - x), returns the depth of Slice s.
+pub fn execute_sdepth(engine: &mut Engine) -> Failure {
+    engine.load_instruction(Instruction::new("SDEPTH"))
+    .and_then(|ctx| fetch_stack(ctx, 1))
+    .and_then(|ctx| {
+        let mut depth = 0;
+        let s = ctx.engine.cmd.var(0).as_slice()?;
+        let n = s.remaining_references();
+        for i in 0..n {
+            depth = std::cmp::max(depth, 1 + calc_depth(&s.reference(i)?));
+        }
+        ctx.engine.cc.stack.push(int!(depth));
         Ok(ctx)
     })
     .err()

@@ -681,6 +681,7 @@ impl<T: Writer> Engine<T> {
         BCHKBITREFSQ                         => 0xCF, 0x3F
         BCHKREFS                             => 0xCF, 0x3A
         BCHKREFSQ                            => 0xCF, 0x3E
+        BDEPTH                               => 0xCF, 0x30
         BINDUMP                              => 0xFE, 0x12
         BINPRINT                             => 0xFE, 0x13
         BITSIZE                              => 0xB6, 0x02
@@ -722,6 +723,7 @@ impl<T: Writer> Engine<T> {
         CDR                                  => 0x6F, 0x11
         CDATASIZE                            => 0xF9, 0x41
         CDATASIZEQ                           => 0xF9, 0x40
+        CDEPTH                               => 0xD7, 0x65
         CHANGELIB                            => 0xFB, 0x07
         CHKBOOL                              => 0xB4, 0x00
         CHKBIT                               => 0xB5, 0x00
@@ -1256,6 +1258,7 @@ impl<T: Writer> Engine<T> {
         SDEMPTY                              => 0xC7, 0x01
         SDEQ                                 => 0xC7, 0x05
         SDFIRST                              => 0xC7, 0x03
+        SDEPTH                               => 0xD7, 0x64
         SDPFX                                => 0xC7, 0x08
         SDPFXREV                             => 0xC7, 0x09
         SDPPFX                               => 0xC7, 0x0A

@@ -394,6 +394,7 @@ impl Handlers {
                 .set(0x29, execute_stule4)
                 .set(0x2A, execute_stile8)
                 .set(0x2B, execute_stule8)
+                .set(0x30, execute_bdepth)
                 .set(0x31, execute_bbits)
                 .set(0x32, execute_brefs)
                 .set(0x33, execute_bbitrefs)
@@ -498,6 +499,8 @@ impl Handlers {
                 .set(0x60, execute_ldzeroes)
                 .set(0x61, execute_ldones)
                 .set(0x62, execute_ldsame)
+                .set(0x64, execute_sdepth)
+                .set(0x65, execute_cdepth)
             )
     }
 
