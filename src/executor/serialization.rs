@@ -31,7 +31,7 @@ use crate::{
     },
     types::{Exception, Failure}
 };
-use ton_types::{BuilderData, Cell, CellType, GasConsumer, error, IBitstring, Result, types::ExceptionCode};
+use ton_types::{BuilderData, CellType, GasConsumer, error, IBitstring, Result, ExceptionCode, MAX_LEVEL};
 use std::sync::Arc;
 
 const QUIET: u8 = 0x01; // quiet variant
@@ -722,17 +722,6 @@ pub fn execute_stref2const(engine: &mut Engine) -> Failure {
     .err()
 }
 
-fn calc_depth(cell: &Cell) -> usize {
-    let mut depth = 0;
-    let n = cell.references_count();
-    for i in 0..n {
-        if let Ok(cell) = cell.reference(i) {
-            depth = std::cmp::max(depth, 1 + calc_depth(&cell));
-        }
-    }
-    depth
-}
-
 /// BDEPTH (b - x), returns the depth of Builder b.
 pub fn execute_bdepth(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("BDEPTH"))
@@ -741,7 +730,7 @@ pub fn execute_bdepth(engine: &mut Engine) -> Failure {
         let mut depth = 0;
         let b = ctx.engine.cmd.var(0).as_builder()?;
         for cell in b.references() {
-            depth = std::cmp::max(depth, 1 + calc_depth(cell));
+            depth = std::cmp::max(depth, 1 + cell.depth(MAX_LEVEL));
         }
         ctx.engine.cc.stack.push(int!(depth));
         Ok(ctx)
@@ -761,7 +750,7 @@ pub fn execute_cdepth(engine: &mut Engine) -> Failure {
             if c.references_count() == 0 {
                 0
             } else {
-                calc_depth(c)
+                c.depth(MAX_LEVEL)
             }
         };
         ctx.engine.cc.stack.push(int!(depth));
@@ -779,7 +768,7 @@ pub fn execute_sdepth(engine: &mut Engine) -> Failure {
         let s = ctx.engine.cmd.var(0).as_slice()?;
         let n = s.remaining_references();
         for i in 0..n {
-            depth = std::cmp::max(depth, 1 + calc_depth(&s.reference(i)?));
+            depth = std::cmp::max(depth, 1 + s.reference(i)?.depth(MAX_LEVEL));
         }
         ctx.engine.cc.stack.push(int!(depth));
         Ok(ctx)
