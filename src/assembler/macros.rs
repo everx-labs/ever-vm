@@ -11,6 +11,7 @@
 * limitations under the License.
 */
 
+#[macro_export]
 macro_rules! simple_commands {
 
     // quantity of nothing is 0

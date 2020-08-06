@@ -36,6 +36,7 @@ pub enum OperationError {
     TooManyParameters,
     LogicErrorInParameters(&'static str),
     MissingRequiredParameters,
+    MissingBlock,
     Nested(Box<CompileError>),
     NotFitInSlice,
 }
@@ -45,6 +46,31 @@ pub enum CompileError {
     Syntax(Position, Explanation),
     UnknownOperation(Position, OperationName),
     Operation(Position, OperationName, OperationError),
+}
+
+impl CompileError {
+    pub fn syntax<S: ToString>(line: usize, column: usize, explanation: S) -> Self {
+        CompileError::Syntax(Position{line, column}, explanation.to_string())
+    }
+    pub fn unknown<S: ToString>(line: usize, column: usize, name: S) -> Self {
+        CompileError::UnknownOperation(Position{line, column}, name.to_string())
+    }
+    pub fn operation<S: ToString>(line: usize, column: usize, name: S, error: OperationError) -> Self {
+        CompileError::Operation(Position{line, column}, name.to_string(), error)
+    }
+    pub fn missing_params<S: ToString>(line: usize, column: usize, name: S) -> Self {
+        CompileError::Operation(Position{line, column}, name.to_string(), OperationError::MissingRequiredParameters)
+    }
+    pub fn missing_block<S: ToString>(line: usize, column: usize, name: S) -> Self {
+        CompileError::Operation(Position{line, column}, name.to_string(), OperationError::MissingBlock)
+    }
+    pub fn too_many_params<S: ToString>(line: usize, column: usize, name: S) -> Self {
+        CompileError::Operation(Position{line, column}, name.to_string(), OperationError::TooManyParameters)
+    }
+    pub fn out_of_range<S1: ToString, S2: ToString>(line: usize, column: usize, name: S1, param: S2) -> Self {
+        let operation = OperationError::Parameter(param.to_string(), ParameterError::OutOfRange);
+        CompileError::Operation(Position{line, column}, name.to_string(), operation)
+    }
 }
 
 pub trait ToOperationParameterError<T>
@@ -109,6 +135,9 @@ impl fmt::Display for OperationError {
             ),
             OperationError::MissingRequiredParameters => {
                 write!(f, "Operation requires more parameters.")
+            }
+            OperationError::MissingBlock => {
+                write!(f, "Operation requires block in {{}} braces.")
             }
             OperationError::Nested(error) => write!(f, "Operation error. Internal: {}", error),
             OperationError::NotFitInSlice => write!(f, "Command bytecode is too long for single slice"),

@@ -12,13 +12,13 @@
 */
 
 use crate::assembler::OperationError;
-use ton_types::{BuilderData, SliceData};
+use ton_types::BuilderData;
 
 pub trait Writer : 'static {
     fn new() -> Self;
     fn write_command(&mut self, command: &[u8]) -> Result<(), OperationError>;
-    fn write_composite_command(&mut self, code: &[u8], references: SliceData) -> Result<(), OperationError>;
-    fn finalize(self) -> SliceData;
+    fn write_composite_command(&mut self, code: &[u8], reference: BuilderData) -> Result<(), OperationError>;
+    fn finalize(self) -> BuilderData;
 }
 
 pub(crate) struct CodePage0 {
@@ -50,18 +50,18 @@ impl Writer for CodePage0 {
     fn write_composite_command(
         &mut self, 
         command: &[u8], 
-        reference: SliceData
+        reference: BuilderData
     ) -> Result<(), OperationError> {
         let mut code = BuilderData::new();
         if code.append_raw(command, command.len() * 8).is_ok()
-            && code.checked_append_reference(reference.into_cell()).is_ok() {
+            && code.checked_append_reference(reference.into()).is_ok() {
             self.cells.push(code);
             return Ok(());
             }
         Err(OperationError::NotFitInSlice)
     }
     /// puts every cell as reference to previous
-    fn finalize(mut self) -> SliceData {
+    fn finalize(mut self) -> BuilderData {
         let mut cursor = self.cells.pop().expect("cells can't be empty");
         while !self.cells.is_empty() {
             let mut destination = self.cells.pop()
@@ -69,6 +69,6 @@ impl Writer for CodePage0 {
             destination.append_reference(cursor);
             cursor = destination; 
         }
-        cursor.into()
+        cursor
     }
 }
