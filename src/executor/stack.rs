@@ -264,7 +264,7 @@ pub(super) fn execute_pop(engine: &mut Engine) -> Failure {
     } else if cmd == 0x57 {
         0..256
     } else {
-        unimplemented!()
+        return Some(error!("execute_pop cmd: {:X}", cmd))
     };
     engine.load_instruction(
         Instruction::new("POP").set_opts(InstructionOptions::StackRegister(range))
@@ -349,7 +349,7 @@ pub(super) fn execute_push(engine: &mut Engine) -> Failure {
     } else if cmd == 0x56 {
         0..256
     } else {
-        unimplemented!()
+        return Some(error!("execute_push: cmd {:X}", cmd))
     };
     engine.load_instruction(
         Instruction::new("PUSH").set_opts(InstructionOptions::StackRegister(range))

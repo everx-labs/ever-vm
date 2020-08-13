@@ -22,7 +22,7 @@ use crate::{
     types::{Exception, ResultMut, ResultRef, ResultVec, Status}
 };
 use std::{mem, ops::Range, sync::Arc};
-use ton_types::{error, Result, types::ExceptionCode};
+use ton_types::{error, fail, Result, types::ExceptionCode};
 
 // Utilities ******************************************************************
 
@@ -31,9 +31,9 @@ fn continuation_by_address<'a>(ctx: &'a Ctx, address: u16) -> ResultRef<'a, Cont
         VAR => ctx.engine.cmd.var(storage_index!(address)).as_continuation(),
         CTRL => match ctx.engine.ctrls.get(storage_index!(address)) {
             Some(ctrl) => ctrl.as_continuation(),
-            None => return err!(ExceptionCode::TypeCheckError)
+            None => fail!(ExceptionCode::TypeCheckError)
         },
-        _ => unimplemented!()
+        _ => fail!("continuation_by_address: {:X}", address_tag!(address))
     }
 }
 
@@ -44,9 +44,9 @@ macro_rules! continuation_mut_by_address {
             VAR => $ctx.engine.cmd.var_mut(storage_index!($address)).as_continuation_mut(),
             CTRL => match $ctx.engine.ctrls.get_mut(storage_index!($address)) {
                 Some(ctrl) => ctrl.as_continuation_mut(),
-                None => return err!(ExceptionCode::TypeCheckError)
+                None => fail!(ExceptionCode::TypeCheckError)
             },
-            _ => unimplemented!()
+            _ => fail!("continuation_mut_by_address: {:X}", address_tag!($address))
         }
     };
 }
@@ -59,7 +59,7 @@ fn move_stack(
     save: usize
 ) -> ResultVec<StackItem> {
     if save > (drop.end - drop.start) {
-        unimplemented!()
+        fail!("move_stack gone wrong: {} - {:?}", save, drop)
     }
     let from_cc = address_tag!(src) == CC;
     let address = if from_cc { dst } else { src };
@@ -78,7 +78,7 @@ fn move_stack(
     };
     let mut ret = Vec::new();
     while popped.len() > save {
-        ret.push(popped.pop().unwrap())
+        ret.push(popped.pop().ok_or_else(|| error!("move_stack gone wrong {} > {}", popped.len(), save))?)
     }
     while let Some(x) = popped.pop() {
         if from_cc {
@@ -97,11 +97,17 @@ struct Info {
     index: usize
 }
 
+impl std::fmt::UpperHex for Info {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "flags: {:X}, index: {:X}", self.flags, self.index)
+    }
+}
+
 impl Info {
     fn item<'a>(&self, ctx: &'a mut Ctx) -> ResultMut<'a, StackItem> {
         match address_tag!(self.flags) {
             VAR => Ok(ctx.engine.cmd.var_mut(self.index)),
-            _ => unimplemented!("Info.item {:x}\n", self.flags)
+            _ => fail!("Info.item {:x}\n", self.flags)
         }
     }
     #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -113,7 +119,8 @@ impl Info {
             },
             CTRL => Ok(&mut ctx.engine.ctrls),
             CTRL_SAVELIST => {
-                let continuation = ctx.engine.ctrls.get_mut(storage_index!(self.flags)).unwrap()
+                let continuation = ctx.engine.ctrls.get_mut(storage_index!(self.flags))
+                    .ok_or_else(|| error!("Info.list: {:X} - {}", self, storage_index!(self.flags)))?
                     .as_continuation_mut()?;
                 self.index = savelist_index!(self.flags);
                 Ok(&mut continuation.savelist)
@@ -124,7 +131,7 @@ impl Info {
                 self.index = savelist_index!(self.flags);
                 Ok(&mut continuation.savelist)
             }
-            _ => unimplemented!("Info.list {:x}\n", self.flags)
+            _ => fail!("Info.list {:X}\n", self)
         }
     }
 }
@@ -149,18 +156,22 @@ fn put_to_list_from_item(ctx: &mut Ctx, x: &mut Info, y: &Info) -> Result<Option
 }
 
 fn put_to_list_from_list(ctx: &mut Ctx, x: &mut Info, y: &mut Info) -> Result<Option<StackItem>> {
-    if !SaveList::can_put(x.index, y.list(ctx)?.get(y.index).unwrap()) {
-        let value = x.list(ctx)?.get(x.index).map(|value| value.clone()).unwrap_or_default();
-        log::error!(
-            target: "tvm", 
-            "Cannot set: {} to list with index: {} and value: {}",
-            y.list(ctx)?.get(y.index).unwrap().clone(), x.index, value
-        );
-        err!(ExceptionCode::TypeCheckError)
-    } else {
-        let mut y = y.list(ctx)?.remove(y.index).unwrap();
-        x.list(ctx)?.put(x.index, &mut y)
+    x.list(ctx)?;
+    if let Some(new) = y.list(ctx)?.get(y.index) {
+        if SaveList::can_put(x.index, new) {
+            if let Some(mut y) = y.list(ctx)?.remove(y.index) {
+                return x.list(ctx)?.put(x.index, &mut y)
+            }
+        }
     }
+    let old = x.list(ctx)?.get(x.index).cloned().unwrap_or_default();
+    let new = y.list(ctx)?.get(y.index).cloned().unwrap_or_default();
+    log::error!(
+        target: "tvm", 
+        "Cannot set: {} to list with index: {} and value: {}",
+        new, x.index, old
+    );
+    err!(ExceptionCode::TypeCheckError)
 }
 
 fn swap_with_list(ctx: &mut Ctx, mut x: Info, y: Info) -> Status {
@@ -174,26 +185,14 @@ fn swap_with_list(ctx: &mut Ctx, mut x: Info, y: Info) -> Status {
 }
 
 fn swap_between_lists(ctx: &mut Ctx, mut x: Info, mut y: Info) -> Status {
-    if x.list(ctx)?.get(x.index).is_none() {
-        if y.list(ctx)?.get(y.index).is_none() {
-            Ok(())
-        } else {
-            put_to_list_from_list(ctx, &mut x, &mut y)?;
-            Ok(())
+    if y.list(ctx)?.get(y.index).is_some() {
+        if let Some(mut x) = put_to_list_from_list(ctx, &mut x, &mut y)? {
+            put_to_list(ctx, &mut y, &mut x)?;
         }
-    } else if y.list(ctx)?.get(y.index).is_none() {
+    } else if x.list(ctx)?.get(x.index).is_some() {
         put_to_list_from_list(ctx, &mut y, &mut x)?;
-        Ok(())
-    } else if !SaveList::can_put(y.index, x.list(ctx)?.get(x.index).unwrap()) {
-        err!(ExceptionCode::TypeCheckError)
-    } else {
-        let mut x = match put_to_list_from_list(ctx, &mut x, &mut y)? {
-            Some(x) => x,
-            None => StackItem::None
-        };
-        put_to_list(ctx, &mut y, &mut x).unwrap();
-        Ok(())
     }
+    Ok(())
 }
 
 fn swap_any(ctx: &mut Ctx, mut x: u16, mut y: u16) -> Status {
@@ -212,7 +211,7 @@ fn swap_any(ctx: &mut Ctx, mut x: u16, mut y: u16) -> Status {
         CC_SAVELIST | CTRL | CTRL_SAVELIST | VAR_SAVELIST => match address_tag!(y.flags) {
             CC_SAVELIST | CTRL | CTRL_SAVELIST | VAR_SAVELIST => swap_between_lists(ctx, x, y),
             VAR => swap_with_list(ctx, x, y),
-            _ => unimplemented!()
+            _ => fail!("swap_any: {:X}, {:X}", x, y)
         },
         CC => match address_tag!(y.flags) {
             CTRL => match ctx.engine.ctrls.get_mut(y.index) {
@@ -229,7 +228,7 @@ fn swap_any(ctx: &mut Ctx, mut x: u16, mut y: u16) -> Status {
                 );
                 Ok(())
             },
-            _ => unimplemented!("swap CC-{:x}", y.flags)
+            _ => fail!("swap CC-{:X}", y)
         },
         VAR => match address_tag!(y.flags) {
             CC_SAVELIST | CTRL_SAVELIST | VAR_SAVELIST => swap_with_list(ctx, y, x),
@@ -237,10 +236,10 @@ fn swap_any(ctx: &mut Ctx, mut x: u16, mut y: u16) -> Status {
                 ctx.engine.cmd.vars.swap(x.index, y.index);
                 Ok(())
             },
-            _ => unimplemented!()
+            _ => fail!("swap_any: {:X}, {:X}", x, y)
         }
         _ => {
-            unimplemented!("swap_any {:x}-{:x}\nswap_any {:x}-{:x}\n", x.flags, y.flags, address_tag!(x.flags), CTRL)
+            fail!("swap_any {:X}-{:X}", x, y)
         }
     }
 }
@@ -264,7 +263,7 @@ pub(in crate::executor) fn apply_savelist(ctx: Ctx, exclude: Range<usize>) -> Re
             },
             Ok(Some(mut x)) => {
                 undo = true;
-                prev.put(*k, &mut x).unwrap();
+                prev.put(*k, &mut x)?;
             },
             _ => ()
         }
@@ -275,7 +274,8 @@ pub(in crate::executor) fn apply_savelist(ctx: Ctx, exclude: Range<usize>) -> Re
 }
 
 fn undo_apply_savelist(ctx: &mut Ctx, mut savelist: SaveList) {
-    ctx.engine.apply_savelist(&mut savelist).unwrap()
+    ctx.engine.apply_savelist(&mut savelist)
+        .unwrap_or(log::error!(target: "tvm", "cannot undo_apply_savelist"));
 }
 
 // ctx.cmd.push_var(copy-of-src)
@@ -292,7 +292,7 @@ pub(in crate::executor) fn copy_to_var(ctx: Ctx, src: u16) -> Result<Ctx> {
         },
         STACK => ctx.engine.cc.stack.get(stack_index!(src)).clone(),
         VAR => ctx.engine.cmd.var(storage_index!(src)).clone(),
-        _ => unimplemented!()
+        _ => fail!("copy_to_var: {}", src)
     };
     ctx.engine.cmd.push_var(copy);
     ctx.engine.cmd.undo.push(Undo::WithCode(undo_copy_to_var, src));
@@ -300,14 +300,16 @@ pub(in crate::executor) fn copy_to_var(ctx: Ctx, src: u16) -> Result<Ctx> {
 }
 
 fn undo_copy_to_var(ctx: &mut Ctx, _src: u16) {
-    ctx.engine.cmd.vars.pop().unwrap();
+    if ctx.engine.cmd.vars.pop().is_none() {
+        log::error!(target: "tvm", "cannot undo_pop_range")
+    }
 }
 
 // ctx.cmd.push_var(src.references[0])
 pub(in crate::executor) fn fetch_reference(ctx: Ctx, src: u16) -> Result<Ctx> {
     let cell = match address_tag!(src) {
         CC => ctx.engine.cc.drain_reference()?.clone(),
-        _ => unimplemented!()
+        _ => fail!("fetch_reference: {:X}", src)
     };
     ctx.engine.cmd.push_var(StackItem::Cell(cell));
     ctx.engine.cmd.undo.push(Undo::WithCode(undo_fetch_reference, src));
@@ -315,10 +317,10 @@ pub(in crate::executor) fn fetch_reference(ctx: Ctx, src: u16) -> Result<Ctx> {
 }
 
 fn undo_fetch_reference(ctx: &mut Ctx, src: u16) {
-    match ctx.engine.cmd.vars.pop().unwrap() {
-        StackItem::Slice(_) => match address_tag!(src) {
+    match ctx.engine.cmd.vars.pop() {
+        Some(StackItem::Slice(_)) => match address_tag!(src) {
             CC => ctx.engine.cc.undrain_reference(),
-            _ => unimplemented!()
+            _ => ()
         },
         _ => (),
     }
@@ -337,7 +339,12 @@ pub(in crate::executor) fn fetch_stack(ctx: Ctx, depth: usize) -> Result<Ctx> {
 
 fn undo_fetch_stack(ctx: &mut Ctx, depth: usize) {
     for _ in 0..depth {
-        ctx.engine.cc.stack.push(ctx.engine.cmd.vars.pop().unwrap());
+        if let Some(var) = ctx.engine.cmd.vars.pop() {
+            ctx.engine.cc.stack.push(var);
+        } else {
+            log::error!(target: "tvm", "cannot undo_fetch_stack");
+            return
+        }
     }
 }
 
@@ -385,7 +392,9 @@ fn undo_pop_range(ctx: &mut Ctx, save: usize, mut drop: Vec<StackItem>, src: u16
             None => break
         };
     }
-    move_stack(ctx, CC, src, 0..save, save).unwrap();
+    if move_stack(ctx, CC, src, 0..save, save).is_err() {
+        log::error!(target: "tvm", "cannot undo_pop_range")
+    }
 }
 
 // x <-> y
@@ -397,5 +406,7 @@ pub(in crate::executor) fn swap(mut ctx: Ctx, x: u16, y: u16) -> Result<Ctx> {
 }
 
 fn undo_swap(ctx: &mut Ctx, x: u16, y: u16) {
-    swap_any(ctx, x, y).unwrap()
+    if swap_any(ctx, x, y).is_err() {
+        log::error!(target: "tvm", "cannot undo_pop_range {:X}, {:X}", x, y)
+    }
 }

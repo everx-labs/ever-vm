@@ -53,9 +53,10 @@ pub struct Engine {
     cmd_code: SliceData, // start of current cmd
     trace: u8,
     trace_callback: Option<Box<dyn Fn(&Engine, &EngineTraceInfo)>>,
+    log_string: Option<&'static str>,
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, Debug, PartialEq)]
 pub enum EngineTraceInfoType {
     Start,
     Normal,
@@ -72,6 +73,15 @@ pub struct EngineTraceInfo<'a> {
     pub stack: &'a Stack,
     pub gas_used: i64,
     pub gas_cmd: i64,
+}
+
+impl<'a> EngineTraceInfo<'a> {
+    pub fn has_cmd(&self) -> bool {
+        match self.info_type {
+            EngineTraceInfoType::Normal | EngineTraceInfoType::Implicit => true,
+            _ => false
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -114,7 +124,7 @@ impl CommittedState {
 
 impl GasConsumer for Engine {
     fn finalize_cell(&mut self, builder: BuilderData) -> Result<Cell> {
-        self.try_use_gas(Gas::finalize_price())?;
+        self.use_gas(Gas::finalize_price());
         builder.into_cell()
     }
     fn load_cell(&mut self, cell: Cell) -> Result<SliceData> {
@@ -132,6 +142,7 @@ impl Engine {
     pub const TRACE_STACK: u8 = 0x04;
     pub const TRACE_CTRLS: u8 = 0x08;
     pub const TRACE_ALL:   u8 = 0xFF;
+    pub const TRACE_ALL_BUT_CTRLS:   u8 = 0x07;
 
     // External API ***********************************************************
 
@@ -151,11 +162,17 @@ impl Engine {
             step: 0,
             debug_buffer: String::default(),
             cmd_code: SliceData::default(),
+            #[cfg(not(all(feature="verbose", feature="fift_check")))]
             trace: Engine::TRACE_ALL,
+            #[cfg(all(feature="verbose", feature="fift_check"))]
+            trace: Engine::TRACE_ALL_BUT_CTRLS,
             #[cfg(not(feature="verbose"))]
             trace_callback: None,
-            #[cfg(feature="verbose")]
+            #[cfg(all(feature="verbose", not(feature="fift_check")))]
             trace_callback: Some(Box::new(Self::defaul_trace_callback)),
+            #[cfg(all(feature="verbose", feature="fift_check"))]
+            trace_callback: Some(Box::new(Self::fift_trace_callback)),
+            log_string: None,
         }
     }
 
@@ -181,11 +198,16 @@ impl Engine {
     }
 
     pub fn try_use_gas(&mut self, gas: i64) -> Result<()> {
-        self.gas.try_use_gas(gas)
+        self.gas.try_use_gas(gas)?;
+        Ok(())
+    }
+
+    pub fn use_gas(&mut self, gas: i64) -> i64 {
+        self.gas.use_gas(gas)
     }
 
     pub fn gas_used(&self) -> i64 {
-        self.gas.get_gas_used()
+        self.gas.get_gas_used_full()
     }
 
     pub fn gas_remaining(&self) -> i64 {
@@ -230,7 +252,7 @@ impl Engine {
 
     #[allow(dead_code)]
     fn defaul_trace_callback(&self, info: &EngineTraceInfo) {
-        if self.trace_bit(Engine::TRACE_CODE) {
+        if self.trace_bit(Engine::TRACE_CODE) && info.has_cmd() {
             log::trace!(
                 target: "tvm", 
                 "{}: {}\n{}\n", 
@@ -255,158 +277,214 @@ impl Engine {
         }
     }
 
+    #[allow(dead_code)]
+    fn fift_trace_callback(&self, info: &EngineTraceInfo) {
+        if info.info_type == EngineTraceInfoType::Start {
+            if self.trace_bit(Engine::TRACE_CTRLS) {
+                log::trace!(target: "tvm", "{}", self.dump_ctrls(true));
+            }
+            if self.trace_bit(Engine::TRACE_STACK) {
+                log::info!(target: "tvm", " [ {} ] \n", self.get_stack_result_fift());
+            }
+            if self.trace_bit(Engine::TRACE_GAS) {
+                log::info!(target: "tvm", "gas - {}\n", info.gas_used);
+            }
+        } else if info.info_type == EngineTraceInfoType::Exception {
+            if self.trace_bit(Engine::TRACE_CODE) {
+                log::info!(target: "tvm", "{}\n", info.cmd_str);
+            }
+            if self.trace_bit(Engine::TRACE_STACK) {
+                log::info!(target: "tvm", " [ {} ] \n", self.get_stack_result_fift());
+            }
+            if self.trace_bit(Engine::TRACE_CTRLS) {
+                log::trace!(target: "tvm", "{}", self.dump_ctrls(true));
+            }
+            if self.trace_bit(Engine::TRACE_GAS) {
+                log::info!(target: "tvm", "gas - {}\n", info.gas_used);
+            }
+        } else if info.has_cmd() {
+            if self.trace_bit(Engine::TRACE_CODE) {
+                log::info!(target: "tvm", "execute {}\n", info.cmd_str);
+            }
+            if self.trace_bit(Engine::TRACE_STACK) {
+                log::info!(target: "tvm", " [ {} ] \n", self.get_stack_result_fift());
+            }
+            if self.trace_bit(Engine::TRACE_CTRLS) {
+                log::trace!(target: "tvm", "{}", self.dump_ctrls(true));
+            }
+            if self.trace_bit(Engine::TRACE_GAS) {
+                log::info!(target: "tvm", "gas - {}\n", info.gas_used);
+            }
+        }
+    }
+
     pub fn execute(&mut self) -> Result<i32> {
-        // log::debug!(target: "tvm", "start code: {:X}\n", self.cmd_code);
-        self.trace_info(EngineTraceInfoType::Start, self.gas_used(), None);
-        loop {
+        self.trace_info(EngineTraceInfoType::Start, 0, None);
+        let result = loop {
             if let Some(result) = self.seek_next_cmd()? {
                 if self.gas.get_gas_credit() != 0 &&
                     self.gas.get_gas_remaining() < self.gas.get_gas_credit() {
-                    return err!(ExceptionCode::OutOfGas)
+                    break 0
+                    // return err!(ExceptionCode::OutOfGas)
                 } else {
-                    self.trace_info(EngineTraceInfoType::Finish, self.gas_used(), Some(format!("NORMAL TERMINATION")));
-                    self.commit();
-                    return Ok(result)
+                    break result
                 }
             }
             let gas = self.gas_used();
             self.cmd_code = self.cc.code().clone();
             self.cmd = Instruction::new("");
-            let handler = self.handlers.get_handler(&mut self.cc)?;
-            let execution_result = handler(self);
+            let execution_result = match self.handlers.get_handler(&mut self.cc) {
+                Err(err) => {
+                    // it is simple value and doesn't correspond to Durov's code
+                    // but it is difficult in our engine to calc sharp
+                    // hope it will not be a problem
+                    self.basic_use_gas(8);
+                    Some(err)
+                }
+                Ok(handler) => handler(self).or_else(|| self.gas.check_gas_remaining().err()),
+            };
             self.trace_info(EngineTraceInfoType::Normal, gas, None);
             self.cmd.ictx.clear();
-            if self.gas.get_gas_remaining() < 0 {
-                return err!(ExceptionCode::OutOfGas)
-            }
             self.raise_exception(execution_result, true)?;
-        }
+        };
+        self.trace_info(EngineTraceInfoType::Finish, self.gas_used(), Some(format!("NORMAL TERMINATION")));
+        self.commit();
+        Ok(result)
     }
 
+    fn step_next_ref(&mut self, reference: Cell) -> Result<Option<i32>> {
+        self.step += 1;
+        self.log_string = Some("IMPLICIT JMPREF");
+        self.try_use_gas(Gas::implicit_jmp_price())?;
+        let code = self.load_hashed_cell(reference, true)?;
+        *self.cc.code_mut() = code;
+        Ok(None)
+    }
+    fn step_ordinary(&mut self) -> Result<Option<i32>> {
+        self.try_use_gas(Gas::implicit_ret_price())?;
+        if self.ctrls.get(0).is_none() {
+            return Ok(Some(0))
+        }
+        self.step += 1;
+        self.log_string = Some("implicit RET");
+        switch(Ctx::new(self), ctrl!(0))?;
+        Ok(None)
+    }
+    fn step_pushint(&mut self, code: i32) -> Result<Option<i32>> {
+        self.step += 1;
+        self.log_string = Some("implicit PUSHINT");
+        self.cc.stack.push(int!(code));
+        switch(Ctx::new(self), ctrl!(0))?;
+        Ok(None)
+    }
+    fn step_try_catch(&mut self) -> Result<Option<i32>> {
+        self.step += 1;
+        self.log_string = Some("IMPLICIT RET FROM TRY-CATCH");
+        self.try_use_gas(Gas::implicit_ret_price())?;
+        self.ctrls.remove(2).unwrap();
+        switch(Ctx::new(self), ctrl!(0))?;
+        Ok(None)
+    }
+    fn step_while_loop(&mut self, body: SliceData, cond: SliceData) -> Result<Option<i32>> {
+        match self.check_while_loop_condition() {
+            Ok(true) => {
+                self.log_string = Some("NEXT WHILE ITERATION");
+                let n = self.cmd.var_count();
+                let body = ContinuationData::with_code(body);
+                let cond = ContinuationData::with_code(cond);
+                self.cmd.push_var(StackItem::Continuation(Arc::new(body)));
+                self.cmd.push_var(StackItem::Continuation(Arc::new(cond)));
+                copy_to_var(Ctx::new(self), CC)
+                .and_then(|ctx| swap(ctx, savelist!(var!(n + 2), 0), ctrl!(0)))     // ec_while.savelist[0] = c[0]
+                .and_then(|ctx| swap(ctx, savelist!(var!(n + 1), 0), var!(n + 2)))  // cond.savelist[0] = ec_while
+                .and_then(|ctx| swap(ctx, savelist!(var!(n), 0), var!(n + 1)))      // body.savelist[0] = cond
+                .and_then(|ctx| switch(ctx, var!(n)))?;
+            }
+            Ok(false) => {
+                self.log_string = Some("RET FROM WHILE");
+                switch(Ctx::new(self), ctrl!(0))?;
+            }
+            Err(err) => return Err(err)
+        }
+        Ok(None)
+    }
+    fn step_repeat_loop(&mut self, body: SliceData) -> Result<Option<i32>> {
+        if let ContinuationType::RepeatLoopBody(_, ref mut counter) = self.cc.type_of {
+            if *counter > 1 {
+                *counter -= 1;
+                self.log_string = Some("NEXT REPEAT ITERATION");
+                let n = self.cmd.var_count();
+                let body = ContinuationData::with_code(body);
+                self.cmd.push_var(StackItem::Continuation(Arc::new(body)));
+                copy_to_var(Ctx::new(self), CC)
+                .and_then(|ctx| swap(ctx, savelist!(var!(n + 1), 0), ctrl!(0))) // ec_repeat.savelist[0] = cc
+                .and_then(|ctx| swap(ctx, savelist!(var!(n), 0), var!(n + 1))) // body.savelist[0] = ec_repeat
+                .and_then(|ctx| switch(ctx, var!(n)))?;
+            } else {
+                self.log_string = Some("RET FROM REPEAT");
+                switch(Ctx::new(self), ctrl!(0))?;
+            }
+        }
+        Ok(None)
+    }
+    fn step_unil_loop(&mut self, body: SliceData) -> Result<Option<i32>> {
+        match self.check_until_loop_condition() {
+            Ok(true) => {
+                self.log_string = Some("NEXT UNTIL ITERATION");
+                let n = self.cmd.var_count();
+                let body = ContinuationData::with_code(body);
+                self.cmd.push_var(StackItem::Continuation(Arc::new(body)));
+                copy_to_var(Ctx::new(self), CC)
+                .and_then(|ctx| swap(ctx, savelist!(var!(n + 1), 0), ctrl!(0)) )    // until.savelist[0] = c[0]
+                .and_then(|ctx| swap(ctx, savelist!(var!(n), 0), var!(n + 1)))      // body.savelist[0] = until
+                .and_then(|ctx| switch(ctx, var!(n)))?;
+            }
+            Ok(false) => {
+                self.log_string = Some("RET FROM UNTIL");
+                switch(Ctx::new(self), ctrl!(0))?;
+            }
+            Err(err) => return Err(err)
+        }
+        Ok(None)
+    }
+    fn step_again_loop(&mut self, body: SliceData) -> Result<Option<i32>> {
+        self.log_string = Some("NEXT AGAIN ITERATION");
+        let n = self.cmd.var_count();
+        let body = ContinuationData::with_code(body);
+        self.cmd.push_var(StackItem::Continuation(Arc::new(body)));
+        copy_to_var(Ctx::new(self), CC)
+        .and_then(|ctx| swap(ctx, savelist!(var!(n), 0), var!(n + 1)) ) // body.savelist[0] = ec_again
+        .and_then(|ctx| switch(ctx, var!(n)))?;
+        Ok(None)
+    }
+
+    // return Ok(Some(exit_code)) - if you want to stop execution
     pub(in crate::executor) fn seek_next_cmd(&mut self) -> Result<Option<i32>> {
         while self.cc.code().remaining_bits() == 0 {
-            let mut log_string = None;
             let gas = self.gas_used();
-            let err = if let Ok(reference) = self.cc.code().reference(0) {
-                self.step += 1;
-                log_string = Some("IMPLICIT JMPREF");
-                if reference.bit_length() % 8 != 0 {
-                    err_opt!(ExceptionCode::InvalidOpcode)
-                } else {
-                    self.try_use_gas(Gas::implicit_jmp_price())?;
-                    *self.cc.code_mut() = self.load_hashed_cell(reference, true)?;
-                    None
-                }
-            } else { //TODO: put every case in functions
+            self.log_string = None;
+            let result = if let Ok(reference) = self.cc.code().reference(0) {
+                self.step_next_ref(reference)
+            } else {
                 match self.cc.type_of.clone() {
-                    ContinuationType::Ordinary => {
-                        self.try_use_gas(Gas::implicit_ret_price())?;
-                        if self.ctrls.get(0).is_none() {
-                            return Ok(Some(0))
-                        }
-                        self.step += 1;
-                        log_string = Some("implicit RET");
-                        switch(Ctx{engine: self}, ctrl!(0)).err()
-                    }
-                    ContinuationType::PushInt(code) => {
-                        self.step += 1;
-                        log_string = Some("implicit PUSHINT");
-                        self.cc.stack.push(int!(code));
-                        switch(Ctx{engine: self}, ctrl!(0)).err()
-                    }
-                    ContinuationType::Quit(exit_code) => {
-                        return Ok(Some(exit_code))
-                    }
-                    ContinuationType::TryCatch => {
-                        self.step += 1;
-                        log_string = Some("IMPLICIT RET FROM TRY-CATCH");
-                        self.try_use_gas(Gas::implicit_ret_price())?;
-                        self.ctrls.remove(2).unwrap();
-                        switch(Ctx{engine: self}, ctrl!(0)).err()
-                    }
-                    ContinuationType::WhileLoopCondition(body, cond) => {
-                        match self.check_while_loop_condition() {
-                            Ok(true) => {
-                                log_string = Some("NEXT WHILE ITERATION");
-                                let n = self.cmd.var_count();
-                                self.cmd.vars.push(StackItem::Continuation(Arc::new(
-                                    ContinuationData::with_code(body.clone())
-                                )));
-                                self.cmd.vars.push(StackItem::Continuation(Arc::new(
-                                    ContinuationData::with_code(cond.clone())
-                                )));
-                                copy_to_var(Ctx{engine:self}, CC)
-                                .and_then(|ctx| swap(ctx, savelist!(var!(n + 2), 0), ctrl!(0)))     // ec_while.savelist[0] = c[0]
-                                .and_then(|ctx| swap(ctx, savelist!(var!(n + 1), 0), var!(n + 2)))  // cond.savelist[0] = ec_while
-                                .and_then(|ctx| swap(ctx, savelist!(var!(n), 0), var!(n + 1)))      // body.savelist[0] = cond
-                                .and_then(|ctx| switch(ctx, var!(n)))
-                                .err()
-                            },
-                            Ok(false) => {
-                                log_string = Some("RET FROM WHILE");
-                                switch(Ctx{engine: self}, ctrl!(0)).err()
-                            }
-                            Err(e) => Some(e)
-                        }
-                    }
-                    ContinuationType::RepeatLoopBody(code, counter) => {
-                        if counter > 1 {
-                            log_string = Some("NEXT REPEAT ITERATION");
-                            let n = self.cmd.var_count();
-                            if let ContinuationType::RepeatLoopBody(_, ref mut counter) = self.cc.type_of {
-                                *counter -= 1;
-                            }
-                            self.cmd.push_var(StackItem::Continuation(Arc::new(
-                                ContinuationData::with_code(code)
-                            )));
-                            copy_to_var(Ctx{engine:self}, CC)
-                            .and_then(|ctx| swap(ctx, savelist!(var!(n + 1), 0), ctrl!(0))) // ec_repeat.savelist[0] = cc
-                            .and_then(|ctx| swap(ctx, savelist!(var!(n), 0), var!(n + 1))) // body.savelist[0] = ec_repeat
-                            .and_then(|ctx| switch(ctx, var!(n)))
-                            .err()
-                        } else {
-                            log_string = Some("RET FROM REPEAT");
-                            switch(Ctx{engine: self}, ctrl!(0)).err()
-                        }
-                    }
-                    ContinuationType::UntilLoopCondition(body) => {
-                        match self.check_until_loop_condition() {
-                            Ok(true) => {
-                                log_string = Some("NEXT UNTIL ITERATION");
-                                let n = self.cmd.var_count();
-                                self.cmd.vars.push(StackItem::Continuation(Arc::new(
-                                    ContinuationData::with_code(body.clone())
-                                )));
-                                copy_to_var(Ctx{engine:self}, CC)
-                                .and_then(|ctx| swap(ctx, savelist!(var!(n + 1), 0), ctrl!(0)) )    // until.savelist[0] = c[0]
-                                .and_then(|ctx| swap(ctx, savelist!(var!(n), 0), var!(n + 1)))      // body.savelist[0] = until
-                                .and_then(|ctx| switch(ctx, var!(n)))
-                                .err()
-                            },
-                            Ok(false) => {
-                                log_string = Some("RET FROM UNTIL");
-                                switch(Ctx{engine: self}, ctrl!(0)).err()
-                            }
-                            Err(e) => Some(e)
-                        }
-                    }
-                    ContinuationType::AgainLoopBody(slice) => {
-                        log_string = Some("NEXT AGAIN ITERATION");
-                        let n = self.cmd.var_count();
-                        self.cmd.vars.push(StackItem::Continuation(Arc::new(
-                            ContinuationData::with_code(slice.clone())
-                        )));
-                        copy_to_var(Ctx::new(self), CC)
-                        .and_then(|ctx| swap(ctx, savelist!(var!(n), 0), var!(n + 1)) ) // body.savelist[0] = ec_again
-                        .and_then(|ctx| switch(ctx, var!(n)))
-                        .err()
-                    }
+                    ContinuationType::Ordinary => self.step_ordinary(),
+                    ContinuationType::PushInt(code) => self.step_pushint(code),
+                    ContinuationType::Quit(exit_code) => Ok(Some(exit_code)),
+                    ContinuationType::TryCatch => self.step_try_catch(),
+                    ContinuationType::WhileLoopCondition(body, cond) => self.step_while_loop(body, cond),
+                    ContinuationType::RepeatLoopBody(code, _counter) => self.step_repeat_loop(code),
+                    ContinuationType::UntilLoopCondition(body) => self.step_unil_loop(body),
+                    ContinuationType::AgainLoopBody(slice) => self.step_again_loop(slice),
                 }
             };
-            if let Some(log_string) = log_string {
+            if let Some(log_string) = self.log_string {
                 self.trace_info(EngineTraceInfoType::Implicit, gas, Some(log_string.to_string()));
             }
-            self.raise_exception(err, false)?;
+            match self.gas.check_gas_remaining().and(result) {
+                Ok(None) => (),
+                Ok(Some(exit_code)) => return Ok(Some(exit_code)),
+                Err(err) => self.raise_exception(Some(err), false)?
+            }
         }
         Ok(None)
     }
@@ -415,7 +493,7 @@ impl Engine {
     pub fn load_library_cell(&mut self, cell: Cell) -> Result<Cell> {
         let mut hash = SliceData::from(cell);
         hash.move_by(8)?;
-        for library in &self.libraries.clone() {
+        for library in self.libraries.clone() {
             if let Some(lib) = library.get_with_gas(hash.clone(), self)? {
                 return lib.reference(0)
             }
@@ -426,7 +504,7 @@ impl Engine {
     /// Loads cell to slice cheking in precashed map
     pub fn load_hashed_cell(&mut self, cell: Cell, check_special: bool) -> Result<SliceData> {
         let first = self.visited_cells.insert(cell.repr_hash());
-        self.try_use_gas(Gas::load_cell_price(first))?;
+        self.use_gas(Gas::load_cell_price(first));
         if check_special {
             match cell.cell_type() {
                 CellType::Ordinary => {
@@ -580,7 +658,7 @@ impl Engine {
         // old formula for command with refs and data bits
         // let refs = self.cmd_code.remaining_references() - self.cc.code().remaining_references();
         // let bits = self.cmd_code.remaining_bits() - self.cc.code().remaining_bits();
-        // self.gas.use_gas(Gas::basic_gas_price(bits, refs));
+        // self.use_gas(Gas::basic_gas_price(bits, refs));
         // result.map(move |_| Ctx::new(self))
     }
 
@@ -655,17 +733,17 @@ impl Engine {
         Ok(slice)
     }
 
-    fn use_gas(&mut self, mut bits: usize) -> i64 {
+    fn basic_use_gas(&mut self, mut bits: usize) -> i64 {
         debug_assert_eq!(self.cmd_code.cell().repr_hash(), self.cmd_code.cell().repr_hash());
         bits += self.cc.code().pos().checked_sub(self.cmd_code.pos()).unwrap_or_default();
-        self.gas.use_gas(Gas::basic_gas_price(bits, 0))
+        self.use_gas(Gas::basic_gas_price(bits, 0))
     }
 
     fn extract_instruction(&mut self) -> Status {
         match self.cmd.opts {
             Some(InstructionOptions::ArgumentConstraints) => {
                 let param = self.cc.next_cmd()?;
-                self.use_gas(0);
+                self.basic_use_gas(0);
                 self.cmd.ictx.params.push(
                     InstructionParameter::Pargs(((param >> 4) & 0x0F) as usize)
                 );
@@ -681,7 +759,7 @@ impl Engine {
             },
             Some(InstructionOptions::ArgumentAndReturnConstraints) => {
                 let param = self.cc.next_cmd()?;
-                self.use_gas(0);
+                self.basic_use_gas(0);
                 self.cmd.ictx.params.push(
                     InstructionParameter::Pargs(((param >> 4) & 0x0F) as usize)
                 );
@@ -690,13 +768,13 @@ impl Engine {
                 )
             },
             Some(InstructionOptions::BigInteger) => {
-                self.use_gas(5);
+                self.basic_use_gas(5);
 
                 let bigint = IntegerData::from_big_endian_octet_stream(|| self.cc.next_cmd())?;
                 self.cmd.ictx.params.push(InstructionParameter::BigInteger(bigint))
             }
             Some(InstructionOptions::ControlRegister) => {
-                self.use_gas(0);
+                self.basic_use_gas(0);
                 self.cmd.ictx.params.push(
                     InstructionParameter::ControlRegister((self.cc.last_cmd() & 0x0F) as usize)
                 )
@@ -708,56 +786,56 @@ impl Engine {
                         InstructionParameter::Length(self.cc.next_cmd()? as usize + 1)
                     )
                 }
-                self.use_gas(0);
+                self.basic_use_gas(0);
                 self.cmd.name = mode.command_name()?;
                 self.cmd.ictx.params.push(InstructionParameter::DivisionMode(mode));
             },
             Some(InstructionOptions::Integer(ref range)) => {
                 let number = if *range == (-32768..32768) {
-                    self.use_gas(16);
+                    self.basic_use_gas(16);
                     (((self.cc.next_cmd()? as i16) << 8) | (self.cc.next_cmd()? as i16)) as isize
                 } else if *range == (-128..128) {
-                    self.use_gas(8);
+                    self.basic_use_gas(8);
                     (self.cc.next_cmd()? as i8) as isize
                 } else if *range == (-5..11) {
-                    self.use_gas(0);
+                    self.basic_use_gas(0);
                     match self.cc.last_cmd() & 0x0F {
                         value @ 0..=10 => value as isize,
                         value @ _ => value as isize - 16
                     }
                 } else if *range == (0..32) {
-                    self.use_gas(0);
+                    self.basic_use_gas(0);
                     (self.cc.last_cmd() & 0x1F) as isize
                 } else if *range == (0..64) {
-                    self.use_gas(0);
+                    self.basic_use_gas(0);
                     (self.cc.last_cmd() % 64) as isize
                 } else if *range == (0..2048) {
-                    self.use_gas(8);
+                    self.basic_use_gas(8);
                     let hi = (self.cc.last_cmd() as i16) & 0x07;
                     let lo = self.cc.next_cmd()? as i16;
                     (hi * 256 + lo) as isize
                 } else if *range == (0..16384) {
-                    self.use_gas(8);
+                    self.basic_use_gas(8);
                     let hi = (self.cc.last_cmd() as i16) & 0x3F;
                     let lo = self.cc.next_cmd()? as i16;
                     (hi * 256 + lo) as isize
                 } else if *range == (0..256) {
-                    self.use_gas(8);
+                    self.basic_use_gas(8);
                     self.cc.next_cmd()? as isize
                 } else if *range == (0..15) {
-                    self.use_gas(0);
+                    self.basic_use_gas(0);
                     match self.cc.last_cmd() & 0x0F {
                         15 => return err!(ExceptionCode::RangeCheckError),
                         value @ _ => value as isize
                     }
                 } else if *range == (1..15) {
-                    self.use_gas(0);
+                    self.basic_use_gas(0);
                     match self.cc.last_cmd() & 0x0F {
                         0 | 15 => return err!(ExceptionCode::RangeCheckError),
                         value @ _ => value as isize
                     }
                 } else if *range == (-15..240) {
-                    self.use_gas(0);
+                    self.basic_use_gas(0);
                     match self.cc.last_cmd() {
                         value @ 0..=240 => value as isize,
                         value @ 0xF1..=0xFF => value as isize - 256,
@@ -782,10 +860,10 @@ impl Engine {
                 else {
                     return err!(ExceptionCode::RangeCheckError)
                 }
-                self.use_gas(0);
+                self.basic_use_gas(0);
             },
             Some(InstructionOptions::LengthAndIndex) => {
-                self.use_gas(0);
+                self.basic_use_gas(0);
                 // This is currently needed only for special-case BLKPUSH command and works the same way
                 // as InstructionOptions::StackRegisterPair(WhereToGetParams::GetFromLastByte)
                 let params = self.cc.last_cmd();
@@ -811,11 +889,11 @@ impl Engine {
                         } as usize
                     )
                 );
-                self.use_gas(0);
+                self.basic_use_gas(0);
             },
             Some(InstructionOptions::LengthMinusOneAndIndexMinusOne) => {
                 let params = self.cc.next_cmd()?;
-                self.use_gas(0);
+                self.basic_use_gas(0);
                 let (l_minus_1, i_minus_1) = (params >> 4, params & 0x0F);
                 self.cmd.ictx.params.push(
                     InstructionParameter::LengthAndIndex(
@@ -828,7 +906,7 @@ impl Engine {
             },
             Some(InstructionOptions::LengthMinusTwoAndIndex) => {
                 let params = self.cc.next_cmd()?;
-                self.use_gas(0);
+                self.basic_use_gas(0);
                 let (l_minus_2, i) = (params >> 4, params & 0x0F);
                 self.cmd.ictx.params.push(
                     InstructionParameter::LengthAndIndex(
@@ -847,7 +925,7 @@ impl Engine {
                 } else {
                     return err!(ExceptionCode::RangeCheckError)
                 }
-                self.use_gas(0);
+                self.basic_use_gas(0);
             },
             Some(InstructionOptions::Rargs(ref range)) => {
                 if *range == (0..16) {
@@ -857,7 +935,7 @@ impl Engine {
                 } else {
                     return err!(ExceptionCode::RangeCheckError)
                 }
-                self.use_gas(0);
+                self.basic_use_gas(0);
             },
             Some(InstructionOptions::StackRegister(ref range)) => {
                 if *range == (0..16) {
@@ -871,7 +949,7 @@ impl Engine {
                 } else {
                     return err!(ExceptionCode::RangeCheckError)
                 }
-                self.use_gas(0);
+                self.basic_use_gas(0);
             },
             Some(InstructionOptions::StackRegisterPair(ref place)) => {
                 let (ra, rb) = match place {
@@ -893,7 +971,7 @@ impl Engine {
                     }
                     _ => (0, 0)
                 };
-                self.use_gas(0);
+                self.basic_use_gas(0);
                 self.cmd.ictx.params.push(
                     InstructionParameter::StackRegisterPair(
                         RegisterPair {
@@ -919,7 +997,7 @@ impl Engine {
                         (last & 0x0F, rb_rc >> 4, rb_rc & 0x0F)
                     }
                 };
-                self.use_gas(0);
+                self.basic_use_gas(0);
                 self.cmd.ictx.params.push(
                     InstructionParameter::StackRegisterTrio(
                         RegisterTrio {
@@ -931,7 +1009,7 @@ impl Engine {
                 )
             }
             Some(InstructionOptions::Dictionary(offset, bits)) => {
-                self.gas.use_gas(Gas::basic_gas_price(offset + 1 + bits, 0));
+                self.use_gas(Gas::basic_gas_price(offset + 1 + bits, 0));
                 let mut code = self.cmd_code.clone();
                 code.shrink_data(offset..);
                 let slice = code.get_dictionary().unwrap_or_default();
@@ -941,7 +1019,7 @@ impl Engine {
                 self.cmd.ictx.params.push(InstructionParameter::Length(length))
             }
             Some(InstructionOptions::Bytestring(offset, r, x, bytes)) => {
-                self.gas.use_gas(Gas::basic_gas_price(offset + r + x, 0));
+                self.use_gas(Gas::basic_gas_price(offset + r + x, 0));
                 let slice = self.extract_slice(offset, r, x, 0, bytes)?;
                 if slice.remaining_bits() % 8 != 0 {
                     return err!(ExceptionCode::InvalidOpcode)
@@ -949,19 +1027,19 @@ impl Engine {
                 self.cmd.ictx.params.push(InstructionParameter::Slice(slice))
             }
             Some(InstructionOptions::Bitstring(offset, r, x, refs)) => {
-                self.gas.use_gas(Gas::basic_gas_price(offset + r + x, 0));
+                self.use_gas(Gas::basic_gas_price(offset + r + x, 0));
                 let mut slice = self.extract_slice(offset, r, x, refs, 0)?;
                 slice.trim_right();
                 self.cmd.ictx.params.push(InstructionParameter::Slice(slice));
             }
-            None => { self.use_gas(0); }
+            None => { self.basic_use_gas(0); }
         }
         Ok(())
     }
 
     // raises the exception and tries to dispatch it via c(2).
     // If c(2) is not set, returns that exception, otherwise, returns None
-    fn raise_exception(&mut self, err_opt: Option<failure::Error>, undo: bool) -> Status {
+    fn raise_exception(&mut self, err_opt: Option<failure::Error>, _undo: bool) -> Status {
         let (err, exception) = if let Some(err) = err_opt {
             if let Some(exception) = tvm_exception_full(&err) {
                 (err, exception)
@@ -972,17 +1050,20 @@ impl Engine {
         } else {
             return Ok(())
         };
-        if undo {
-            self.undo();
-        }
+        // if undo {
+        //     self.undo();
+        // }
         if exception.exception_code() == Some(ExceptionCode::OutOfGas) {
             self.step += 1;
             log::trace!(target: "tvm", "OUT OF GAS CODE: {}\n", self.cmd_code);
             return Err(err)
         }
         self.try_use_gas(Gas::exception_price())?;
-        self.trace_info(EngineTraceInfoType::Exception, self.gas_used(), Some(format!("EXCEPTION: {}", err)));
+        if let Err(err) = self.gas.check_gas_remaining() {
+            return self.raise_exception(Some(err), false)
+        }
         let n = self.cmd.vars.len();
+        // self.trace_info(EngineTraceInfoType::Exception, self.gas_used(), Some(format!("EXCEPTION: {}", err)));
         if let Some(c2) = self.ctrls.get_mut(2) {
             self.cc.stack.push(exception.value.clone());
             self.cc.stack.push(int!(exception.exception_or_custom_code()));
@@ -995,6 +1076,7 @@ impl Engine {
             self.cmd.vars[n].as_continuation_mut().map(|cdata| cdata.nargs = 1)?;
             switch(Ctx::new(self), var!(n))?;
         } else {
+            self.trace_info(EngineTraceInfoType::Exception, self.gas_used(), Some(format!("UNHANDLED EXCEPTION: {}", err)));
             log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code);
             return Err(err)
         }
@@ -1020,13 +1102,14 @@ impl Engine {
         let mut tuple = self.ctrl_mut(7)?.as_tuple_mut()?;
         let mut t1 = tuple.first_mut().ok_or(exception!(ExceptionCode::RangeCheckError))?.as_tuple_mut()?;
         *t1.get_mut(6).ok_or(exception!(ExceptionCode::RangeCheckError))? = StackItem::Integer(Arc::new(rand));
-        self.try_use_gas(Gas::tuple_gas_price(t1.len()))?;
+        self.use_gas(Gas::tuple_gas_price(t1.len()));
         *tuple.first_mut().ok_or(exception!(ExceptionCode::RangeCheckError))? = StackItem::Tuple(t1);
-        self.try_use_gas(Gas::tuple_gas_price(tuple.len()))?;
+        self.use_gas(Gas::tuple_gas_price(tuple.len()));
         *self.ctrl_mut(7)? = StackItem::Tuple(tuple);
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn undo(&mut self) {
         while let Some(undo) = self.cmd.undo.pop() {
             let mut ctx = Ctx::new(self);

@@ -56,7 +56,7 @@ fn execute_setget_globalvar(engine: &mut Engine, name: &'static str, how: u8) ->
             } else {
                 0
             };
-            ctx.engine.try_use_gas(Gas::tuple_gas_price(len))?;
+            ctx.engine.use_gas(Gas::tuple_gas_price(len));
             ctx.engine.ctrls.put(7, &mut StackItem::Tuple(c7))?;
         } else {
             let c7 = ctx.engine.ctrl(7)?.as_tuple()?;

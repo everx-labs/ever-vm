@@ -44,7 +44,7 @@ fn tuple(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
         let vars = ctx.engine.cmd.var_count();
         let mut tuple = ctx.engine.cmd.vars.split_off(vars - params);
         tuple.reverse();
-        ctx.engine.try_use_gas(Gas::tuple_gas_price(tuple.len()))?;
+        ctx.engine.use_gas(Gas::tuple_gas_price(tuple.len()));
         ctx.engine.cc.stack.push_tuple(tuple);
         Ok(ctx)
     })
@@ -215,7 +215,7 @@ fn untuple(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
         if how.mask(CMP) == MORE {
             n = len;
         }
-        ctx.engine.try_use_gas(Gas::tuple_gas_price(n))?;
+        ctx.engine.use_gas(Gas::tuple_gas_price(n));
         let mut vars: Vec<StackItem> = ctx.engine.cmd.var(params - 1).as_tuple()?.iter().take(n)
             .map(|v| v.clone()).collect();
         vars.drain(..).for_each(|v| {ctx.engine.cc.stack.push(v);});
@@ -304,7 +304,7 @@ fn set_index(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
         } else {
             return err!(ExceptionCode::RangeCheckError)
         }
-        ctx.engine.try_use_gas(Gas::tuple_gas_price(tuple.len()))?;
+        ctx.engine.use_gas(Gas::tuple_gas_price(tuple.len()));
         ctx.engine.cc.stack.push_tuple(tuple);
         Ok(ctx)
     })
@@ -380,7 +380,7 @@ pub(super) fn execute_tuple_push(engine: &mut Engine) -> Failure {
         let mut tuple = ctx.engine.cmd.var_mut(1).as_tuple_mut()?;
         let value = ctx.engine.cmd.var(0).clone();
         tuple.push(value);
-        ctx.engine.try_use_gas(Gas::tuple_gas_price(tuple.len()))?;
+        ctx.engine.use_gas(Gas::tuple_gas_price(tuple.len()));
         ctx.engine.cc.stack.push_tuple(tuple);
         Ok(ctx)
     })
@@ -394,7 +394,7 @@ pub(super) fn execute_tuple_pop(engine: &mut Engine) -> Failure {
     .and_then(|ctx| {
         let mut tuple = ctx.engine.cmd.var_mut(0).as_tuple_mut()?;
         let value = tuple.pop().ok_or(exception!(ExceptionCode::TypeCheckError))?.clone();
-        ctx.engine.try_use_gas(Gas::tuple_gas_price(tuple.len()))?;
+        ctx.engine.use_gas(Gas::tuple_gas_price(tuple.len()));
         ctx.engine.cc.stack.push_tuple(tuple);
         ctx.engine.cc.stack.push(value);
         Ok(ctx)

@@ -128,7 +128,7 @@ pub fn execute_endxc(engine: &mut Engine) -> Failure {
         let mut b = ctx.engine.cmd.var_mut(1).as_builder_mut()?;
         if special {
             if b.length_in_bits() < 8 {
-                ctx.engine.try_use_gas(Gas::finalize_price())?;
+                ctx.engine.use_gas(Gas::finalize_price());
                 return err!(ExceptionCode::CellOverflow, "Not enough data for a special cell")
             }
             let cell_type = CellType::from(b.data()[0]);
@@ -162,7 +162,7 @@ fn store_data(ctx: Ctx, var: usize, x: Result<BuilderData>, quiet: bool, finaliz
                 let mut b = ctx.engine.cmd.var_mut(var).as_builder_mut()?;
                 b.append_builder(x)?;
                 if finalize {
-                    ctx.engine.try_use_gas(Gas::finalize_price())?;
+                    ctx.engine.use_gas(Gas::finalize_price());
                 }
                 ctx.engine.cc.stack.push_builder(b);
                 0

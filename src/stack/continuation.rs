@@ -90,7 +90,7 @@ impl ContinuationData {
                 // panic!("n >= 8 is expected, actual value: {}", self.code.remaining_bits());
                 log::error!(
                     target: "tvm", 
-                    "n >= 8 is expected, actual value: {}", 
+                    "remaining bits expected >= 8, but actual value is: {}\n", 
                     self.code.remaining_bits()
                 );
                 err!(ExceptionCode::InvalidOpcode)

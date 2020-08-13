@@ -31,7 +31,7 @@ use crate::{
     types::{Exception, Failure}
 };
 use ton_types::{
-    BuilderData, error, GasConsumer, HashmapE, HashmapType, HashmapSubtree, PfxHashmapE, Result, SliceData,
+    BuilderData, error, fail, GasConsumer, HashmapE, HashmapType, HashmapSubtree, PfxHashmapE, Result, SliceData,
     types::ExceptionCode
 };
 use std::sync::Arc;
@@ -75,10 +75,9 @@ fn dict(
 ) -> Failure {
     let params = if how.bit(SET) {
         4
+    } else if how.any(INV | CNV) {
+        return Some(error!("dict: {:X}", how))
     } else {
-        if how.any(INV | CNV) {
-            unimplemented!()
-        }
         3
     };
     let ret = how.bit(INV);
@@ -148,7 +147,7 @@ fn dictcont(
             } else if how.bit(CALLX) {
                 callx(ctx, n, false)
             } else {
-                unimplemented!()
+                fail!("dictcont: {:X}", how)
             }
         } else if how.bit(STAY) {
             let var = ctx.engine.cmd.vars.remove(2);
@@ -309,7 +308,7 @@ fn pfxdictget(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
                 } else if how.bit(CALLX) {
                     Ok(callx(ctx, n - 1, false).unwrap())
                 } else { 
-                    unimplemented!()
+                    fail!("pfxdictget: {:X}", how)
                 }
             } else { 
                 Ok(ctx)

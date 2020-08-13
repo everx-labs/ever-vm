@@ -31,7 +31,7 @@ use crate::{
     },
     types::{Exception, Failure}
 };
-use ton_types::{error, Result, types::ExceptionCode};
+use ton_types::{error, fail, Result, types::ExceptionCode};
 use std::{mem, ops::{Range, RangeInclusive}, sync::Arc};
 
 const CALLX: u8 = 0x40;   // CALLX to found value
@@ -65,7 +65,7 @@ const PREPARE: u8 = 0xC0; // pass found value to stack
 fn callcc(ctx: Ctx, callee: usize) -> Result<Ctx> {
     let vars = ctx.engine.cmd.var_count();
     if  vars < callee {
-        unimplemented!()
+        fail!("callcc: {:X}", callee)
     } else if vars == callee {
         fetch_stack(ctx, 1)
     } else {
@@ -116,7 +116,7 @@ fn callcc(ctx: Ctx, callee: usize) -> Result<Ctx> {
 pub(super) fn callx(ctx: Ctx, callee: usize, need_convert: bool) -> Result<Ctx> {
     let vars = ctx.engine.cmd.var_count();
     if  vars < callee {
-        unimplemented!()
+        fail!("callx {:X}", callee)
     } else if vars == callee {
         fetch_stack(ctx, 1)
     } else if need_convert && ctx.engine.cmd.var(callee).as_cell().is_ok() {
@@ -531,7 +531,7 @@ fn execute_call(engine: &mut Engine, name: &'static str, range: Range<isize>, ho
                 match how {
                     SWITCH => switch(ctx, var!(0)),
                     CALLX => callx(ctx, 0, false),
-                    _ => unimplemented!("how: 0x{:X}", how)
+                    _ => fail!("how: 0x{:X}", how)
                 }
             })
         }

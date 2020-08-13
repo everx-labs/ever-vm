@@ -16,14 +16,17 @@ use crate::{
     stack::{StackItem, continuation::ContinuationData}, types::Status
 };
 use std::sync::Arc;
-use ton_types::{GasConsumer, Result};
+use ton_types::{fail, GasConsumer, Result};
 
 // Utilities ******************************************************************
 
 fn convert_any(ctx: &mut Ctx, x: u16, to: u16, from: u16) -> Status {
-    match address_tag!(x) {
+    if ctx.engine.cmd.vars.len() <= storage_index!(x) {
+        fail!("convert_any no var {} in cmd", storage_index!(x));
+    }
+    let data = match address_tag!(x) {
         VAR => {
-            let data = match from {
+            match from {
                 BUILDER => {
                     let var = ctx.engine.cmd.var_mut(storage_index!(x));
                     let builder = var.as_builder_mut()?;
@@ -31,7 +34,7 @@ fn convert_any(ctx: &mut Ctx, x: u16, to: u16, from: u16) -> Status {
                     match to {
                         CELL => StackItem::Cell(cell),
                         SLICE => StackItem::Slice(ctx.engine.load_cell(cell)?),
-                        _ => unimplemented!()
+                        _ => StackItem::None
                     }
                 }
                 CELL => {
@@ -41,7 +44,7 @@ fn convert_any(ctx: &mut Ctx, x: u16, to: u16, from: u16) -> Status {
                     match to {
                         CONTINUATION => StackItem::Continuation(Arc::new(ContinuationData::with_code(slice))),
                         SLICE => StackItem::Slice(slice),
-                        _ => unimplemented!()
+                        _ => StackItem::None
                     }
                 }
                 SLICE => {
@@ -50,7 +53,8 @@ fn convert_any(ctx: &mut Ctx, x: u16, to: u16, from: u16) -> Status {
                     match to {
                         CONTINUATION => StackItem::Continuation(Arc::new(ContinuationData::with_code(slice))),
                         SLICE => StackItem::Slice(slice),
-                        _ => unimplemented!()
+                        CELL => StackItem::Cell(slice.cell().clone()),
+                        _ => StackItem::None
                     }
                 }
                 CONTINUATION => { // it only for undo
@@ -59,15 +63,19 @@ fn convert_any(ctx: &mut Ctx, x: u16, to: u16, from: u16) -> Status {
                     match to {
                         CELL => StackItem::Cell(slice.cell().clone()),
                         SLICE => StackItem::Slice(slice.clone()),
-                        _ => unimplemented!()
+                        _ => StackItem::None
                     }
                 }
-                _ => unimplemented!()
-            };
-            *ctx.engine.cmd.var_mut(storage_index!(x)) = data;
+                _ => StackItem::None
+            }
         }
-        _ => unimplemented!("x: {:X}, to: {:X}, from: {:X}", x, to, from)
+        _ => StackItem::None
     };
+    if data.is_null() {
+        fail!("cannot convert_any x: {:X}, to: {:X}, from: {:X}", x, to, from)
+    } else {
+        *ctx.engine.cmd.var_mut(storage_index!(x)) = data;
+    }
     Ok(())
 }
 

@@ -15,54 +15,9 @@ use crate::{error::TvmError, types::Exception};
 use std::{cmp::{max, min}};
 use ton_types::{error, fail, Result, types::ExceptionCode};
 
-// TODO: it seems everything should be unsigned
 // Application-specific primitives - A.10; Gas-related primitives - A.10.2
 // Specification limit value - pow(2,63)-1
 pub static SPEC_LIMIT: i64 = 9223372036854775807;
-
-pub trait GasCallback : std::fmt::Debug {
-    //Get gas price from masterchain in nanograms  
-    fn get_gas_price(&self) -> i64;
-    //Get max gas limit from masterchain
-    fn get_gas_limit_max(&self) -> i64;
-    //Get max gas credit from masterchain
-    fn gas_credit(&self) -> i64;
-}
-
-//For getting configuration params from masterchain
-#[derive(Debug)]
-pub struct TestCallback {
-    gas_price: i64, 
-    gas_limit_max: i64, 
-    gas_credit: i64,
-}
-
-impl TestCallback {
-    pub fn new(gas_price: i64, 
-        gas_limit_max: i64, 
-        gas_credit: i64) -> TestCallback {
-            
-            TestCallback {
-                gas_price,
-                gas_limit_max,
-                gas_credit,
-            }
-        }
-}
-
-impl GasCallback for TestCallback {
-    fn get_gas_price(&self) -> i64 {
-        self.gas_price.clone()
-    }
-    
-    fn get_gas_limit_max(&self) -> i64 {
-        self.gas_limit_max.clone()
-    }
-  
-    fn gas_credit(&self) -> i64 {
-        self.gas_credit.clone()
-    }
-}
 
 // Gas state
 #[derive(Clone, Debug, PartialEq)]
@@ -112,8 +67,12 @@ impl Gas {
     /// Instanse for release.
     pub fn test_with_limit(gas_limit: i64) -> Gas {
         let mut gas = Gas::test();
-        gas.gas_limit = gas_limit;
+        gas.new_gas_limit(gas_limit);
         gas
+    }
+    /// Instanse for release.
+    pub fn test_with_credit(gas_credit: i64) -> Gas {
+        Gas::new(0, gas_credit, 1000000000, 10)
     }
     /// Instanse for release.
     pub fn new(gas_limit: i64, gas_credit: i64, gas_limit_max: i64, gas_price: i64) -> Gas {
@@ -132,40 +91,65 @@ impl Gas {
         // old formula from spec: (10 + instruction_length + 5 * instruction_references_count) as i64
         (10 + instruction_length) as i64
     }
+    pub fn consume_basic(&mut self, instruction_length: usize, _instruction_references_count: usize) -> i64 {
+        // old formula from spec: (10 + instruction_length + 5 * instruction_references_count) as i64
+        self.use_gas((10 + instruction_length) as i64)
+    }
 
     /// Compute exception cost
     pub fn exception_price() -> i64 {
         EXCEPTION_GAS_PRICE
+    }
+    pub fn consume_exception(&mut self) -> i64 {
+        self.use_gas(EXCEPTION_GAS_PRICE)
     }
 
     /// Compute exception cost
     pub fn finalize_price() -> i64 {
         CELL_CREATE_GAS_PRICE
     }
+    pub fn consume_finalize(&mut self) -> i64 {
+        self.use_gas(CELL_CREATE_GAS_PRICE)
+    }
 
     /// Implicit JMP cost
     pub fn implicit_jmp_price() -> i64 {
         IMPLICIT_JMPREF_GAS_PRICE
+    }
+    pub fn consume_implicit_jmp(&mut self) -> i64 {
+        self.use_gas(IMPLICIT_JMPREF_GAS_PRICE)
     }
 
     /// Implicit RET cost
     pub fn implicit_ret_price() -> i64 {
         IMPLICIT_RET_GAS_PRICE
     }
+    pub fn consume_implicit_ret(&mut self) -> i64 {
+        self.use_gas(IMPLICIT_RET_GAS_PRICE)
+    }
 
     /// Compute exception cost
     pub fn load_cell_price(first: bool) -> i64 {
         if first {CELL_LOAD_GAS_PRICE} else {CELL_RELOAD_GAS_PRICE}
+    }
+    pub fn consume_load_cell(&mut self, first: bool) -> i64 {
+        self.use_gas(if first {CELL_LOAD_GAS_PRICE} else {CELL_RELOAD_GAS_PRICE})
     }
 
     /// Stack cost
     pub fn stack_price(stack_depth: usize) -> i64 {
         STACK_ENTRY_GAS_PRICE * (max(stack_depth, FREE_STACK_DEPTH) - FREE_STACK_DEPTH) as i64
     }
+    pub fn consume_stack(&mut self, stack_depth: usize) -> i64 {
+        self.use_gas(STACK_ENTRY_GAS_PRICE * (max(stack_depth, FREE_STACK_DEPTH) - FREE_STACK_DEPTH) as i64)
+    }
 
     /// Compute tuple using cost
     pub fn tuple_gas_price(tuple_length: usize) -> i64 {
         TUPLE_ENTRY_GAS_PRICE * tuple_length as i64
+    }
+    pub fn consume_tuple_gas(&mut self, tuple_length: usize) -> i64 {
+        self.use_gas(TUPLE_ENTRY_GAS_PRICE * tuple_length as i64)
     }
 
     /// Set input gas to gas limit
@@ -180,18 +164,22 @@ impl Gas {
         self.gas_remaining -= gas;
         self.gas_remaining
     }
-    pub fn try_use_gas(&mut self, gas: i64) -> Result<()> {
-        if self.gas_remaining >= gas {
-            self.gas_remaining -= gas;
-            Ok(())
+    /// Try to consume gas then raise exception out of gas if need
+    pub fn try_use_gas(&mut self, gas: i64) -> Result<Option<i32>> {
+        self.gas_remaining -= gas;
+        self.check_gas_remaining()
+    }
+    /// Raise out of gas exception
+    pub fn check_gas_remaining(&self) -> Result<Option<i32>> {
+        if self.gas_remaining >= 0 {
+            Ok(None)
         } else {
             let exception = Exception::from_code_and_value(
                 ExceptionCode::OutOfGas,
-                (self.get_gas_used() + gas) as i32,
+                (self.gas_base - self.gas_remaining) as i32,
                 file!(),
                 line!()
             );
-            self.gas_remaining = 0;
             fail!(TvmError::TvmExceptionFull(exception, Default::default()))
         }
     }
@@ -216,7 +204,15 @@ impl Gas {
         self.gas_credit
     }
     
-    pub fn get_gas_used(&self) -> i64 {
+    pub fn get_gas_used_full(&self) -> i64 {
         self.gas_base - self.gas_remaining
+    }
+
+    pub fn get_gas_used(&self) -> i64 {
+        if self.gas_remaining > 0 {
+            self.gas_base - self.gas_remaining
+        } else {
+            self.gas_base
+        }
     }
 }
