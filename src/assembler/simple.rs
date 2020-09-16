@@ -696,6 +696,7 @@ impl<T: Writer> Engine<T> {
         STIXQ                                => 0xCF, 0x04
         STIXR                                => 0xCF, 0x02
         STIXRQ                               => 0xCF, 0x06
+        STONE                                => 0xCF, 0x83
         STONES                               => 0xCF, 0x41
         STOPTREF                             => 0xF4, 0x00
         STRDUMP                              => 0xFE, 0x14
@@ -726,6 +727,7 @@ impl<T: Writer> Engine<T> {
         STVARINT32                           => 0xFA, 0x07
         STVARUINT16                          => 0xFA, 0x02
         STVARUINT32                          => 0xFA, 0x06
+        STZERO                               => 0xCF, 0x81
         STZEROES                             => 0xCF, 0x40
         SUB                                  => 0xA1
         SUBDICTGET                           => 0xF4, 0xB1
