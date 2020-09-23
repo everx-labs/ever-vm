@@ -83,7 +83,8 @@ impl Handlers {
     }
 
     pub(super) fn new_code_page_0() -> Handlers {
-        Handlers::new()
+        let mut handlers = Handlers::new();
+        handlers
             .add_code_page_0_part_stack()
             .add_code_page_0_tuple()
             .add_code_page_0_part_constant()
@@ -102,11 +103,11 @@ impl Handlers {
                 .set(0xF0, execute_setcpx)
                 .set_range(0xF1..0xFF, execute_setcp)
                 .set(0xFF, execute_setcp)
-            )
-            
+            );
+        handlers
     }
 
-    fn add_code_page_0_part_stack(self) -> Handlers {
+    fn add_code_page_0_part_stack(&mut self) -> &mut Handlers {
         self
             .set(0x00, execute_nop)
             .set_range(0x01..0x10, execute_xchg_simple)
@@ -163,7 +164,7 @@ impl Handlers {
             )
     }
 
-    fn add_code_page_0_tuple(self) -> Handlers {
+    fn add_code_page_0_tuple(&mut self) -> &mut Handlers {
         self
             .set(0x6D, execute_null)
             .set(0x6E, execute_isnull)
@@ -204,7 +205,7 @@ impl Handlers {
             )
     }
 
-    fn add_code_page_0_part_constant(self) -> Handlers {
+    fn add_code_page_0_part_constant(&mut self) -> &mut Handlers {
         self
             .set_range(0x70..0x82, execute_pushint)
             .set(0x82, execute_pushint_big)
@@ -224,7 +225,7 @@ impl Handlers {
             .set_range(0x90..0xA0, execute_pushcont_long)
     }
 
-    fn add_code_page_0_arithmetic(self) -> Handlers {
+    fn add_code_page_0_arithmetic(&mut self) -> &mut Handlers {
         self
             .set(0xA0, execute_add::<Signaling>)
             .set(0xA1, execute_sub::<Signaling>)
@@ -306,7 +307,7 @@ impl Handlers {
             )
     }
 
-    fn add_code_page_0_comparsion(self) -> Handlers {
+    fn add_code_page_0_comparsion(&mut self) -> &mut Handlers {
         self
             .set(0xB8, execute_sgn::<Signaling>)
             .set(0xB9, execute_less::<Signaling>)
@@ -345,7 +346,7 @@ impl Handlers {
             )
     }
 
-    fn add_code_page_0_cell(self) -> Handlers {
+    fn add_code_page_0_cell(&mut self) -> &mut Handlers {
         self
             .set(0xC8, execute_newc)
             .set(0xC9, execute_endc)
@@ -504,7 +505,7 @@ impl Handlers {
             )
     }
 
-    fn add_code_page_0_control_flow(self) -> Handlers {
+    fn add_code_page_0_control_flow(&mut self) -> &mut Handlers {
         self
             .set(0xD8, execute_callx)
             .set(0xD9, execute_jmpx)
@@ -613,7 +614,7 @@ impl Handlers {
             )
     }
 
-    fn add_code_page_0_exceptions(self) -> Handlers {
+    fn add_code_page_0_exceptions(&mut self) -> &mut Handlers {
         self
             .add_subset(0xF2, Handlers::new()
                 .set_range(0x00..0x40, execute_throw_short)
@@ -636,7 +637,7 @@ impl Handlers {
             .set(0xF3, execute_tryargs)
     }
 
-    fn add_code_page_0_blockchain(self) -> Handlers {
+    fn add_code_page_0_blockchain(&mut self) -> &mut Handlers {
         self
             .add_subset(0xFA, Handlers::new()
                 .set(0x00, execute_ldgrams)
@@ -666,7 +667,7 @@ impl Handlers {
             )
     }
 
-    fn add_code_page_0_dictionaries(self) -> Handlers {
+    fn add_code_page_0_dictionaries(&mut self) -> &mut Handlers {
         self
             .add_subset(0xF4, Handlers::new()
                 .set(0x00, execute_stdict)
@@ -817,7 +818,7 @@ impl Handlers {
     }
     
     /// Gas and configuration primitives handlers
-    fn add_code_page_0_gas_rand_config(self) -> Handlers {
+    fn add_code_page_0_gas_rand_config(&mut self) -> &mut Handlers {
         self
             .add_subset(0xF8, Handlers::new()
                 .set(0x00, execute_accept)
@@ -853,7 +854,7 @@ impl Handlers {
     }
     
     /// Hashing and cryptography primitives handlers
-    fn add_code_page_0_crypto(self) -> Handlers {
+    fn add_code_page_0_crypto(&mut self) -> &mut Handlers {
         self
         .add_subset(0xF9, Handlers::new()
             .set(0x00, execute_hashcu)
@@ -868,7 +869,7 @@ impl Handlers {
         )
     }
     /// Dumping functions
-    fn add_code_page_0_debug(self) -> Handlers {
+    fn add_code_page_0_debug(&mut self) -> &mut Handlers {
         self.add_subset(0xFE, Handlers::new()
             .set(0x00, execute_dump_stack)
             .set_range(0x01..0x0F, execute_dump_stack_top)
@@ -896,11 +897,11 @@ impl Handlers {
         }
     }
 
-    fn add_subset(mut self, code: u8, subset: Handlers) -> Handlers {
+    fn add_subset(&mut self, code: u8, subset: &mut Handlers) -> &mut Handlers {
         match self.directs[code as usize] {
             Handler::Direct(x) => if x as usize == execute_unknown as usize {
                 self.directs[code as usize] = Handler::Subset(self.subsets.len());
-                self.subsets.push(subset)
+                self.subsets.push(std::mem::replace(subset, Handlers::new()))
             } else {
                 panic!("Slot for subset {:02x} is already occupied", code)
             },
@@ -920,12 +921,12 @@ impl Handlers {
         }
     }
 
-    fn set(mut self, code: u8, handler: ExecuteHandler) -> Handlers {
+    fn set(&mut self, code: u8, handler: ExecuteHandler) -> &mut Handlers {
         self.register_handler(code, handler);
         self
     }
 
-    fn set_range(mut self, codes: Range<u8>, handler: ExecuteHandler) -> Handlers {
+    fn set_range(&mut self, codes: Range<u8>, handler: ExecuteHandler) -> &mut Handlers {
         for code in codes {
             self.register_handler(code, handler);
         }
