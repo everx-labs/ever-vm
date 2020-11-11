@@ -24,3 +24,7 @@ pub mod assembler;
 pub mod smart_contract_info;
 pub use self::smart_contract_info::SmartContractInfo;
 pub mod error;
+#[cfg(feature = "full")]
+pub mod logger;
+#[cfg(feature = "use_test_framework")]
+pub mod test_framework;
