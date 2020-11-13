@@ -961,7 +961,13 @@ fn datasize(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     )
     .and_then(|ctx| fetch_stack(ctx, 2))
     .and_then(|mut ctx| {
-        let n = ctx.engine.cmd.var(0).as_integer()?.into(0..=std::usize::MAX)?;
+        let n = match ctx.engine.cmd.var(0).as_integer()? {
+            x => if x.is_neg() {
+                return err!(ExceptionCode::RangeCheckError)
+            } else {
+                x.into(0..=std::i64::MAX).unwrap_or(std::i64::MAX) as usize
+            }
+        };
         let mut counter = DataCounter::new(n);
         let result = if !how.bit(CEL) {
             let slice = ctx.engine.cmd.var(1).as_slice()?.clone();
