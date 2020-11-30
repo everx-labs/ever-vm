@@ -20,7 +20,6 @@ pub mod stack;
 #[macro_use]
 pub mod executor;
 
-pub mod assembler;
 pub mod smart_contract_info;
 pub use self::smart_contract_info::SmartContractInfo;
 pub mod error;

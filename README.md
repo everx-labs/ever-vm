@@ -8,6 +8,4 @@ https://www.rust-lang.org/en-US/install.html
 
 ```
 cargo build
-cargo run
 ```
-

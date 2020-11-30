@@ -324,8 +324,7 @@ impl Engine {
             if let Some(result) = self.seek_next_cmd()? {
                 if self.gas.get_gas_credit() != 0 &&
                     self.gas.get_gas_remaining() < self.gas.get_gas_credit() {
-                    break 0
-                    // return err!(ExceptionCode::OutOfGas)
+                    break result//return err!(ExceptionCode::OutOfGas)
                 } else {
                     break result
                 }
