@@ -14,12 +14,12 @@
 use crate::{
     error::TvmError, 
     stack::integer::{
-        Int, IntegerData, IntegerValue, serialization::common::bits_to_bytes,
-        utils::{check_overflow, process_value, twos_complement}
+        Int, IntegerData, IntegerValue,
+        utils::{check_overflow, twos_complement}
     },
     types::Exception
 };
-use num_traits::{Num, Signed};
+use num_traits::Num;
 use std::ops::RangeInclusive;
 use ton_types::{error, Result, types::ExceptionCode};
 
@@ -220,50 +220,6 @@ impl IntegerData {
             twos_complement(&mut digits);
         }
         Ok(IntegerData::from_vec_le_unchecked(sign, digits))
-    }
-
-    /// Encodes value as big endian octet string for PUSHINT primitive using the format
-    /// from TVM Spec A.3.1:
-    ///  "82lxxx — PUSHINT xxx, where 5-bit 0 ≤ l ≤ 30 determines the length n = 8l + 19
-    ///  of signed big-endian integer xxx. The total length of this instruction
-    ///  is l + 4 bytes or n + 13 = 8l + 32 bits."
-    pub fn to_big_endian_octet_string(&self) -> Vec<u8> {
-        process_value(self, |value| -> Vec<u8> {
-            let mut n = self.bitsize();
-            if n < 19 {
-                n = 19;
-            } else {
-                let excessive = n & 0b111;
-                if excessive == 0 || excessive > 3 {
-                    // Rounding to full octet and adding 3.
-                    n = (((n + 7) as isize & -8) + 3) as usize;
-                } else {
-                    n += 3 - excessive;
-                }
-            };
-
-            let bytelen = bits_to_bytes(n);
-            let mut serialized_val = value.to_signed_bytes_be();
-            let prefixlen = bytelen - serialized_val.len();
-            let mut ret: Vec<u8> = Vec::with_capacity(bytelen);
-            let is_negative = value.is_negative();
-            let mut prefix: Vec<u8> = if prefixlen == 0 {
-                let new_serialized_val = serialized_val.split_off(1);
-                let first_element = serialized_val;
-                serialized_val = new_serialized_val;
-                first_element
-            } else if is_negative {
-                vec![0xFF; prefixlen]
-            } else {
-                vec![0x00; prefixlen]
-            };
-            debug_assert_eq!((n - 19) & 0b111, 0);
-            prefix[0] = (n - 19) as u8 | (prefix[0] & 0b111);
-
-            ret.append(&mut prefix);
-            ret.append(&mut serialized_val);
-            ret
-        })
     }
 }
 
