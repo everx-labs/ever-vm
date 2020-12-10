@@ -27,7 +27,7 @@ fn execute_config_param(engine: &mut Engine, name: &'static str, opt: bool) -> F
         let mut key = BuilderData::new();
         key.append_i32(index)?;
         if let Some(value) = params.get_with_gas(key.into(), ctx.engine)? {
-            if let Ok(value) = value.reference(0) {
+            if let Some(value) = value.reference_opt(0) {
                 ctx.engine.cc.stack.push(StackItem::Cell(value.clone()));
                 if !opt {
                     ctx.engine.cc.stack.push(boolean!(true));

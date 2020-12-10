@@ -139,7 +139,7 @@ impl StackItem {
             *self = unref;
         }
         if let StackItem::Continuation(ref mut r) = self {
-            Arc::get_mut(r).ok_or(exception!(ExceptionCode::FatalError))
+            Ok(Arc::get_mut(r).ok_or(ExceptionCode::FatalError)?)
         } else {
             err!(ExceptionCode::TypeCheckError)
         }
