@@ -462,7 +462,7 @@ impl Engine {
         while self.cc.code().remaining_bits() == 0 {
             let gas = self.gas_used();
             self.log_string = None;
-            let result = if let Ok(reference) = self.cc.code().reference(0) {
+            let result = if let Some(reference) = self.cc.code().reference_opt(0) {
                 self.step_next_ref(reference)
             } else {
                 match self.cc.type_of.clone() {
@@ -539,11 +539,11 @@ impl Engine {
     }
 
     pub fn ctrl(&self, index: usize) -> ResultRef<StackItem> {
-        self.ctrls.get(index).ok_or(exception!(ExceptionCode::RangeCheckError))
+        Ok(self.ctrls.get(index).ok_or(ExceptionCode::RangeCheckError)?)
     }
 
     pub fn ctrl_mut(&mut self, index: usize) -> ResultMut<StackItem> {
-        self.ctrls.get_mut(index).ok_or(exception!(ExceptionCode::RangeCheckError))
+        Ok(self.ctrls.get_mut(index).ok_or(ExceptionCode::RangeCheckError)?)
     }
 
     fn dump_msg(message: &'static str, data: String) -> String {
@@ -1089,8 +1089,8 @@ impl Engine {
 
     pub(in crate::executor) fn config_param(&self, index: usize) -> ResultRef<StackItem> {
         let tuple = self.ctrl(7)?.as_tuple()?;
-        let tuple = tuple.first().ok_or(exception!(ExceptionCode::RangeCheckError))?.as_tuple()?;
-        tuple.get(index).ok_or(exception!(ExceptionCode::RangeCheckError))
+        let tuple = tuple.first().ok_or(ExceptionCode::RangeCheckError)?.as_tuple()?;
+        Ok(tuple.get(index).ok_or(ExceptionCode::RangeCheckError)?)
     }
 
     pub(in crate::executor) fn rand(&self) -> ResultRef<IntegerData> {
@@ -1099,10 +1099,10 @@ impl Engine {
 
     pub(in crate::executor) fn set_rand(&mut self, rand: IntegerData) -> Status {
         let mut tuple = self.ctrl_mut(7)?.as_tuple_mut()?;
-        let mut t1 = tuple.first_mut().ok_or(exception!(ExceptionCode::RangeCheckError))?.as_tuple_mut()?;
-        *t1.get_mut(6).ok_or(exception!(ExceptionCode::RangeCheckError))? = StackItem::Integer(Arc::new(rand));
+        let mut t1 = tuple.first_mut().ok_or(ExceptionCode::RangeCheckError)?.as_tuple_mut()?;
+        *t1.get_mut(6).ok_or(ExceptionCode::RangeCheckError)? = StackItem::Integer(Arc::new(rand));
         self.use_gas(Gas::tuple_gas_price(t1.len()));
-        *tuple.first_mut().ok_or(exception!(ExceptionCode::RangeCheckError))? = StackItem::Tuple(t1);
+        *tuple.first_mut().ok_or(ExceptionCode::RangeCheckError)? = StackItem::Tuple(t1);
         self.use_gas(Gas::tuple_gas_price(tuple.len()));
         *self.ctrl_mut(7)? = StackItem::Tuple(tuple);
         Ok(())

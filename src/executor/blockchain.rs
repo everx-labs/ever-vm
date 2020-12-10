@@ -39,7 +39,7 @@ use ton_types::{
 
 fn add_action(ctx: Ctx, action_id: u32, cell: Option<Cell>, suffix: BuilderData) -> Result<Ctx> {
     let mut new_action = BuilderData::new();
-    let c5 = ctx.engine.ctrls.get(5).ok_or(exception!(ExceptionCode::TypeCheckError))?;
+    let c5 = ctx.engine.ctrls.get(5).ok_or(ExceptionCode::TypeCheckError)?;
     new_action.append_reference_cell(c5.as_cell()?.clone());
     new_action.append_u32(action_id)?.append_builder(&suffix)?;
     if let Some(cell) = cell {

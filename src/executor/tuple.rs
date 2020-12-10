@@ -361,7 +361,7 @@ pub(super) fn execute_tuple_last(engine: &mut Engine) -> Failure {
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
         let var = ctx.engine.cmd.var(0).as_tuple()?.last()
-            .ok_or(exception!(ExceptionCode::TypeCheckError))?.clone();
+            .ok_or(ExceptionCode::TypeCheckError)?.clone();
         ctx.engine.cc.stack.push(var);
         Ok(ctx)
     })
@@ -393,7 +393,7 @@ pub(super) fn execute_tuple_pop(engine: &mut Engine) -> Failure {
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
         let mut tuple = ctx.engine.cmd.var_mut(0).as_tuple_mut()?;
-        let value = tuple.pop().ok_or(exception!(ExceptionCode::TypeCheckError))?.clone();
+        let value = tuple.pop().ok_or(ExceptionCode::TypeCheckError)?.clone();
         ctx.engine.use_gas(Gas::tuple_gas_price(tuple.len()));
         ctx.engine.cc.stack.push_tuple(tuple);
         ctx.engine.cc.stack.push(value);
