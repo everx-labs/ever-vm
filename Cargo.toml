@@ -37,3 +37,11 @@ sha2 = "^0.8"
 
 ton_labs_assembler = { git = "https://github.com/tonlabs/ton-labs-assembler.git" }
 
+[features]
+full = []
+default = ["full"]
+ci_run = []
+fift_check = []
+log_file = []
+verbose = []
+trace = []
