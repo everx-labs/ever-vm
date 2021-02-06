@@ -198,7 +198,8 @@ pub(super) fn execute_rewrite_std_addr<T: OperationBehavior>(engine: &mut Engine
                 256 => IntegerData::from(addr.get_bigint(256))?,
                 _ => err!(ExceptionCode::CellUnderflow)?
             };
-            if let Ok(rewrite_pfx) = tuple[1].as_slice() {
+            if tuple[1].is_slice() {
+                let rewrite_pfx = tuple[1].as_slice()?;
                 let bits = rewrite_pfx.remaining_bits();
                 if bits > 256 {
                     return err!(ExceptionCode::CellUnderflow)

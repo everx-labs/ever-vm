@@ -158,12 +158,12 @@ impl SmartContractInfo{
                     int!(self.balance_remaining_grams),
                     self.balance_remaining_other.data()
                     .map(|dict| StackItem::Cell(dict.clone()))
-                    .unwrap_or_default()
+                    .unwrap_or_else(|| StackItem::default())
                     ]),
                 StackItem::Slice(self.myself.clone()),
                 self.config_params.as_ref()
                     .map(|params| StackItem::Cell(params.clone()))
-                    .unwrap_or_default()
+                    .unwrap_or_else(|| StackItem::default())
             ])
         ])
     }

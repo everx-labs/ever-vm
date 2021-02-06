@@ -142,7 +142,7 @@ fn put_to_list(ctx: &mut Ctx, x: &mut Info, y: &mut StackItem) -> Result<Option<
 
 fn put_to_list_from_item(ctx: &mut Ctx, x: &mut Info, y: &Info) -> Result<Option<StackItem>> {
     if !SaveList::can_put(x.index, y.item(ctx)?) {
-        let value = x.list(ctx)?.get(x.index).map(|value| value.clone()).unwrap_or_default();
+        let value = x.list(ctx)?.get(x.index).map(|value| value.clone()).unwrap_or_else(|| StackItem::default());
         log::error!(
             target: "tvm", 
             "Cannot set: {} to list with index: {} and value: {}",
@@ -164,8 +164,8 @@ fn put_to_list_from_list(ctx: &mut Ctx, x: &mut Info, y: &mut Info) -> Result<Op
             }
         }
     }
-    let old = x.list(ctx)?.get(x.index).cloned().unwrap_or_default();
-    let new = y.list(ctx)?.get(y.index).cloned().unwrap_or_default();
+    let old = x.list(ctx)?.get(x.index).cloned().unwrap_or_else(|| StackItem::default());
+    let new = y.list(ctx)?.get(y.index).cloned().unwrap_or_else(|| StackItem::default());
     log::error!(
         target: "tvm", 
         "Cannot set: {} to list with index: {} and value: {}",

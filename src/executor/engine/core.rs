@@ -160,7 +160,7 @@ impl Engine {
             code_page: 0,
             debug_on: 1,
             step: 0,
-            debug_buffer: String::default(),
+            debug_buffer: String::new(),
             cmd_code: SliceData::default(),
             #[cfg(not(all(feature="verbose", feature="fift_check")))]
             trace: Engine::TRACE_ALL,
@@ -236,7 +236,7 @@ impl Engine {
 
     fn trace_info(&self, info_type: EngineTraceInfoType, gas: i64, log_string: Option<String>) {
         if let Some(callback) = &self.trace_callback {
-            let cmd_str = log_string.or_else(|| self.cmd.dump_with_params()).unwrap_or_default();
+            let cmd_str = log_string.or_else(|| self.cmd.dump_with_params()).unwrap_or_else(|| String::new());
             let info = EngineTraceInfo {
                 info_type,
                 step: self.step,
@@ -677,7 +677,7 @@ impl Engine {
         if self.debug_on > 0 {
             log::info!(target: "tvm", "{}", self.debug_buffer);
         }
-        self.debug_buffer = String::default()
+        self.debug_buffer = String::new()
     }
 
     ///Get gas state
@@ -734,7 +734,7 @@ impl Engine {
 
     fn basic_use_gas(&mut self, mut bits: usize) -> i64 {
         debug_assert_eq!(self.cmd_code.cell().repr_hash(), self.cmd_code.cell().repr_hash());
-        bits += self.cc.code().pos().checked_sub(self.cmd_code.pos()).unwrap_or_default();
+        bits += self.cc.code().pos().checked_sub(self.cmd_code.pos()).unwrap_or(0);
         self.use_gas(Gas::basic_gas_price(bits, 0))
     }
 
@@ -1011,7 +1011,8 @@ impl Engine {
                 self.use_gas(Gas::basic_gas_price(offset + 1 + bits, 0));
                 let mut code = self.cmd_code.clone();
                 code.shrink_data(offset..);
-                let slice = code.get_dictionary().unwrap_or_default();
+                // TODO: need to check this failure case
+                let slice = code.get_dictionary_opt().unwrap_or_else(|| SliceData::default());
                 self.cmd.ictx.params.push(InstructionParameter::Slice(slice));
                 let length = code.get_next_int(bits)? as usize;
                 *self.cc.code_mut() = code;

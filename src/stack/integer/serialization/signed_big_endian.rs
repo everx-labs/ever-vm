@@ -11,21 +11,17 @@
 * limitations under the License.
 */
 
-use crate::{
-    error::TvmError, 
-    stack::{
-        BuilderData, 
-        integer::{
-            IntegerData, 
-            serialization::{Encoding, common::{calc_excess_bits, extend_buffer_be}}
-        }, 
-        serialization::{Serializer, Deserializer}
-    },
-    types::Exception
+use crate::stack::{
+    BuilderData, 
+    integer::{
+        IntegerData, 
+        serialization::{Encoding, common::{calc_excess_bits, extend_buffer_be}}
+    }, 
+    serialization::{Serializer, Deserializer}
 };
 use num::bigint::ToBigInt;
 use num_traits::Signed;
-use ton_types::{error, Result, types::ExceptionCode};
+use ton_types::{error, Result, types::ExceptionCode, fail};
 
 pub struct SignedIntegerBigEndianEncoding {
     length_in_bits: usize
@@ -45,7 +41,7 @@ impl Serializer<IntegerData> for SignedIntegerBigEndianEncoding {
             //   −2^(n−1) <= x < 2^(n−1) (for signed integer serialization)
             //   or 0 <= x < 2^n (for unsigned integer serialization),
             //   a range check exception is usually generated
-            return err!(ExceptionCode::RangeCheckError);
+            fail!(ExceptionCode::RangeCheckError)
         }
 
         let mut value = value.take_value_of(|x| x.to_bigint())?;
@@ -59,7 +55,6 @@ impl Serializer<IntegerData> for SignedIntegerBigEndianEncoding {
         buffer = extend_buffer_be(buffer, self.length_in_bits, value.is_negative());
 
         BuilderData::with_raw(buffer, self.length_in_bits)
-            .map_err(|err| err.into())
     }
 }
 

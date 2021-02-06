@@ -29,7 +29,7 @@ const FLUSH: u8 = 0x20; // flush
 fn dump_var(item: &StackItem, how: u8) -> String {
     if how.bit(HEX) {
         match item {
-            StackItem::None            => String::default(),
+            StackItem::None            => String::new(),
             StackItem::Builder(x)      => format!("BC<{:X}>", Arc::as_ref(&x)),
             StackItem::Cell(x)         => format!("C<{:X}>", x),
             StackItem::Continuation(x) => format!("R<{:X}>", x.code().cell()),
@@ -39,7 +39,7 @@ fn dump_var(item: &StackItem, how: u8) -> String {
         }
     } else if how.bit(BIN) {
         match item {
-            StackItem::None            => String::default(),
+            StackItem::None            => String::new(),
             StackItem::Builder(x)      => format!("BC<{:b}>", Arc::as_ref(&x)),
             StackItem::Cell(x)         => format!("C<{:b}>", x),
             StackItem::Continuation(x) => format!("R<{:b}>", x.code().cell()),
@@ -49,7 +49,7 @@ fn dump_var(item: &StackItem, how: u8) -> String {
         }
     } else if how.bit(STR) {
         let string = match item {
-            StackItem::None            => return String::default(),
+            StackItem::None            => return String::new(),
             StackItem::Builder(x)      => x.data().to_vec(),
             StackItem::Cell(x)         => SliceData::from(x).get_bytestring(0),
             StackItem::Continuation(x) => x.code().get_bytestring(0),
@@ -57,10 +57,10 @@ fn dump_var(item: &StackItem, how: u8) -> String {
             StackItem::Slice(x)        => x.get_bytestring(0),
             StackItem::Tuple(x)        => return format!("({})", x.iter().map(|v| dump_var(v, how)).collect::<Vec<_>>().join(", ")),
         };
-        String::from_utf8(string).unwrap_or_default()
+        String::from_utf8(string).unwrap_or_else(|_| String::new())
     } else {
         match item {
-            StackItem::None            => String::default(),
+            StackItem::None            => String::new(),
             StackItem::Builder(x)      => format!("BC<{:X}>", Arc::as_ref(&x)),
             StackItem::Cell(x)         => format!("C<{:X}>", x),
             StackItem::Continuation(x) => format!("R<{:X}>", x.code().cell()),

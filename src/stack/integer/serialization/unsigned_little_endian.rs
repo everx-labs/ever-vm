@@ -11,16 +11,12 @@
 * limitations under the License.
 */
 
-use crate::{
-    error::TvmError,
-    stack::{
-        BuilderData, 
-        integer::{IntegerData, serialization::{Encoding, common::bits_to_bytes}}, 
-        serialization::{Serializer, Deserializer}
-    },
-    types::Exception
+use crate::stack::{
+    BuilderData, 
+    integer::{IntegerData, serialization::{Encoding, common::bits_to_bytes}}, 
+    serialization::{Serializer, Deserializer}
 };
-use ton_types::{error, Result, types::ExceptionCode};
+use ton_types::{error, Result, types::ExceptionCode, fail};
 
 pub struct UnsignedIntegerLittleEndianEncoding {
     length_in_bits: usize
@@ -40,7 +36,7 @@ impl Serializer<IntegerData> for UnsignedIntegerLittleEndianEncoding {
             //   −2^(n−1) <= x < 2^(n−1) (for signed integer serialization)
             //   or 0 <= x < 2^n (for unsigned integer serialization),
             //   a range check exception is usually generated
-            return err!(ExceptionCode::RangeCheckError);
+            fail!(ExceptionCode::RangeCheckError)
         }
 
         let value = value.take_value_of(|x| x.to_biguint())?;
@@ -50,7 +46,6 @@ impl Serializer<IntegerData> for UnsignedIntegerLittleEndianEncoding {
         buffer.resize(expected_buffer_size, 0);
 
         BuilderData::with_raw(buffer, self.length_in_bits)
-            .map_err(|err| err.into())
     }
 }
 
