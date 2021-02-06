@@ -38,7 +38,7 @@ use std::sync::Arc;
 
 fn try_unref_leaf(slice: &SliceData) -> Result<StackItem> {
     match slice.remaining_bits() == 0 && slice.remaining_references() != 0 {
-        true => Ok(StackItem::Cell(slice.reference(0)?.clone())),
+        true => Ok(StackItem::Cell(slice.reference(0)?)),
         false => err!(ExceptionCode::DictionaryError)
     }
 }
@@ -281,7 +281,7 @@ fn pfxdictget(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
         let (nbits, dict, mut key);
         if how.bit(CMD) {
             nbits = ctx.engine.cmd.length();
-            dict  = PfxHashmapE::with_data(nbits, ctx.engine.cmd.slice().clone());
+            dict  = PfxHashmapE::with_hashmap(nbits, ctx.engine.cmd.slice().reference_opt(0));
             key   = ctx.engine.cmd.var(0).as_slice()?.clone();
         } else {
             nbits = ctx.engine.cmd.var(0).as_integer()?.into(0..=1023)?;
@@ -347,7 +347,7 @@ fn keyreader_from_int(key: &StackItem, nbits: usize) -> Result<SliceData> {
 
 fn keyreader_from_uint(key: &StackItem, nbits: usize) -> Result<SliceData> {
     let key = key.as_integer()?;
-    if key.is_nan() {
+    if key.is_nan() || key.is_neg() {
         return err!(ExceptionCode::IntegerOverflow);
     }
     key.into_builder::<UnsignedIntegerBigEndianEncoding>(nbits).map(|builder| builder.into())
@@ -356,13 +356,20 @@ fn keyreader_from_uint(key: &StackItem, nbits: usize) -> Result<SliceData> {
 fn read_key(key: &StackItem, nbits: usize, how: u8) -> Result<(Option<SliceData>, bool)> {
     if how.bit(SLC) {
         return Ok((Some(keyreader_from_slice(key, nbits)?), false))
-    } else if how.bit(SIGN) {
-        if let Ok(key) = keyreader_from_int(key, nbits) {
-            return Ok((Some(key), false))
-        }
     } else {
-        if let Ok(key) = keyreader_from_uint(key, nbits) {
-            return Ok((Some(key), false))
+        let key = key.as_integer()?;
+        if how.bit(SIGN) {
+            if !key.is_nan() {
+                if let Ok(slice) = key.into_slice::<SignedIntegerBigEndianEncoding>(nbits) {
+                    return Ok((Some(slice), key.is_neg()))
+                }
+            }
+        } else {
+            if !key.is_nan() && !key.is_neg() {
+                if let Ok(slice) = key.into_slice::<UnsignedIntegerBigEndianEncoding>(nbits) {
+                    return Ok((Some(slice), false))
+                }
+            }
         }
     }
 
@@ -1088,7 +1095,7 @@ pub(super) fn execute_dictpushconst(engine: &mut Engine) -> Failure {
         if slice.remaining_references() == 0 {
             return err!(ExceptionCode::InvalidOpcode);
         } else {
-            ctx.engine.cc.stack.push(StackItem::Cell(slice.reference(0)?.clone()));
+            ctx.engine.cc.stack.push(StackItem::Cell(slice.reference(0)?));
         }
         let key = ctx.engine.cmd.length();
         ctx.engine.cc.stack.push(int!(key));
@@ -1194,14 +1201,14 @@ fn load_dict(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
         let mut slice = ctx.engine.cmd.var(0).as_slice()?.clone();
-        let empty = if let Ok(dict) = slice.get_dictionary() {
+        let empty = if let Some(dict) = slice.get_dictionary_opt() {
             if how.bit(SLC) {
                 ctx.engine.cc.stack.push(StackItem::Slice(dict.clone()));
             } else if how.bit(DICT) {
                 ctx.engine.cc.stack.push(if dict.is_empty_root() {
                     StackItem::None
                 } else {
-                    StackItem::Cell(dict.reference(0)?.clone())
+                    StackItem::Cell(dict.reference(0)?)
                 });
             }
             false

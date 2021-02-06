@@ -11,19 +11,14 @@
 * limitations under the License.
 */
 
-use crate::{
-    error::TvmError,
-    stack::{
-        BuilderData, 
-        integer::{IntegerData, serialization::{Encoding, common::extend_buffer_le}},
-        serialization::{Serializer, Deserializer}
-    },
-    types::Exception
-
+use crate::stack::{
+    BuilderData, 
+    integer::{IntegerData, serialization::{Encoding, common::extend_buffer_le}},
+    serialization::{Serializer, Deserializer}
 };
 use num::bigint::ToBigInt;
 use num_traits::Signed;
-use ton_types::{error, Result, types::ExceptionCode};
+use ton_types::{error, Result, types::ExceptionCode, fail};
 
 pub struct SignedIntegerLittleEndianEncoding {
     length_in_bits: usize
@@ -43,7 +38,7 @@ impl Serializer<IntegerData> for SignedIntegerLittleEndianEncoding {
             //   −2^(n−1) <= x < 2^(n−1) (for signed integer serialization)
             //   or 0 <= x < 2^n (for unsigned integer serialization),
             //   a range check exception is usually generated
-            return err!(ExceptionCode::RangeCheckError);
+            fail!(ExceptionCode::RangeCheckError)
         }
 
         let value = value.take_value_of(|x| x.to_bigint())?;
@@ -51,7 +46,6 @@ impl Serializer<IntegerData> for SignedIntegerLittleEndianEncoding {
         bytes = extend_buffer_le(bytes, self.length_in_bits, value.is_negative());
 
         BuilderData::with_raw(bytes, self.length_in_bits)
-            .map_err(|err| err.into())
     }
 }
 

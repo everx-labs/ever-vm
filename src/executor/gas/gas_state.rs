@@ -180,7 +180,7 @@ impl Gas {
                 file!(),
                 line!()
             );
-            fail!(TvmError::TvmExceptionFull(exception, Default::default()))
+            fail!(TvmError::TvmExceptionFull(exception, String::new()))
         }
     }
     // *** Getters ***

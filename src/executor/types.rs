@@ -264,7 +264,6 @@ impl Instruction {
     }
     pub(super) fn slice(&self) -> &SliceData {
         self.ictx.slice().unwrap()
-        // self.ictx.slice().map(|slice| slice.clone()).unwrap_or_default()
     }
     pub(super) fn sreg(&self) -> usize {
         self.ictx.sreg().unwrap()
@@ -289,7 +288,7 @@ impl Instruction {
     }
     #[allow(dead_code)]
     pub(super) fn dump_with_params(&self) -> Option<String> {
-        let mut trace = String::default();
+        let mut trace = String::new();
         if let Some(prefix) = self.name_prefix {
             trace += prefix;
         }
@@ -314,7 +313,7 @@ impl Instruction {
                 if mode.shift_parameter() {
                     format!(" {}", self.length())
                 } else {
-                    String::default()
+                    String::new()
                 }
             },
             Some(InstructionOptions::Integer(_)) =>
@@ -374,7 +373,7 @@ impl Instruction {
                 format!(" x{:X}", self.ictx.slice()?),
             Some(InstructionOptions::Dictionary(_, _)) =>
                 format!(" {}", self.ictx.length()?),
-            None => String::default()
+            None => String::new()
         };
         Some(trace)
     }
