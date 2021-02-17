@@ -317,7 +317,7 @@ pub struct Stack {
 
 impl Stack {
 
-    pub fn new() -> Stack {
+    pub const fn new() -> Self {
         Stack {
             storage: Vec::new(),
         }

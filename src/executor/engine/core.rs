@@ -63,6 +63,7 @@ pub enum EngineTraceInfoType {
     Finish,
     Implicit,
     Exception,
+    Dump,
 }
 
 pub struct EngineTraceInfo<'a> {
@@ -279,7 +280,9 @@ impl Engine {
 
     #[allow(dead_code)]
     fn fift_trace_callback(&self, info: &EngineTraceInfo) {
-        if info.info_type == EngineTraceInfoType::Start {
+        if info.info_type == EngineTraceInfoType::Dump {
+            log::info!(target: "tvm", "{}", info.cmd_str);
+        } else if info.info_type == EngineTraceInfoType::Start {
             if self.trace_bit(Engine::TRACE_CTRLS) {
                 log::trace!(target: "tvm", "{}", self.dump_ctrls(true));
             }
@@ -675,7 +678,8 @@ impl Engine {
 
     pub(in crate::executor) fn flush(&mut self) {
         if self.debug_on > 0 {
-            log::info!(target: "tvm", "{}", self.debug_buffer);
+            let buffer = std::mem::replace(&mut self.debug_buffer, String::new());
+            self.trace_info(EngineTraceInfoType::Dump, 0, Some(buffer));
         }
         self.debug_buffer = String::new()
     }
