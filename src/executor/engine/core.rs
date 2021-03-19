@@ -138,6 +138,7 @@ impl GasConsumer for Engine {
 }
 
 impl Engine {
+    pub const TRACE_NONE:  u8 = 0x00;
     pub const TRACE_CODE:  u8 = 0x01;
     pub const TRACE_GAS:   u8 = 0x02;
     pub const TRACE_STACK: u8 = 0x04;
@@ -148,6 +149,18 @@ impl Engine {
     // External API ***********************************************************
 
     pub fn new() -> Engine {
+        let trace = if cfg!(feature="fift_check") {
+            Engine::TRACE_ALL_BUT_CTRLS
+        } else if cfg!(feature="verbose") {
+            Engine::TRACE_ALL
+        } else {
+            Engine::TRACE_NONE
+        };
+        let trace_callback: Option<Box<dyn Fn(&Engine, &EngineTraceInfo)>> = if cfg!(feature="fift_check") {
+            Some(Box::new(Self::fift_trace_callback))
+        } else {
+            Some(Box::new(Self::defaul_trace_callback))
+        };
         Engine {
             cc: ContinuationData::new_empty(),
             cmd: Instruction::new("NOP"),
@@ -163,16 +176,8 @@ impl Engine {
             step: 0,
             debug_buffer: String::new(),
             cmd_code: SliceData::default(),
-            #[cfg(not(all(feature="verbose", feature="fift_check")))]
-            trace: Engine::TRACE_ALL,
-            #[cfg(all(feature="verbose", feature="fift_check"))]
-            trace: Engine::TRACE_ALL_BUT_CTRLS,
-            #[cfg(not(feature="verbose"))]
-            trace_callback: None,
-            #[cfg(all(feature="verbose", not(feature="fift_check")))]
-            trace_callback: Some(Box::new(Self::defaul_trace_callback)),
-            #[cfg(all(feature="verbose", feature="fift_check"))]
-            trace_callback: Some(Box::new(Self::fift_trace_callback)),
+            trace,
+            trace_callback,
             log_string: None,
         }
     }

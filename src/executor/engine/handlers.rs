@@ -69,15 +69,15 @@ enum Handler {
 }
 
 pub struct Handlers {
-    directs: [Handler; 256],
+    directs: [Option<Handler>; 256],
     subsets: Vec<Handlers>,
 }
 
 
 impl Handlers {
-    fn new() -> Handlers {
+    const fn new() -> Handlers {
         Handlers {
-            directs: [Handler::Direct(execute_unknown); 256],
+            directs: [None; 256],
             subsets: Vec::new(),
         }
     }
@@ -892,19 +892,26 @@ impl Handlers {
         let cmd = cc.next_cmd()?;
         // log::debug!(target: "tvm", "get_handler cmd: {:X}\n", cmd);
         match self.directs[cmd as usize] {
-            Handler::Direct(handler) => Ok(handler),
-            Handler::Subset(i) => self.subsets[i].get_handler(cc),
+            Some(Handler::Direct(handler)) => Ok(handler),
+            Some(Handler::Subset(i)) => self.subsets[i].get_handler(cc),
+            None => Ok(execute_unknown)
         }
     }
 
     fn add_subset(&mut self, code: u8, subset: &mut Handlers) -> &mut Handlers {
         match self.directs[code as usize] {
-            Handler::Direct(x) => if x as usize == execute_unknown as usize {
-                self.directs[code as usize] = Handler::Subset(self.subsets.len());
+            Some(Handler::Direct(x)) => {
+                if x as usize == execute_unknown as usize {
+                    self.directs[code as usize] = Some(Handler::Subset(self.subsets.len()));
+                    self.subsets.push(std::mem::replace(subset, Handlers::new()))
+                } else {
+                    panic!("Slot for subset {:02x} is already occupied", code)
+                }
+            }
+            None => {
+                self.directs[code as usize] = Some(Handler::Subset(self.subsets.len()));
                 self.subsets.push(std::mem::replace(subset, Handlers::new()))
-            } else {
-                panic!("Slot for subset {:02x} is already occupied", code)
-            },
+            }
             _ => panic!("Subset {:02x} is already registered", code),
         }
         self
@@ -912,12 +919,15 @@ impl Handlers {
 
     fn register_handler(&mut self, code: u8, handler: ExecuteHandler) {
         match self.directs[code as usize] {
-            Handler::Direct(x) => if x as usize == execute_unknown as usize {
-                self.directs[code as usize] = Handler::Direct(handler)
-            } else {
-                panic!("Code {:02x} is already registered", code)
-            },
-            _ => panic!("Slot for code {:02x} is already occupied", code),
+            None => self.directs[code as usize] = Some(Handler::Direct(handler)),
+            Some(Handler::Direct(x)) => {
+                if x as usize == execute_unknown as usize {
+                    self.directs[code as usize] = Some(Handler::Direct(handler))
+                } else {
+                    panic!("Code {:02x} is already registered", code)
+                }
+            }
+            _ => panic!("Slot for code {:02x} is already occupied", code)
         }
     }
 
