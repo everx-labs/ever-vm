@@ -185,7 +185,7 @@ where F: FnOnce(Vec<StackItem>, &mut dyn GasConsumer) -> Result<Vec<StackItem>>,
 
 pub(super) fn execute_parsemsgaddr<T: OperationBehavior>(engine: &mut Engine) -> Failure {
     load_address::<_, T>(engine, if T::quiet() {"PARSEMSGADDRQ"} else {"PARSEMSGADDR"},
-        |tuple, _| Ok(vec![StackItem::Tuple(tuple)])
+        |tuple, _| Ok(vec![StackItem::tuple(tuple)])
     )
 }
 

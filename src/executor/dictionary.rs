@@ -31,7 +31,7 @@ use crate::{
     types::{Exception, Failure}
 };
 use ton_types::{
-    BuilderData, error, fail, GasConsumer, HashmapE, HashmapType, HashmapSubtree, PfxHashmapE, Result, SliceData,
+    BuilderData, error, fail, GasConsumer, HashmapE, HashmapSubtree, PfxHashmapE, Result, SliceData,
     types::ExceptionCode
 };
 use std::sync::Arc;
@@ -101,7 +101,7 @@ fn dict(
         } else {
             let val = handler(&mut ctx, &mut dict, key)?;
             if how.any(SET | DEL) {
-                ctx.engine.cc.stack.push(dict!(dict));
+                ctx.engine.cc.stack.push(StackItem::dict(&dict));
             }
             match val {
                 None => if how.bit(RET) {
@@ -203,7 +203,7 @@ fn find(
         if let Some((key, value)) = finder(&mut ctx, &dict, how)? {
             if how.bit(DEL) {
                 dict.remove_with_gas(SliceData::from(&key), ctx.engine)?;
-                ctx.engine.cc.stack.push(dict!(dict));
+                ctx.engine.cc.stack.push(StackItem::dict(&dict));
             }
             ctx.engine.cc.stack.push(value);
             let key = write_key(&mut ctx, key, how)?;
@@ -211,7 +211,7 @@ fn find(
             ctx.engine.cc.stack.push(boolean!(true));
         } else {
             if how.bit(DEL) {
-                ctx.engine.cc.stack.push(dict!(dict));
+                ctx.engine.cc.stack.push(StackItem::dict(&dict));
             }
             ctx.engine.cc.stack.push(boolean!(false));
         }
@@ -261,7 +261,7 @@ fn pfxdictset(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
                 }
             }
         };
-        ctx.engine.cc.stack.push(dict!(dict));
+        ctx.engine.cc.stack.push(StackItem::dict(&dict));
         ctx.engine.cc.stack.push(boolean!(key_valid));
         Ok(ctx)
     })
@@ -1276,7 +1276,7 @@ fn subdict(engine: &mut Engine, name: &'static str, keyreader: KeyReader, into: 
         let lbits = ctx.engine.cmd.var(2).as_integer()?.into(0..=nbits)?;
         let key = keyreader(ctx.engine.cmd.var(3), lbits)?;
         into(&mut dict, &key, ctx.engine)?;
-        ctx.engine.cc.stack.push(dict!(dict));
+        ctx.engine.cc.stack.push(StackItem::dict(&dict));
         Ok(ctx)
     })
     .err()
