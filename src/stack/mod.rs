@@ -59,7 +59,7 @@ pub enum StackItem {
     Continuation(Arc<ContinuationData>),
     Integer(Arc<IntegerData>),
     Slice(SliceData),
-    Tuple(Vec<StackItem>)
+    Tuple(Arc<Vec<StackItem>>)
 }
 
 impl StackItem {
@@ -122,7 +122,7 @@ impl StackItem {
 
     /// new stack item as tuple
     pub fn tuple(tuple: Vec<StackItem>) -> Self {
-        StackItem::Tuple(tuple)
+        StackItem::Tuple(Arc::new(tuple))
     }
 
     /// Returns integer not equal to zero
@@ -237,7 +237,9 @@ impl StackItem {
     pub fn as_tuple_mut(&mut self) -> ResultVec<StackItem> {
         self.as_tuple()?;
         match self.withdraw() {
-            StackItem::Tuple(data) => Ok(data),
+            StackItem::Tuple(arc) => {
+                Ok(Arc::try_unwrap(arc).unwrap_or_else(|arc| arc.as_ref().clone()))
+            }
             _ => err!(ExceptionCode::TypeCheckError)
         }
     }
