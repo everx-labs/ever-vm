@@ -1112,9 +1112,9 @@ impl Engine {
         let mut t1 = tuple.first_mut().ok_or(ExceptionCode::RangeCheckError)?.as_tuple_mut()?;
         *t1.get_mut(6).ok_or(ExceptionCode::RangeCheckError)? = StackItem::Integer(Arc::new(rand));
         self.use_gas(Gas::tuple_gas_price(t1.len()));
-        *tuple.first_mut().ok_or(ExceptionCode::RangeCheckError)? = StackItem::Tuple(t1);
+        *tuple.first_mut().ok_or(ExceptionCode::RangeCheckError)? = StackItem::tuple(t1);
         self.use_gas(Gas::tuple_gas_price(tuple.len()));
-        *self.ctrl_mut(7)? = StackItem::Tuple(tuple);
+        *self.ctrl_mut(7)? = StackItem::tuple(tuple);
         Ok(())
     }
 

@@ -305,9 +305,8 @@ pub(super) fn switch(ctx: Ctx, continuation: u16) -> Result<Ctx> {
                 ctx.engine.ctrls.remove(0);
             }
             if drop_c1 {
-                ctx.engine.ctrls.put(1, &mut StackItem::Continuation(Arc::new(
-                    ContinuationData::with_type(ContinuationType::Quit(1))
-                )))?;
+                let cont = ContinuationData::with_type(ContinuationType::Quit(1));
+                ctx.engine.ctrls.put(1, &mut StackItem::continuation(cont))?;
             }
             Ok(ctx)
         })
@@ -337,9 +336,8 @@ pub(super) fn execute_again(engine: &mut Engine) -> Failure {
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
         let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::AgainLoopBody(body))
-        )));
+        let cont = ContinuationData::with_type(ContinuationType::AgainLoopBody(body));
+        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
         Ok(ctx)
     })
     .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) ) // cc.savelist[0] = c[0]
@@ -359,9 +357,8 @@ pub(super) fn execute_again_break(engine: &mut Engine) -> Failure {
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
         let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::AgainLoopBody(body))
-        )));
+        let cont = ContinuationData::with_type(ContinuationType::AgainLoopBody(body));
+        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
         Ok(ctx)
     })
     .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) ) // cc.savelist[0] = c[0]
@@ -381,12 +378,10 @@ pub(super) fn execute_againend(engine: &mut Engine) -> Failure {
     )
     .and_then(|ctx| {
         let body = ctx.engine.cc.code_mut().withdraw();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_code(body.clone())
-        )));
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::AgainLoopBody(body))
-        )));
+        let cont = ContinuationData::with_code(body.clone());
+        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
+        let cont = ContinuationData::with_type(ContinuationType::AgainLoopBody(body));
+        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
         Ok(ctx)
     })
     .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) ) // cc.savelist[0] = c[0]
@@ -404,12 +399,10 @@ pub(super) fn execute_againend_break(engine: &mut Engine) -> Failure {
     )
     .and_then(|ctx| {
         let body = ctx.engine.cc.code_mut().withdraw();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_code(body.clone())
-        )));
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::AgainLoopBody(body))
-        )));
+        let cont = ContinuationData::with_code(body.clone());
+        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
+        let cont = ContinuationData::with_type(ContinuationType::AgainLoopBody(body));
+        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
         Ok(ctx)
     })
     .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) )     // cc.savelist[0] = c[0]
@@ -485,12 +478,10 @@ pub(super) fn execute_booleval(engine: &mut Engine) -> Failure {
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
         ctx.engine.cmd.var(0).as_continuation()?;
-        ctx.engine.cmd.push_var(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::PushInt(-1))
-        )));
-        ctx.engine.cmd.push_var(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::PushInt(0))
-        )));
+        let cont = ContinuationData::with_type(ContinuationType::PushInt(-1));
+        ctx.engine.cmd.push_var(StackItem::continuation(cont));
+        let cont = ContinuationData::with_type(ContinuationType::PushInt(0));
+        ctx.engine.cmd.push_var(StackItem::continuation(cont));
         Ok(ctx)
     })
     .and_then(|ctx| callx(ctx, 0, false))
@@ -996,9 +987,8 @@ pub(super) fn execute_repeat(engine: &mut Engine) -> Failure {
         if counter <= 0 {
             Ok(ctx)
         } else {
-            ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-                ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter))
-            )));
+            let cont = ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter));
+            ctx.engine.cmd.vars.push(StackItem::continuation(cont));
             swap(ctx, savelist!(CC, 0), ctrl!(0)) // cc.savelist[0] = c[0]
             .and_then(|ctx| copy_to_var(ctx, CC))
             .and_then(|ctx| swap(ctx, savelist!(var!(2), 0), var!(3))) // ec_repeat.savelist[0] = cc
@@ -1025,9 +1015,8 @@ pub(super) fn execute_repeat_break(engine: &mut Engine) -> Failure {
         if counter <= 0 {
             Ok(ctx)
         } else {
-            ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-                ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter))
-            )));
+            let cont = ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter));
+            ctx.engine.cmd.vars.push(StackItem::continuation(cont));
             swap(ctx, savelist!(CC, 0), ctrl!(0)) // cc.savelist[0] = c[0]
             .and_then(|ctx| copy_to_var(ctx, CC))
             .and_then(|ctx| copy_to_var(ctx, var!(3)))
@@ -1054,12 +1043,10 @@ pub(super) fn execute_repeatend(engine: &mut Engine) -> Failure {
         if counter <= 0 {
             ret(ctx)
         } else {
-            ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-                ContinuationData::with_code(body.clone())
-            )));
-            ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-                ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter))
-            )));
+            let cont = ContinuationData::with_code(body.clone());
+            ctx.engine.cmd.vars.push(StackItem::continuation(cont));
+            let cont = ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter));
+            ctx.engine.cmd.vars.push(StackItem::continuation(cont));
             swap(ctx, savelist!(var!(2), 0), ctrl!(0))                 // ec_repeat.savelist[0] = c[0]
             .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2))) // body.savelist[0] = ec_repeat
             .and_then(|ctx| switch(ctx, var!(1)))
@@ -1083,12 +1070,10 @@ pub(super) fn execute_repeatend_break(engine: &mut Engine) -> Failure {
         if counter <= 0 {
             ret(ctx)
         } else {
-            ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-                ContinuationData::with_code(body.clone())
-            )));
-            ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-                ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter))
-            )));
+            let cont = ContinuationData::with_code(body.clone());
+            ctx.engine.cmd.vars.push(StackItem::continuation(cont));
+            let cont = ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter));
+            ctx.engine.cmd.vars.push(StackItem::continuation(cont));
             copy_to_var(ctx, ctrl!(0))
             .and_then(|ctx| swap(ctx, savelist!(var!(2), 0), ctrl!(0))) // ec_repeat.savelist[0] = c[0]
             .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)))  // body.savelist[0] = ec_repeat
@@ -1168,9 +1153,8 @@ pub(super) fn execute_retdata(engine: &mut Engine) -> Failure {
         Instruction::new("RETDATA")
     )
     .and_then(|ctx| {
-        ctx.engine.cmd.push_var(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::Quit(ExceptionCode::NormalTermination as i32))
-        )));
+        let cont = ContinuationData::with_type(ContinuationType::Quit(ExceptionCode::NormalTermination as i32));
+        ctx.engine.cmd.push_var(StackItem::continuation(cont));
         swap(ctx, ctrl!(0), var!(0))
     })
     .and_then(|ctx| jmpxdata(ctx))
@@ -1417,9 +1401,8 @@ pub(super) fn execute_until(engine: &mut Engine) -> Failure {
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
         let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::UntilLoopCondition(body))
-        )));
+        let cont = ContinuationData::with_type(ContinuationType::UntilLoopCondition(body));
+        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
         Ok(ctx)
     })
     .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) )     // cc.savelist[0] = c[0]
@@ -1443,9 +1426,8 @@ pub(super) fn execute_until_break(engine: &mut Engine) -> Failure {
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
         let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::UntilLoopCondition(body))
-        )));
+        let cont = ContinuationData::with_type(ContinuationType::UntilLoopCondition(body));
+        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
         Ok(ctx)
     })
     .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) )     // cc.savelist[0] = c[0]
@@ -1468,12 +1450,10 @@ pub(super) fn execute_untilend(engine: &mut Engine) -> Failure {
     )
     .and_then(|ctx| {
         let body = ctx.engine.cc.code_mut().withdraw();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_code(body.clone())
-        )));
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::UntilLoopCondition(body))
-        )));
+        let cont = ContinuationData::with_code(body.clone());
+        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
+        let cont = ContinuationData::with_type(ContinuationType::UntilLoopCondition(body));
+        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
         Ok(ctx)
     })
     .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), ctrl!(0)) ) // ec_until.savelist[0] = c[0]
@@ -1493,12 +1473,10 @@ pub(super) fn execute_untilend_break(engine: &mut Engine) -> Failure {
     )
     .and_then(|ctx| {
         let body = ctx.engine.cc.code_mut().withdraw();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_code(body.clone())
-        )));
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::UntilLoopCondition(body))
-        )));
+        let cont = ContinuationData::with_code(body.clone());
+        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
+        let cont = ContinuationData::with_type(ContinuationType::UntilLoopCondition(body));
+        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
         Ok(ctx)
     })
     .and_then(|ctx| copy_to_var(ctx, ctrl!(0)) )
@@ -1524,9 +1502,8 @@ pub(super) fn execute_while(engine: &mut Engine) -> Failure {
     .and_then(|ctx| {
         let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
         let cond = ctx.engine.cmd.var(1).as_continuation()?.code().clone();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::WhileLoopCondition(body, cond))
-        )));
+        let cont = ContinuationData::with_type(ContinuationType::WhileLoopCondition(body, cond));
+        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
         Ok(ctx)
     })
     .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) )     // cc.savelist[0] = c[0]
@@ -1551,9 +1528,8 @@ pub(super) fn execute_while_break(engine: &mut Engine) -> Failure {
     .and_then(|ctx| {
         let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
         let cond = ctx.engine.cmd.var(1).as_continuation()?.code().clone();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::WhileLoopCondition(cond, body))
-        )));
+        let cont = ContinuationData::with_type(ContinuationType::WhileLoopCondition(cond, body));
+        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
         Ok(ctx)
     })
     .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) )     // cc.savelist[0] = c[0]
@@ -1579,9 +1555,8 @@ pub(super) fn execute_whileend(engine: &mut Engine) -> Failure {
     .and_then(|ctx| {
         let body = ctx.engine.cc.code_mut().withdraw();
         let cond = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::WhileLoopCondition(body, cond))
-        )));
+        let cont = ContinuationData::with_type(ContinuationType::WhileLoopCondition(body, cond));
+        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
         Ok(ctx)
     })
     .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), ctrl!(0)) ) // ec_while.savelist[0] = c[0]
@@ -1604,9 +1579,8 @@ pub(super) fn execute_whileend_break(engine: &mut Engine) -> Failure {
     .and_then(|ctx| {
         let body = ctx.engine.cc.code_mut().withdraw();
         let cond = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        ctx.engine.cmd.vars.push(StackItem::Continuation(Arc::new(
-            ContinuationData::with_type(ContinuationType::WhileLoopCondition(body, cond))
-        )));
+        let cont = ContinuationData::with_type(ContinuationType::WhileLoopCondition(body, cond));
+        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
         Ok(ctx)
     })
     .and_then(|ctx| copy_to_var(ctx, ctrl!(0)))
