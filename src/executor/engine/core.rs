@@ -156,7 +156,14 @@ impl Engine {
         } else {
             Engine::TRACE_NONE
         };
-        let trace_callback: Option<Box<dyn Fn(&Engine, &EngineTraceInfo)>> = if cfg!(feature="fift_check") {
+        let log_enabled = log::log_enabled!(target: "tvm", log::Level::Debug)
+            || log::log_enabled!(target: "tvm", log::Level::Trace)
+            || log::log_enabled!(target: "tvm", log::Level::Info)
+            || log::log_enabled!(target: "tvm", log::Level::Error)
+            || log::log_enabled!(target: "tvm", log::Level::Warn);
+        let trace_callback: Option<Box<dyn Fn(&Engine, &EngineTraceInfo)>> = if !log_enabled {
+            None
+        } else if cfg!(feature="fift_check") {
             Some(Box::new(Self::fift_trace_callback))
         } else {
             Some(Box::new(Self::defaul_trace_callback))
