@@ -56,7 +56,7 @@ impl Default for SmartContractInfo {
             rand_seed: IntegerData::zero(),
             balance_remaining_grams: 0,
             balance_remaining_other: HashmapE::with_bit_len(32),
-            myself: SliceData::new(vec!(0x20)),
+            myself: SliceData::default(),
             config_params: None
         }
     }
