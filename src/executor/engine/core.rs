@@ -263,7 +263,6 @@ impl Engine {
         }
     }
 
-    #[allow(dead_code)]
     fn defaul_trace_callback(&self, info: &EngineTraceInfo) {
         if self.trace_bit(Engine::TRACE_CODE) && info.has_cmd() {
             log::trace!(
@@ -287,6 +286,9 @@ impl Engine {
         }
         if self.trace_bit(Engine::TRACE_CTRLS) {
             log::trace!(target: "tvm", "{}", self.dump_ctrls(true));
+        }
+        if info.info_type == EngineTraceInfoType::Dump {
+            log::info!(target: "tvm", "{}", info.cmd_str);
         }
     }
 
@@ -691,9 +693,14 @@ impl Engine {
     pub(in crate::executor) fn flush(&mut self) {
         if self.debug_on > 0 {
             let buffer = std::mem::replace(&mut self.debug_buffer, String::new());
-            self.trace_info(EngineTraceInfoType::Dump, 0, Some(buffer));
+            if self.trace_callback.is_none() {
+                log::info!(target: "tvm", "{}", buffer);
+            } else {
+                self.trace_info(EngineTraceInfoType::Dump, 0, Some(buffer));
+            }
+        } else {
+            self.debug_buffer = String::new()
         }
-        self.debug_buffer = String::new()
     }
 
     ///Get gas state
