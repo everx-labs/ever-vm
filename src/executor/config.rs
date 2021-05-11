@@ -113,6 +113,11 @@ pub(super) fn execute_my_addr(engine: &mut Engine) -> Failure {
     extract_config(engine, "MYADDR")
 }
 
+// - cell
+pub(super) fn execute_my_code(engine: &mut Engine) -> Failure {
+    extract_config(engine, "MYCODE")
+}
+
 // - x
 pub(super) fn execute_randseed(engine: &mut Engine) -> Failure {
     extract_config(engine, "RANDSEED")
