@@ -257,7 +257,7 @@ pub(super) fn execute_pick(engine: &mut Engine) -> Failure {
 }
 
 // (x ... y - y ...)
-pub(super) fn execute_pop(engine: &mut Engine) -> Failure {
+fn execute_pop_internal(engine: &mut Engine, name: &'static str) -> Failure {
     let cmd = engine.cc.last_cmd();
     let range = if (cmd & 0xF0) == 0x30 {
         0..16
@@ -267,7 +267,7 @@ pub(super) fn execute_pop(engine: &mut Engine) -> Failure {
         return Some(error!("execute_pop cmd: {:X}", cmd))
     };
     engine.load_instruction(
-        Instruction::new("POP").set_opts(InstructionOptions::StackRegister(range))
+        Instruction::new(name).set_opts(InstructionOptions::StackRegister(range))
     )
     .and_then(|ctx| {
         ctx.engine.cc.stack.swap(0, ctx.engine.cmd.sreg())?;
@@ -276,6 +276,19 @@ pub(super) fn execute_pop(engine: &mut Engine) -> Failure {
     })
     .err()
 }
+
+pub(super) fn execute_drop(engine: &mut Engine) -> Failure {
+    execute_pop_internal(engine, "DROP")
+}
+
+pub(super) fn execute_nip(engine: &mut Engine) -> Failure {
+    execute_pop_internal(engine, "NIP")
+}
+
+pub(super) fn execute_pop(engine: &mut Engine) -> Failure {
+    execute_pop_internal(engine, "POP")
+}
+
 
 // (x - ), c[i] = x
 pub(super) fn execute_popctr(engine: &mut Engine) -> Failure {
@@ -342,7 +355,7 @@ pub(super) fn execute_pu2xc(engine: &mut Engine) -> Failure {
 }
 
 // (x ... - x ... x)
-pub(super) fn execute_push(engine: &mut Engine) -> Failure {
+fn execute_push_internal(engine: &mut Engine, name: &'static str) -> Failure {
     let cmd = engine.cc.last_cmd();
     let range = if (cmd & 0xF0) == 0x20 {
         0..16
@@ -352,7 +365,7 @@ pub(super) fn execute_push(engine: &mut Engine) -> Failure {
         return Some(error!("execute_push: cmd {:X}", cmd))
     };
     engine.load_instruction(
-        Instruction::new("PUSH").set_opts(InstructionOptions::StackRegister(range))
+        Instruction::new(name).set_opts(InstructionOptions::StackRegister(range))
     )
     .and_then(|ctx| {
         let ra = ctx.engine.cmd.sreg();
@@ -363,6 +376,18 @@ pub(super) fn execute_push(engine: &mut Engine) -> Failure {
         Ok(ctx)
     })
     .err()
+}
+
+pub(super) fn execute_dup(engine: &mut Engine) -> Failure {
+    execute_push_internal(engine, "DROP")
+}
+
+pub(super) fn execute_over(engine: &mut Engine) -> Failure {
+    execute_push_internal(engine, "OVER")
+}
+
+pub(super) fn execute_push(engine: &mut Engine) -> Failure {
+    execute_push_internal(engine, "PUSH")
 }
 
 // (x ... y ... - x ... y ... x y)
@@ -846,9 +871,9 @@ pub(super) fn execute_xc2pu(engine: &mut Engine) -> Failure {
 }
 
 // (x ... y ... - y ... x ...)
-pub(super) fn execute_xchg(engine: &mut Engine, opts: InstructionOptions) -> Failure {
+pub(super) fn execute_xchg(engine: &mut Engine, name: &'static str, opts: InstructionOptions) -> Failure {
     engine.load_instruction(
-        Instruction::new("XCHG").set_opts(opts)
+        Instruction::new(name).set_opts(opts)
     )
     .and_then(|ctx| {
         let ra = ctx.engine.cmd.sregs().ra;
@@ -859,10 +884,20 @@ pub(super) fn execute_xchg(engine: &mut Engine, opts: InstructionOptions) -> Fai
     .err()
 }
 
+// SWAP 
+pub(super) fn execute_swap(engine: &mut Engine) -> Failure {
+    execute_xchg(
+        engine,
+        "SWAP",
+        InstructionOptions::StackRegisterPair(WhereToGetParams::GetFromLastByte)
+    )
+}
+
 // XCHG addressing via the same instruction byte
 pub(super) fn execute_xchg_simple(engine: &mut Engine) -> Failure {
     execute_xchg(
-        engine, 
+        engine,
+        "XCHG", 
         InstructionOptions::StackRegisterPair(WhereToGetParams::GetFromLastByte)
     )
 }
@@ -871,6 +906,7 @@ pub(super) fn execute_xchg_simple(engine: &mut Engine) -> Failure {
 pub(super) fn execute_xchg_std(engine: &mut Engine) -> Failure {
     execute_xchg(
         engine, 
+        "XCHG", 
         InstructionOptions::StackRegisterPair(WhereToGetParams::GetFromNextByte)
     )
 }
@@ -879,6 +915,7 @@ pub(super) fn execute_xchg_std(engine: &mut Engine) -> Failure {
 pub(super) fn execute_xchg_long(engine: &mut Engine) -> Failure {
     execute_xchg(
         engine,  
+        "XCHG", 
         InstructionOptions::StackRegisterPair(WhereToGetParams::GetFromNextByteLong)
     )
 }

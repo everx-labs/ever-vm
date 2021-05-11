@@ -42,7 +42,8 @@ pub struct SmartContractInfo{
     balance_remaining_grams: u128,
     balance_remaining_other: HashmapE,
     myself: SliceData,
-    config_params: Option<Cell> // config params from masterchain
+    config_params: Option<Cell>, // config params from masterchain
+    mycode: Option<Cell>,
 }
 
 impl Default for SmartContractInfo {
@@ -57,7 +58,8 @@ impl Default for SmartContractInfo {
             balance_remaining_grams: 0,
             balance_remaining_other: HashmapE::with_bit_len(32),
             myself: SliceData::default(),
-            config_params: None
+            config_params: None,
+            mycode: None,
         }
     }
 }
@@ -103,7 +105,11 @@ impl SmartContractInfo{
     }
 
     pub fn set_config_params(&mut self, params: Cell) {
-        self.config_params = Some(params)
+        self.config_params = Some(params);
+    }
+
+    pub fn set_mycode(&mut self, code: Cell) {
+        self.mycode = Some(code);
     }
     /*
             The rand_seed field here is initialized deterministically starting from the
@@ -145,26 +151,28 @@ impl SmartContractInfo{
     }
 
     pub fn into_temp_data(&self) -> StackItem {
-        StackItem::tuple(vec![
+        let mut params = vec![
+            int!(0x076ef1ea),      // magic
+            int!(self.actions),    // actions
+            int!(self.msgs_sent),  // msgs
+            int!(self.unix_time),  // unix time
+            int!(self.block_lt),   // logical time
+            int!(self.trans_lt),   // transaction time
+            StackItem::Integer(Arc::new(self.rand_seed.clone())),
             StackItem::tuple(vec![
-                int!(0x076ef1ea),      // magic
-                int!(self.actions),    // actions
-                int!(self.msgs_sent),  // msgs
-                int!(self.unix_time),  // unix time
-                int!(self.block_lt),   // logical time
-                int!(self.trans_lt),   // transaction time
-                StackItem::Integer(Arc::new(self.rand_seed.clone())),
-                StackItem::tuple(vec![
-                    int!(self.balance_remaining_grams),
-                    self.balance_remaining_other.data()
-                    .map(|dict| StackItem::Cell(dict.clone()))
-                    .unwrap_or_else(|| StackItem::default())
-                    ]),
-                StackItem::Slice(self.myself.clone()),
-                self.config_params.as_ref()
-                    .map(|params| StackItem::Cell(params.clone()))
-                    .unwrap_or_else(|| StackItem::default())
-            ])
-        ])
+                int!(self.balance_remaining_grams),
+                self.balance_remaining_other.data()
+                .map(|dict| StackItem::Cell(dict.clone()))
+                .unwrap_or_else(|| StackItem::default())
+                ]),
+            StackItem::Slice(self.myself.clone()),
+            self.config_params.as_ref()
+                .map(|params| StackItem::Cell(params.clone()))
+                .unwrap_or_else(|| StackItem::default()),
+        ];
+        if let Some(mycode) = self.mycode.clone() {
+            params.push(StackItem::cell(mycode))
+        }
+        StackItem::tuple(vec![StackItem::tuple(params)])
     }
 }

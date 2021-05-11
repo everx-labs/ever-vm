@@ -336,6 +336,15 @@ impl Engine {
     }
 
     pub fn execute(&mut self) -> Result<i32> {
+        // patch for MYCODE
+        let code_cell = StackItem::cell(self.cc.code().cell().clone());
+        if let Ok(c7) = self.ctrl_mut(7) {
+            if c7.as_tuple()?.len() == 9 {
+                let mut new_c7 = c7.as_tuple_mut()?;
+                new_c7.push(code_cell);
+                *c7 = StackItem::tuple(new_c7);
+            }
+        }
         self.trace_info(EngineTraceInfoType::Start, 0, None);
         let result = loop {
             if let Some(result) = self.seek_next_cmd()? {
