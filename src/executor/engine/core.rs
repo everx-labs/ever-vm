@@ -638,17 +638,13 @@ impl Engine {
             self.cc.stack = stack;
         }
         self.gas = gas.unwrap_or(Gas::test());
-        self.ctrls.put(0, &mut StackItem::Continuation(Arc::new(ContinuationData::with_type(
-            ContinuationType::Quit(ExceptionCode::NormalTermination as i32)
-        )))).unwrap();
-        self.ctrls.put(1, &mut StackItem::Continuation(Arc::new(ContinuationData::with_type(
-            ContinuationType::Quit(ExceptionCode::AlternativeTermination as i32)
-        )))).unwrap();
-        self.ctrls.put(3, &mut StackItem::Continuation(Arc::new(
-            ContinuationData::with_code(code)
-        ))).unwrap();
-        self.ctrls.put(4, &mut StackItem::Cell(BuilderData::default().into())).unwrap();
-        self.ctrls.put(5, &mut StackItem::Cell(BuilderData::default().into())).unwrap();
+        let cont = ContinuationType::Quit(ExceptionCode::NormalTermination as i32);
+        self.ctrls.put(0, &mut StackItem::continuation(ContinuationData::with_type(cont))).unwrap();
+        let cont = ContinuationType::Quit(ExceptionCode::AlternativeTermination as i32);
+        self.ctrls.put(1, &mut StackItem::continuation(ContinuationData::with_type(cont))).unwrap();
+        self.ctrls.put(3, &mut StackItem::continuation(ContinuationData::with_code(code))).unwrap();
+        self.ctrls.put(4, &mut StackItem::cell(Cell::default())).unwrap();
+        self.ctrls.put(5, &mut StackItem::cell(Cell::default())).unwrap();
         self.ctrls.put(7, &mut SmartContractInfo::default().into_temp_data()).unwrap();
         if let Some(ref mut ctrls) = ctrls {
             self.apply_savelist(ctrls).unwrap();
