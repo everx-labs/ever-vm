@@ -326,7 +326,7 @@ impl Default for StackItem {
     }
 }
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 impl Clone for StackItem {
     fn clone(&self) -> StackItem {
         match self {
@@ -341,7 +341,7 @@ impl Clone for StackItem {
     }
 }
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 impl fmt::Display for StackItem {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -546,7 +546,7 @@ impl Stack {
         }
     }
 
-    #[cfg_attr(rustfmt, rustfmt_skip)]
+    #[rustfmt::skip]
     pub fn eq_item(x: &StackItem, y: &StackItem) -> bool {
         match x {
             StackItem::Builder(x)      => Stack::eq_builder(&x, y),

@@ -234,7 +234,7 @@ pub(super) struct DivMode {
     pub(super) flags: Bitmask,
 }
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 impl DivMode {
 
     const PRE_MULTIPLICATION: Bitmask                    = 0b10000000;

@@ -110,7 +110,7 @@ impl Info {
             _ => fail!("Info.item {:x}\n", self.flags)
         }
     }
-    #[cfg_attr(rustfmt, rustfmt_skip)]
+    #[rustfmt::skip]
     fn list<'a>(&mut self, ctx: &'a mut Ctx) -> ResultMut<'a, SaveList> {
         match address_tag!(self.flags) {
             CC_SAVELIST => {
