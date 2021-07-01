@@ -139,6 +139,13 @@ impl IntegerData {
         }
     }
 
+    /// constuct
+    pub fn from_unsigned_bytes_be(data: &[u8]) -> Self {
+        Self {
+            value: IntegerValue::Value(Int::from_bytes_be(num::bigint::Sign::Plus, data))
+        }
+    }
+
     /// Compares value with another taking in account behavior of operation.
     #[inline]
     pub fn cmp<T: OperationBehavior>(&self, other: &IntegerData) -> ResultOpt<Ordering> {

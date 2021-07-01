@@ -418,6 +418,7 @@ impl Handlers {
                 .set(0x40, execute_stzeroes)
                 .set(0x41, execute_stones)
                 .set(0x42, execute_stsame)
+                .set(0x43, execute_stcont)
                 .set_range(0x80..0xFF, execute_stsliceconst)
                 .set(0xFF, execute_stsliceconst)
             )
@@ -507,6 +508,7 @@ impl Handlers {
                 .set(0x62, execute_ldsame)
                 .set(0x64, execute_sdepth)
                 .set(0x65, execute_cdepth)
+                .set(0x66, execute_ldcont)
             )
     }
 
@@ -847,6 +849,7 @@ impl Handlers {
                 .set(0x28, execute_my_addr)
                 .set(0x29, execute_config_root)
                 .set(0x2A, execute_my_code)
+                .set(0x2B, execute_init_code_hash)
                 .set(0x30, execute_config_dict)
                 .set(0x32, execute_config_ref_param)
                 .set(0x33, execute_config_opt_param)

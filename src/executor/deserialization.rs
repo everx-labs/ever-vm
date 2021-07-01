@@ -12,13 +12,14 @@
 */
 
 use crate::{
-    error::TvmError, 
+    error::TvmError,
     executor::{
         Mask, engine::{Engine, data::convert, storage::fetch_stack}, 
         microcode::{SLICE, CELL, VAR}, types::{Ctx, InstructionOptions, Instruction}
     },
     stack::{
         StackItem,
+        continuation::ContinuationData,
         integer::{
             IntegerData, 
             serialization::{
@@ -1013,4 +1014,19 @@ pub(crate) fn execute_sdatasize(engine: &mut Engine) -> Failure {
 
 pub(crate) fn execute_sdatasizeq(engine: &mut Engine) -> Failure {
     datasize(engine, "SDATASIZEQ", QUIET)
+}
+
+/// LDCONT (slice - cont slice')
+pub fn execute_ldcont(engine: &mut Engine) -> Failure {
+    engine.load_instruction(Instruction::new("LDCONT"))
+    .and_then(|ctx| fetch_stack(ctx, 1))
+    .and_then(|ctx| {
+        let mut slice = ctx.engine.cmd.var(0).as_slice()?.clone();
+        let (cont, gas) = ContinuationData::deserialize(&mut slice)?;
+        ctx.engine.use_gas(gas);
+        ctx.engine.cc.stack.push_cont(cont);
+        ctx.engine.cc.stack.push(StackItem::Slice(slice));
+        Ok(ctx)
+    })
+    .err()
 }
