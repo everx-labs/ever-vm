@@ -12,11 +12,15 @@
 */
 
 use crate::{
-    error::TvmError, stack::{continuation::ContinuationData, integer::IntegerData},
+    error::TvmError,
+    executor::gas::gas_state::Gas,
+    stack::{continuation::ContinuationData, integer::IntegerData},
     types::{Exception, ResultMut, ResultOpt, ResultRef, ResultVec, Status}
 };
 use std::{fmt, mem, ops::Range, slice::Iter, sync::Arc};
-use ton_types::{BuilderData, Cell, CellType, error, SliceData, Result, ExceptionCode, HashmapType};
+use integer::serialization::{Encoding, IntoSliceExt, SignedIntegerBigEndianEncoding};
+use serialization::Deserializer;
+use ton_types::{BuilderData, Cell, CellType, ExceptionCode, HashmapType, IBitstring, MAX_DATA_BITS, MAX_REFERENCES_COUNT, Result, SliceData, error};
 
 pub mod serialization;
 pub mod savelist;
@@ -60,6 +64,34 @@ pub enum StackItem {
     Integer(Arc<IntegerData>),
     Slice(SliceData),
     Tuple(Arc<Vec<StackItem>>)
+}
+
+fn slice_serialize(slice: &SliceData) -> Result<BuilderData> {
+    let mut builder = BuilderData::new();
+    builder.append_reference_cell(slice.cell().clone());
+    builder.append_bits(slice.pos(), 10)?;
+    builder.append_bits(slice.remaining_bits() + slice.pos(), 10)?;
+    builder.append_bits(slice.get_references().start, 3)?;
+    builder.append_bits(slice.get_references().end, 3)?;
+    Ok(builder)
+}
+
+fn slice_deserialize(slice: &mut SliceData) -> Result<SliceData> {
+    let cell = slice.checked_drain_reference()?;
+    let data_start = slice.get_next_int(10)? as usize;
+    let data_end = slice.get_next_int(10)? as usize;
+    if data_start > MAX_DATA_BITS || data_end > MAX_DATA_BITS || data_start > data_end {
+        return err!(ExceptionCode::FatalError)
+    }
+    let ref_start = slice.get_next_int(3)? as usize;
+    let ref_end = slice.get_next_int(3)? as usize;
+    if ref_start > MAX_REFERENCES_COUNT || ref_end > MAX_REFERENCES_COUNT || ref_start > ref_end {
+        return err!(ExceptionCode::FatalError)
+    }
+    let mut res = SliceData::from(cell);
+    res.shrink_data(data_start..data_end);
+    res.shrink_references(ref_start..ref_end);
+    Ok(res)
 }
 
 impl StackItem {
@@ -316,6 +348,117 @@ impl StackItem {
             } else {
                 format!("[ {} ]", data.iter().map(|v| v.dump_as_fift()).collect::<Vec<_>>().join(" "))
             }
+        }
+    }
+
+    pub fn serialize(&self) -> Result<(BuilderData, i64)> {
+        let mut builder = BuilderData::new();
+        let mut gas = 0;
+        match self {
+            StackItem::None => {
+                builder.append_bits(0x00, 8)?;
+            },
+            StackItem::Integer(data) => {
+                if data.is_nan() {
+                    builder.append_bits(0x02ff, 16)?;
+                } else {
+                    builder.append_bits(0x02, 8)?;
+                    builder.append_bits(0x00, 7)?;
+                    builder.append_builder(&data.into_builder::<SignedIntegerBigEndianEncoding>(257)?)?;
+                }
+            },
+            StackItem::Cell(data) => {
+                builder.append_bits(0x03, 8)?;
+                builder.append_reference_cell(data.clone());
+            },
+            StackItem::Continuation(data) => {
+                builder.append_bits(0x06, 8)?;
+                let (serialized, gas2) = data.serialize()?;
+                gas += gas2;
+                builder.append_builder(&serialized)?;
+            },
+            StackItem::Builder(data) => {
+                builder.append_bits(0x05, 8)?;
+                let cell = data.as_ref().clone().into_cell()?;
+                builder.append_reference_cell(cell);
+                gas += Gas::finalize_price();
+            },
+            StackItem::Slice(data) => {
+                builder.append_bits(0x04, 8)?;
+                builder.append_builder(&slice_serialize(data)?)?;
+            },
+            StackItem::Tuple(data) => {
+                builder.append_bits(0x07, 8)?;
+                let mut tuple = BuilderData::new();
+                tuple.append_bits(data.len(), 8)?;
+                let mut tuple_list = BuilderData::new();
+                for item in data.iter().rev() {
+                    let mut cons = BuilderData::new();
+                    let (serialized, gas2) = item.serialize()?;
+                    gas += gas2;
+                    cons.append_builder(&serialized)?;
+                    cons.append_reference(tuple_list);
+                    gas += Gas::finalize_price();
+                    tuple_list = cons;
+                }
+                tuple.append_builder(&tuple_list)?;
+                builder.append_builder(&tuple)?;
+            }
+        }
+        Ok((builder, gas))
+    }
+
+    pub fn deserialize(slice: &mut SliceData) -> Result<(StackItem, i64)> {
+        let mut gas = 0;
+        match slice.get_next_byte()? {
+            0x00 => Ok((StackItem::None, gas)),
+            0x02 => {
+                match slice.get_next_int(7)? {
+                    0x00 => {
+                        let value = SignedIntegerBigEndianEncoding::new(257).deserialize(slice.get_next_bits(257)?.as_slice());
+                        Ok((StackItem::integer(value), gas))
+                    }
+                    0x7f => {
+                        if slice.get_next_bit()? {
+                            Ok((StackItem::nan(), gas))
+                        } else {
+                            err!(ExceptionCode::UnknownError)
+                        }
+                    }
+                    _ => err!(ExceptionCode::UnknownError)
+                }
+            },
+            0x03 => Ok((StackItem::cell(slice.checked_drain_reference()?), gas)),
+            0x04 => {
+                gas += Gas::load_cell_price(true);
+                Ok((StackItem::slice(slice_deserialize(slice)?), gas))
+            },
+            0x05 => Ok((StackItem::builder(BuilderData::from(slice.checked_drain_reference()?)), gas)),
+            0x06 => {
+                let (cont, gas2) = ContinuationData::deserialize(slice)?;
+                gas += gas2;
+                Ok((StackItem::continuation(cont), gas))
+            },
+            0x07 => {
+                let mut tuple = vec![];
+                let len = slice.get_next_int(8)? as usize;
+                if len > 0 {
+                    let (item, gas2) = StackItem::deserialize(slice)?;
+                    tuple.push(item);
+                    gas += gas2;
+                }
+                let mut cell = slice.checked_drain_reference()?;
+                for _ in 1..len {
+                    let mut slice = SliceData::from(cell);
+                    gas += Gas::load_cell_price(true);
+                    let (item, gas2) = StackItem::deserialize(&mut slice)?;
+                    tuple.push(item);
+                    gas += gas2;
+                    cell = slice.checked_drain_reference()?;
+                }
+                Ok((StackItem::tuple(tuple), gas))
+            },
+            _ => err!(ExceptionCode::UnknownError)
         }
     }
 }

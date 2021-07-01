@@ -11,9 +11,9 @@
 * limitations under the License.
 */
 
-use crate::{error::TvmError, stack::{Stack, StackItem}, types::{Exception, ResultOpt}};
+use crate::{error::TvmError, executor::gas::gas_state::Gas, stack::{Stack, StackItem}, types::{Exception, ResultOpt}};
 use std::{collections::{HashMap, hash_map::IterMut}, fmt};
-use ton_types::{error, types::ExceptionCode};
+use ton_types::{BuilderData, HashmapE, HashmapType, IBitstring, Result, SliceData, error, types::ExceptionCode};
 
 #[derive(Clone, Debug)]
 pub struct SaveList {
@@ -65,6 +65,47 @@ impl SaveList {
     }
     pub fn len(&self) -> usize {
         self.storage.keys().len()
+    }
+    pub fn serialize(&self) -> Result<(BuilderData, i64)> {
+        let mut gas = 0;
+        let mut dict = HashmapE::with_bit_len(4);
+        for (index, item) in self.storage.iter() {
+            let key = BuilderData::new().append_bits(*index, 4)?.into();
+            let (value, gas2) = item.serialize()?;
+            gas += gas2;
+            dict.set_builder(key, &value)?;
+        }
+        let mut builder = BuilderData::new();
+        match dict.data() {
+            Some(cell) => {
+                builder.append_bit_one()?;
+                builder.append_reference_cell(cell.clone());
+                gas += Gas::finalize_price();
+            }
+            None => {
+                builder.append_bit_zero()?;
+            }
+        }
+        Ok((builder, gas))
+    }
+    pub fn deserialize(slice: &mut SliceData) -> Result<(Self, i64)> {
+        let mut gas = 0;
+        match slice.get_next_bit()? {
+            false => Ok((Self::new(), gas)),
+            true => {
+                let dict = HashmapE::with_hashmap(4, slice.checked_drain_reference().ok());
+                gas += Gas::load_cell_price(true);
+                let mut hashmap = HashMap::new();
+                for item in dict.iter() {
+                    let (key, value) = item?;
+                    let key = SliceData::from(key).get_next_int(4)? as usize;
+                    let (value, gas2) = StackItem::deserialize(&mut value.clone())?;
+                    gas += gas2;
+                    hashmap.insert(key, value);
+                }
+                Ok((Self { storage: hashmap }, gas))
+            }
+        }
     }
 }
 

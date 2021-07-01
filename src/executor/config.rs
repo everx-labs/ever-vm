@@ -122,3 +122,8 @@ pub(super) fn execute_my_code(engine: &mut Engine) -> Failure {
 pub(super) fn execute_randseed(engine: &mut Engine) -> Failure {
     extract_config(engine, "RANDSEED")
 }
+
+// - integer | none
+pub(super) fn execute_init_code_hash(engine: &mut Engine) -> Failure {
+    extract_config(engine, "INITCODEHASH")
+}

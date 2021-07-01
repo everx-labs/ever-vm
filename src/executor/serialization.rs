@@ -775,3 +775,16 @@ pub fn execute_sdepth(engine: &mut Engine) -> Failure {
     })
     .err()
 }
+
+/// STCONT (cont b - b')
+pub fn execute_stcont(engine: &mut Engine) -> Failure {
+    engine.load_instruction(Instruction::new("STCONT"))
+    .and_then(|ctx| fetch_stack(ctx, 2))
+    .and_then(|ctx| {
+        ctx.engine.cmd.var(0).as_builder()?;
+        let (cont, gas) = ctx.engine.cmd.var(1).as_continuation()?.serialize()?;
+        ctx.engine.use_gas(gas);
+        store_data(ctx, 0, Ok(cont), false, false)
+    })
+    .err()
+}

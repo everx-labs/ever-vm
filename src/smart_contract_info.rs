@@ -12,11 +12,10 @@
 */
 
 use crate::stack::{
-    StackItem, 
-    integer::{IntegerData, serialization::{Encoding, UnsignedIntegerBigEndianEncoding}},
-    serialization::Deserializer
+    StackItem,
+    integer::IntegerData,
 };
-use sha2::Digest;
+use sha2::{Sha256, Digest};
 use std::sync::Arc;
 use ton_types::{Cell, HashmapE, HashmapType, SliceData, types::UInt256};
 
@@ -43,12 +42,14 @@ pub struct SmartContractInfo{
     balance_remaining_other: HashmapE,
     myself: SliceData,
     config_params: Option<Cell>, // config params from masterchain
-    mycode: Option<Cell>,
+    mycode: Cell,
+    init_code_hash: UInt256,
 }
 
-impl Default for SmartContractInfo {
-    fn default() -> Self{
-        SmartContractInfo{
+impl SmartContractInfo{
+
+    pub fn default() -> Self {
+        SmartContractInfo {
             actions: 0,
             msgs_sent: 0,
             unix_time: 0,
@@ -59,17 +60,16 @@ impl Default for SmartContractInfo {
             balance_remaining_other: HashmapE::with_bit_len(32),
             myself: SliceData::default(),
             config_params: None,
-            mycode: None,
+            mycode: Cell::default(),
+            init_code_hash: UInt256::default(),
         }
     }
-}
 
-impl SmartContractInfo{
-
-    pub fn with_myself(address: SliceData) -> Self{
-        let mut sci = SmartContractInfo::default();
-        sci.myself = address;
-        sci
+    pub fn with_myself(address: SliceData) -> Self {
+        Self {
+            myself: address,
+            ..Self::default()
+        }
     }
 
     pub fn set_actions(&mut self, actions: u16) {
@@ -109,25 +109,20 @@ impl SmartContractInfo{
     }
 
     pub fn set_mycode(&mut self, code: Cell) {
-        self.mycode = Some(code);
+        self.mycode = code;
     }
     /*
             The rand_seed field here is initialized deterministically starting from the
-        rand_seed of the block, the account address, the hash of the inbound message
-        being processed (if any), and the transaction logical time trans_lt.
+        rand_seed of the block, and the account address.
     */
-    pub fn calc_rand_seed(&mut self, rand_seed_block: UInt256, in_msg_hash: UInt256) {
+    pub fn calc_rand_seed(&mut self, rand_seed_block: UInt256, account_address_anycast: &Vec<u8>) {
         // combine all parameters to vec and calculate hash of them
-        let v = self.trans_lt.to_be_bytes();
-        let mut hasher = sha2::Sha256::new();
+        let mut hasher = Sha256::new();
         hasher.input(rand_seed_block.as_slice());
-        hasher.input(self.myself.cell().repr_hash().as_slice());
-        hasher.input(in_msg_hash.as_slice());
-        hasher.input(&v);
+        hasher.input(&account_address_anycast);
 
         let sha256 = hasher.result();
-        self.rand_seed = UnsignedIntegerBigEndianEncoding::new(256)
-            .deserialize(&sha256);
+        self.rand_seed = IntegerData::from_unsigned_bytes_be(&sha256);
     }
 
     pub fn balance_remaining_grams(&self) -> &u128 {
@@ -150,15 +145,19 @@ impl SmartContractInfo{
         &mut self.myself
     }
 
+    pub fn set_init_code_hash(&mut self, init_code_hash: UInt256) {
+        self.init_code_hash = init_code_hash;
+    }
+
     pub fn into_temp_data(&self) -> StackItem {
         let mut params = vec![
-            int!(0x076ef1ea),      // magic
+            int!(0x076ef1ea),      // magic - should be changed because of structure change
             int!(self.actions),    // actions
             int!(self.msgs_sent),  // msgs
             int!(self.unix_time),  // unix time
             int!(self.block_lt),   // logical time
             int!(self.trans_lt),   // transaction time
-            StackItem::Integer(Arc::new(self.rand_seed.clone())),
+            StackItem::int(self.rand_seed.clone()),
             StackItem::tuple(vec![
                 int!(self.balance_remaining_grams),
                 self.balance_remaining_other.data()
@@ -170,9 +169,8 @@ impl SmartContractInfo{
                 .map(|params| StackItem::Cell(params.clone()))
                 .unwrap_or_else(|| StackItem::default()),
         ];
-        if let Some(mycode) = self.mycode.clone() {
-            params.push(StackItem::cell(mycode))
-        }
+        params.push(StackItem::cell(self.mycode.clone()));
+        params.push(StackItem::int(IntegerData::from_unsigned_bytes_be(self.init_code_hash.as_slice())));
         StackItem::tuple(vec![StackItem::tuple(params)])
     }
 }
