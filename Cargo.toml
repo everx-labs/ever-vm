@@ -18,7 +18,7 @@
 edition = "2018"
 build = "build.rs"
 name = "ton_vm"
-version = "1.4.7"
+version = "1.6.7"
 
 [dependencies]
 ton_types = { git = "https://github.com/tonlabs/ton-labs-types.git" }
@@ -28,6 +28,7 @@ ed25519 = "1.0.1"
 ed25519-dalek = "1.0.0"
 failure = "0.1.7"
 hex = "^0.4.0"
+lazy_static = "1.4.0"
 log = "0.4.8"
 num = "^0.2"
 num-traits = "^0.2.8"

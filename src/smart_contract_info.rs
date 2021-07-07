@@ -117,12 +117,18 @@ impl SmartContractInfo{
     */
     pub fn calc_rand_seed(&mut self, rand_seed_block: UInt256, account_address_anycast: &Vec<u8>) {
         // combine all parameters to vec and calculate hash of them
-        let mut hasher = Sha256::new();
-        hasher.input(rand_seed_block.as_slice());
-        hasher.input(&account_address_anycast);
+        if !rand_seed_block.is_zero() {
+            let mut hasher = Sha256::new();
+            hasher.input(rand_seed_block.as_slice());
+            hasher.input(&account_address_anycast);
 
-        let sha256 = hasher.result();
-        self.rand_seed = IntegerData::from_unsigned_bytes_be(&sha256);
+            let sha256 = hasher.result();
+            self.rand_seed = IntegerData::from_unsigned_bytes_be(&sha256);
+        } else {
+            // if the user forgot to set the rand_seed_block value, then this 0 will be clearly visible on tests
+            log::warn!(target: "tvm", "Not set rand_seed_block");
+            self.rand_seed = 0.into();
+        }
     }
 
     pub fn balance_remaining_grams(&self) -> &u128 {

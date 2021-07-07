@@ -137,6 +137,10 @@ impl GasConsumer for Engine {
     }
 }
 
+lazy_static::lazy_static! {
+    static ref HANDLERS_CP0: Handlers = Handlers::new_code_page_0();
+}
+
 impl Engine {
     pub const TRACE_NONE:  u8 = 0x00;
     pub const TRACE_CODE:  u8 = 0x01;
@@ -175,7 +179,7 @@ impl Engine {
             libraries: Vec::new(),
             visited_cells: HashSet::new(),
             cstate: CommittedState::new_empty(),
-            handlers: Handlers::new_code_page_0(),
+            handlers: HANDLERS_CP0.clone(),
             time: 0,
             gas: Gas::empty(),
             code_page: 0,
