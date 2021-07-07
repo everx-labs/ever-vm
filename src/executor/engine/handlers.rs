@@ -68,6 +68,7 @@ enum Handler {
     Subset(usize),
 }
 
+#[derive(Clone)]
 pub struct Handlers {
     directs: [Option<Handler>; 256],
     subsets: Vec<Handlers>,
