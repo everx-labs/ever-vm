@@ -32,7 +32,7 @@ use crate::{
     types::{Exception, Failure}
 };
 use ton_types::{
-    BuilderData, Cell, CellType, error, GasConsumer, Result, SliceData, types::{ExceptionCode, UInt256}
+    Cell, CellType, error, GasConsumer, Result, SliceData, ExceptionCode, UInt256
 };
 use std::{collections::HashSet, sync::Arc};
 
@@ -349,15 +349,13 @@ pub fn execute_plduz(engine: &mut Engine) -> Failure {
         let l = 32 * ctx.engine.cmd.length();
         let slice = ctx.engine.cmd.var(0).as_slice()?.clone();
         let n = slice.remaining_bits();
-        let mut data = slice.clone().get_next_slice(std::cmp::min(n, l))?;
+        let mut data = slice.clone().get_next_slice(std::cmp::min(n, l))?.get_bytestring(0);
         if n < l {
             let r = l - n;
-            let mut builder = BuilderData::from_slice(&data);
-            builder.append_raw(vec![0; 1 + r / 8].as_slice(), r).unwrap();
-            data = builder.into();
+            data.extend_from_slice(&vec![0; r / 8]);
         }
         let encoder = UnsignedIntegerBigEndianEncoding::new(l);
-        let value = encoder.deserialize(&data.get_bytestring(0));
+        let value = encoder.deserialize(&data);
         ctx.engine.cc.stack.push(StackItem::Slice(slice));
         ctx.engine.cc.stack.push(StackItem::Integer(Arc::new(value)));
         Ok(ctx)

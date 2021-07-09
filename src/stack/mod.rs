@@ -397,7 +397,7 @@ impl StackItem {
                     let (serialized, gas2) = item.serialize()?;
                     gas += gas2;
                     cons.append_builder(&serialized)?;
-                    cons.append_reference(tuple_list);
+                    cons.append_reference_cell(tuple_list.into_cell()?);
                     gas += Gas::finalize_price();
                     tuple_list = cons;
                 }

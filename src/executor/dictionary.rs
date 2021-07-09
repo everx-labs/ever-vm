@@ -202,7 +202,7 @@ fn find(
         let mut dict = HashmapE::with_hashmap(nbits, ctx.engine.cmd.var(1).as_dict()?.cloned());
         if let Some((key, value)) = finder(&mut ctx, &dict, how)? {
             if how.bit(DEL) {
-                dict.remove_with_gas(SliceData::from(&key), ctx.engine)?;
+                dict.remove_with_gas(key.clone().into_cell()?.into(), ctx.engine)?;
                 ctx.engine.cc.stack.push(StackItem::dict(&dict));
             }
             ctx.engine.cc.stack.push(value);

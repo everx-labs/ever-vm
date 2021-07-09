@@ -126,7 +126,9 @@ impl CommittedState {
 impl GasConsumer for Engine {
     fn finalize_cell(&mut self, builder: BuilderData) -> Result<Cell> {
         self.use_gas(Gas::finalize_price());
-        builder.into_cell()
+        builder
+            .finalize(1024)
+            .map_err(|err| exception!(ExceptionCode::CellOverflow, "too deep cell creation: {}", err))
     }
     fn load_cell(&mut self, cell: Cell) -> Result<SliceData> {
         self.load_hashed_cell(cell, true)
