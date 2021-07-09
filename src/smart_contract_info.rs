@@ -155,7 +155,7 @@ impl SmartContractInfo{
         self.init_code_hash = init_code_hash;
     }
 
-    pub fn into_temp_data(&self) -> StackItem {
+    pub fn into_temp_data(self) -> StackItem {
         let mut params = vec![
             int!(0x076ef1ea),      // magic - should be changed because of structure change
             int!(self.actions),    // actions

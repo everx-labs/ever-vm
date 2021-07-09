@@ -285,15 +285,15 @@ fn store_br(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     .and_then(|ctx| {
         let x;
         let b = if how.bit(INV) {
-            x = ctx.engine.cmd.var(0).as_builder()?;
+            x = ctx.engine.cmd.var_mut(0).as_builder_mut()?;
             ctx.engine.cmd.var(1).as_builder()?;
             1
         } else {
             ctx.engine.cmd.var(0).as_builder()?;
-            x = ctx.engine.cmd.var(1).as_builder()?;
+            x = ctx.engine.cmd.var_mut(1).as_builder_mut()?;
             0
         };
-        let x = BuilderData::with_raw_and_refs(vec![], 0, vec![x.into()])
+        let x = BuilderData::with_raw_and_refs(vec![], 0, vec![x.into_cell()?])
             .map_err(|err| err.into());
         store_data(ctx, b, x, how.bit(QUIET), true)
     })

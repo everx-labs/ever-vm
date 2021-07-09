@@ -144,7 +144,7 @@ impl ContinuationData {
         match &self.type_of {
             ContinuationType::AgainLoopBody(body) => {
                 builder.append_bits(0xd, 4)?;
-                builder.append_reference(slice_serialize(body)?);
+                builder.append_reference_cell(slice_serialize(body)?.into_cell()?);
             }
             ContinuationType::TryCatch => {
                 builder.append_bits(0x9, 4)?;
@@ -162,17 +162,17 @@ impl ContinuationData {
             }
             ContinuationType::RepeatLoopBody(code, counter) => {
                 builder.append_bits(0xe, 4)?;
-                builder.append_reference(slice_serialize(code)?);
+                builder.append_reference_cell(slice_serialize(code)?.into_cell()?);
                 builder.append_bits(*counter as usize, 32)?;
             }
             ContinuationType::UntilLoopCondition(body) => {
                 builder.append_bits(0xa, 4)?;
-                builder.append_reference(slice_serialize(body)?);
+                builder.append_reference_cell(slice_serialize(body)?.into_cell()?);
             }
             ContinuationType::WhileLoopCondition(body, cond) => {
                 builder.append_bits(0xc, 4)?;
-                builder.append_reference(slice_serialize(cond)?);
-                builder.append_reference(slice_serialize(body)?);
+                builder.append_reference_cell(slice_serialize(cond)?.into_cell()?);
+                builder.append_reference_cell(slice_serialize(body)?.into_cell()?);
             }
         }
 
@@ -184,7 +184,7 @@ impl ContinuationData {
             let (serialized, gas2) = item.serialize()?;
             gas += gas2;
             cons.append_builder(&serialized)?;
-            cons.append_reference(stack_list);
+            cons.append_reference_cell(stack_list.into_cell()?);
             gas += Gas::finalize_price();
             stack_list = cons;
         }

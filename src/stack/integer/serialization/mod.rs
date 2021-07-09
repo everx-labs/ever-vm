@@ -44,7 +44,7 @@ pub trait IntoSliceExt {
 
 impl IntoSliceExt for IntegerData {
     fn into_slice<T: Encoding>(&self, bits: usize) -> Result<SliceData> {
-        self.into_builder::<T>(bits).map(|builder| builder.into())
+        Ok(self.into_builder::<T>(bits)?.into_cell()?.into())
     }
 
     fn into_builder<T: Encoding>(&self, bits: usize) -> Result<BuilderData> {

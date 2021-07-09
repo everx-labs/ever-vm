@@ -70,7 +70,9 @@ impl SaveList {
         let mut gas = 0;
         let mut dict = HashmapE::with_bit_len(4);
         for (index, item) in self.storage.iter() {
-            let key = BuilderData::new().append_bits(*index, 4)?.into();
+            let mut builder = BuilderData::new();
+            builder.append_bits(*index, 4)?;
+            let key = builder.into_cell()?.into();
             let (value, gas2) = item.serialize()?;
             gas += gas2;
             dict.set_builder(key, &value)?;
@@ -98,7 +100,7 @@ impl SaveList {
                 let mut hashmap = HashMap::new();
                 for item in dict.iter() {
                     let (key, value) = item?;
-                    let key = SliceData::from(key).get_next_int(4)? as usize;
+                    let key = SliceData::from(key.into_cell()?).get_next_int(4)? as usize;
                     let (value, gas2) = StackItem::deserialize(&mut value.clone())?;
                     gas += gas2;
                     hashmap.insert(key, value);
