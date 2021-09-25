@@ -13,7 +13,7 @@
 
 use crate::{error::TvmError, types::Exception};
 use std::{cmp::{max, min}};
-use ton_types::{error, fail, Result, types::ExceptionCode};
+use ton_types::{error, Result, types::ExceptionCode};
 
 // Application-specific primitives - A.10; Gas-related primitives - A.10.2
 // Specification limit value - pow(2,63)-1
@@ -52,9 +52,9 @@ impl Gas {
             gas_price: 0,
             gas_base: 0,
         }
-    }    
+    }
     /// Instanse for debug and test. Cheat fields
-    pub fn test() -> Gas {
+    pub const fn test() -> Gas {
         Gas {
             gas_price: 10,
             gas_limit: 1000000000,
@@ -78,11 +78,11 @@ impl Gas {
     pub fn new(gas_limit: i64, gas_credit: i64, gas_limit_max: i64, gas_price: i64) -> Gas {
         let remaining = gas_limit + gas_credit;
         Gas {
-            gas_price: gas_price,
-            gas_limit: gas_limit,
-            gas_limit_max: gas_limit_max,
+            gas_price,
+            gas_limit,
+            gas_limit_max,
             gas_remaining: remaining,
-            gas_credit: gas_credit,
+            gas_credit,
             gas_base: remaining,
         }
     }
@@ -174,36 +174,30 @@ impl Gas {
         if self.gas_remaining >= 0 {
             Ok(None)
         } else {
-            let exception = Exception::from_code_and_value(
-                ExceptionCode::OutOfGas,
-                (self.gas_base - self.gas_remaining) as i32,
-                file!(),
-                line!()
-            );
-            fail!(TvmError::TvmExceptionFull(exception, String::new()))
+            Err(exception!(ExceptionCode::OutOfGas, self.gas_base - self.gas_remaining, ""))
         }
     }
     // *** Getters ***
     pub fn get_gas_price(&self) -> i64 {
         self.gas_price
     }
-    
+
     pub fn get_gas_limit(&self) -> i64 {
         self.gas_limit
     }
-    
+
     pub fn get_gas_limit_max(&self) -> i64 {
         self.gas_limit_max
     }
-    
+
     pub fn get_gas_remaining(&self) -> i64 {
         self.gas_remaining
     }
-    
+
     pub fn get_gas_credit(&self) -> i64 {
         self.gas_credit
     }
-    
+
     pub fn get_gas_used_full(&self) -> i64 {
         self.gas_base - self.gas_remaining
     }

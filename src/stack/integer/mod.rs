@@ -12,8 +12,14 @@
 * limitations under the License.
 */
 
-use crate::{stack::integer::behavior::OperationBehavior, types::ResultOpt};
-use ton_types::Result;
+use crate::{
+    stack::integer::{
+        behavior::{OperationBehavior, Quiet, Signaling},
+        serialization::Encoding,
+    },
+    types::ResultOpt
+};
+use ton_types::{Result, BuilderData, SliceData};
 
 use core::mem;
 use num_traits::{One, Signed, Zero};
@@ -43,19 +49,15 @@ impl cmp::PartialOrd for IntegerValue {
     }
 }
 
-impl IntegerValue {
-    #[inline]
-    pub fn unwrap(&self) -> &Int {
-        match self {
-            IntegerValue::Value(ref x) => x,
-            _ => panic!("Not a number!")
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IntegerData {
     value: IntegerValue
+}
+
+impl Default for IntegerData {
+    fn default() -> Self {
+        IntegerData::zero()
+    }
 }
 
 impl IntegerData {
@@ -103,6 +105,14 @@ impl IntegerData {
         }
     }
 
+    /// Constructs mask for bits
+    /// it must be refactored to simplify
+    pub fn mask(bits: usize) -> Self {
+        IntegerData::one()
+            .shl::<Quiet>(bits).unwrap()
+            .sub::<Quiet>(&IntegerData::one()).unwrap()
+    }
+
     /// Clears value (sets to 0).
     #[inline]
     pub fn withdraw(&mut self) -> IntegerData {
@@ -140,21 +150,22 @@ impl IntegerData {
     }
 
     /// constuct
-    pub fn from_unsigned_bytes_be(data: &[u8]) -> Self {
+    pub fn from_unsigned_bytes_be(data: impl AsRef<[u8]>) -> Self {
         Self {
-            value: IntegerValue::Value(Int::from_bytes_be(num::bigint::Sign::Plus, data))
+            value: IntegerValue::Value(Int::from_bytes_be(num::bigint::Sign::Plus, data.as_ref()))
         }
     }
 
     /// Compares value with another taking in account behavior of operation.
     #[inline]
-    pub fn cmp<T: OperationBehavior>(&self, other: &IntegerData) -> ResultOpt<Ordering> {
-        if self.is_nan() || other.is_nan() {
-            on_nan_parameter!(T)?;
-            return Ok(None);
+    pub(crate) fn compare<T: OperationBehavior>(&self, other: &IntegerData) -> ResultOpt<Ordering> {
+        match (&self.value, &other.value) {
+            (IntegerValue::Value(l), IntegerValue::Value(r)) => Ok(Some(l.cmp(r))),
+            _ => {
+                on_nan_parameter!(T)?;
+                Ok(None)
+            }
         }
-
-        Ok(Some(self.value.unwrap().cmp(other.value.unwrap())))
     }
 
     /// Returns true if signed value fits into a given bits size; otherwise false.
@@ -172,7 +183,7 @@ impl IntegerData {
     /// Determines a fewest bits necessary to express signed value.
     #[inline]
     pub fn bitsize(&self) -> usize {
-        utils::process_value(&self, |value| {
+        utils::process_value(self, |value| {
             utils::bitsize(value)
         })
     }
@@ -180,10 +191,24 @@ impl IntegerData {
     /// Determines a fewest bits necessary to express unsigned value.
     #[inline]
     pub fn ubitsize(&self) -> usize {
-        utils::process_value(&self, |value| {
+        utils::process_value(self, |value| {
             debug_assert!(!value.is_negative());
-            value.bits()
+            value.bits() as usize
         })
+    }
+
+    pub fn as_slice<T: Encoding>(&self, bits: usize) -> Result<SliceData> {
+        Ok(self.as_builder::<T>(bits)?.into_cell()?.into())
+    }
+
+    pub fn as_builder<T: Encoding>(&self, bits: usize) -> Result<BuilderData> {
+        if self.is_nan() {
+            Signaling::on_nan_parameter(file!(), line!())?;
+        }
+        T::new(bits).try_serialize(self)
+    }
+    pub fn as_unsigned_bytes_be(&self) -> Result<Vec<u8>> {
+        unimplemented!()
     }
 }
 
@@ -233,7 +258,7 @@ pub mod utils {
         result_processor: FRes
     ) -> Result<R>
     where
-        T: behavior::OperationBehavior,
+        T: OperationBehavior,
         F: Fn(&Int) -> RInt,
         FNaN: Fn() -> R,
         FRes: Fn(RInt, FNaN) -> Result<R>,
@@ -253,7 +278,7 @@ pub mod utils {
         result_processor: FRes
     ) -> Result<R>
     where
-        T: behavior::OperationBehavior,
+        T: OperationBehavior,
         F: Fn(&Int, &Int) -> RInt,
         FNaN: Fn() -> R,
         FRes: Fn(RInt, FNaN) -> Result<R>,
@@ -267,7 +292,7 @@ pub mod utils {
     #[inline]
     pub fn process_single_result<T, FNaN>(result: Int, nan_constructor: FNaN) -> Result<IntegerData>
     where
-        T: behavior::OperationBehavior,
+        T: OperationBehavior,
         FNaN: Fn() -> IntegerData,
     {
         IntegerData::from(result).or_else(|_| {
@@ -280,7 +305,7 @@ pub mod utils {
     pub fn process_double_result<T, FNaN>(result: (Int, Int), nan_constructor: FNaN)
         -> Result<(IntegerData, IntegerData)>
     where
-        T: behavior::OperationBehavior,
+        T: OperationBehavior,
         FNaN: Fn() -> (IntegerData, IntegerData),
     {
         let (r1, r2) = result;
@@ -311,19 +336,19 @@ pub mod utils {
 
     #[inline]
     pub fn bitsize(value: &Int) -> usize {
-        if value.is_zero() || 
+        if value.is_zero() ||
            (value == &Int::from_biguint(num::bigint::Sign::Minus, num::BigUint::one())) {
-            return 1;
+            return 1
         }
-        let res = value.bits();
+        let res = value.bits() as usize;
         if value.is_positive() {
-            return res + 1;
+            return res + 1
         }
         // For negative values value.bits() returns correct result only when value is power of 2.
         let mut modpow2 = value.abs();
         modpow2 &= &modpow2 - 1;
         if modpow2.is_zero() {
-            return res;
+            return res
         }
         res + 1
     }
@@ -351,7 +376,6 @@ pub mod conversion;
 pub mod serialization;
 pub mod math;
 pub mod bitlogics;
-pub mod traits;
 
 
 

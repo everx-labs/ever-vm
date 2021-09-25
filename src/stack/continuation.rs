@@ -92,8 +92,8 @@ impl ContinuationData {
                 // TODO: combine error! and err!
                 // panic!("n >= 8 is expected, actual value: {}", self.code.remaining_bits());
                 log::error!(
-                    target: "tvm", 
-                    "remaining bits expected >= 8, but actual value is: {}\n", 
+                    target: "tvm",
+                    "remaining bits expected >= 8, but actual value is: {}\n",
                     self.code.remaining_bits()
                 );
                 err!(ExceptionCode::InvalidOpcode)
@@ -132,7 +132,7 @@ impl ContinuationData {
     pub fn undrain_reference(&mut self) {
         self.code.undrain_reference();
     }
-    
+
     pub fn drain_reference(&mut self) -> Result<Cell> {
         self.code.checked_drain_reference()
             .map_err(|_| exception!(ExceptionCode::InvalidOpcode))
@@ -303,10 +303,11 @@ impl fmt::Display for ContinuationData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{{\n    {}\n    nargs: {}\n    stack: ", self.code, self.nargs)?;
         if self.stack.depth() == 0 {
-            write!(f, "empty\n")?;
+            writeln!(f, "empty")?;
         } else {
             for x in self.stack.storage.iter() {
-                write!(f, "\n        {}", x)?;
+                writeln!(f)?;
+                write!(f, "        {}", x)?;
             }
         }
         write!(f, "}}")

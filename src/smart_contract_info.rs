@@ -115,14 +115,14 @@ impl SmartContractInfo{
             The rand_seed field here is initialized deterministically starting from the
         rand_seed of the block, and the account address.
     */
-    pub fn calc_rand_seed(&mut self, rand_seed_block: UInt256, account_address_anycast: &Vec<u8>) {
+    pub fn calc_rand_seed(&mut self, rand_seed_block: UInt256, account_address_anycast: &[u8]) {
         // combine all parameters to vec and calculate hash of them
         if !rand_seed_block.is_zero() {
             let mut hasher = Sha256::new();
-            hasher.input(rand_seed_block.as_slice());
-            hasher.input(&account_address_anycast);
+            hasher.update(&rand_seed_block);
+            hasher.update(&account_address_anycast);
 
-            let sha256 = hasher.result();
+            let sha256 = hasher.finalize();
             self.rand_seed = IntegerData::from_unsigned_bytes_be(&sha256);
         } else {
             // if the user forgot to set the rand_seed_block value, then this 0 will be clearly visible on tests
@@ -168,12 +168,12 @@ impl SmartContractInfo{
                 int!(self.balance_remaining_grams),
                 self.balance_remaining_other.data()
                 .map(|dict| StackItem::Cell(dict.clone()))
-                .unwrap_or_else(|| StackItem::default())
+                .unwrap_or_else(StackItem::default)
                 ]),
             StackItem::Slice(self.myself.clone()),
             self.config_params.as_ref()
                 .map(|params| StackItem::Cell(params.clone()))
-                .unwrap_or_else(|| StackItem::default()),
+                .unwrap_or_else(StackItem::default),
         ];
         params.push(StackItem::cell(self.mycode.clone()));
         params.push(StackItem::int(IntegerData::from_unsigned_bytes_be(self.init_code_hash.as_slice())));

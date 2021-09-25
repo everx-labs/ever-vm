@@ -18,22 +18,22 @@
 edition = "2018"
 build = "build.rs"
 name = "ton_vm"
-version = "1.8.8"
+version = "1.8.17"
 
 [dependencies]
 ton_types = { git = "https://github.com/tonlabs/ton-labs-types.git" }
 
 # External
-ed25519 = "1.0.1"
-ed25519-dalek = "1.0.0"
-failure = "0.1.7"
-hex = "^0.4.0"
-lazy_static = "1.4.0"
-log = "0.4.8"
-num = "^0.2"
-num-traits = "^0.2.8"
-rand = "0.7.2"
-sha2 = "^0.8"
+ed25519 = "1.2"
+ed25519-dalek = "1.0"
+failure = "0.1"
+hex = "0.4"
+lazy_static = "1.4"
+log = "0.4"
+num = "0.4"
+num-traits = "0.2"
+rand = "0.7"
+sha2 = "0.9"
 
 
 ton_labs_assembler = { git = "https://github.com/tonlabs/ton-labs-assembler.git" }

@@ -13,17 +13,17 @@
 
 use crate::{
     executor::{
-        Mask, engine::{Engine, storage::fetch_stack}, gas::gas_state::Gas, 
+        Mask, engine::{Engine, storage::fetch_stack}, gas::gas_state::Gas,
         types::{Instruction, InstructionOptions}
     },
-    stack::StackItem, types::Failure
+    stack::StackItem, types::Status
 };
 
 const STACK: u8 = 0x02;
 const CMD:   u8 = 0x04;
 const SET:   u8 = 0x10;
 
-fn execute_setget_globalvar(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
+fn execute_setget_globalvar(engine: &mut Engine, name: &'static str, how: u8) -> Status {
     let mut inst = Instruction::new(name);
     let mut params = 0;
     if how.bit(CMD) {
@@ -35,59 +35,56 @@ fn execute_setget_globalvar(engine: &mut Engine, name: &'static str, how: u8) ->
     if how.bit(SET) {
         params += 1;
     }
-    engine.load_instruction(inst)
-    .and_then(|ctx| fetch_stack(ctx, params))
-    .and_then(|ctx| {
-        let k = if how.bit(STACK) {
-            ctx.engine.cmd.var(0).as_integer()?.into(0..=254)?
+    engine.load_instruction(inst)?;
+    fetch_stack(engine, params)?;
+    let k = if how.bit(STACK) {
+        engine.cmd.var(0).as_integer()?.into(0..=254)?
+    } else {
+        engine.cmd.length()
+    };
+    if how.bit(SET) {
+        let mut c7 = engine.ctrl_mut(7)?.as_tuple_mut()?;
+        let x = engine.cmd.var_mut(params - 1).withdraw();
+        let len = if k < c7.len() {
+            c7[k] = x;
+            c7.len()
+        } else if !x.is_null() {
+            c7.resize(k, StackItem::None);
+            c7.push(x);
+            c7.len()
         } else {
-            ctx.engine.cmd.length()
+            0
         };
-        if how.bit(SET) {
-            let mut c7 = ctx.engine.ctrl_mut(7)?.as_tuple_mut()?;
-            let x = ctx.engine.cmd.var_mut(params - 1).withdraw();
-            let len = if k < c7.len() {
-                c7[k] = x;
-                c7.len()
-            } else if !x.is_null() {
-                c7.resize(k, StackItem::None);
-                c7.push(x);
-                c7.len()
-            } else {
-                0
-            };
-            ctx.engine.use_gas(Gas::tuple_gas_price(len));
-            ctx.engine.ctrls.put(7, &mut StackItem::tuple(c7))?;
-        } else {
-            let c7 = ctx.engine.ctrl(7)?.as_tuple()?;
-            let x = c7.get(k).map(|value| value.clone()).unwrap_or_else(|| StackItem::default());
-            ctx.engine.cc.stack.push(x);
-        }
-        Ok(ctx)
-    })
-    .err()
+        engine.use_gas(Gas::tuple_gas_price(len));
+        engine.ctrls.put(7, &mut StackItem::tuple(c7))?;
+    } else {
+        let c7 = engine.ctrl(7)?.as_tuple()?;
+        let x = c7.get(k).cloned().unwrap_or_else(StackItem::default);
+        engine.cc.stack.push(x);
+    }
+    Ok(())
 }
 
-// GETGLOBVAR (k–x), returns the k-th global variable for 0 ≤ k < 255. 
+// GETGLOBVAR (k–x), returns the k-th global variable for 0 ≤ k < 255.
 // Equivalent to PUSH c7; SWAP; INDEXVARQ
-pub(super) fn execute_getglobvar(engine: &mut Engine) -> Failure {
+pub(super) fn execute_getglobvar(engine: &mut Engine) -> Status {
     execute_setget_globalvar(engine, "GETGLOBVAR", STACK)
 }
 
 // GETGLOB k( –x), returns the k-th global variable for 1 ≤ k ≤ 31
 // Equivalent to PUSH c7; INDEXQ k.
-pub(super) fn execute_getglob(engine: &mut Engine) -> Failure {
+pub(super) fn execute_getglob(engine: &mut Engine) -> Status {
     execute_setget_globalvar(engine, "GETGLOB", CMD)
 }
 
 // SETGLOBVAR (x k– ), assigns x to the k-th global variable for 0 ≤ k <255.
 // Equivalent to PUSH c7; ROTREV; SETINDEXVARQ; POP c7.
-pub(super) fn execute_setglobvar(engine: &mut Engine) -> Failure {
+pub(super) fn execute_setglobvar(engine: &mut Engine) -> Status {
     execute_setget_globalvar(engine, "SETGLOBVAR", SET | STACK)
 }
 
 // SETGLOB k (x– ), assigns x to the k-th global variable for 1 ≤ k ≤ 31.
 // Equivalent to PUSH c7; SWAP; SETINDEXQ k; POP c7
-pub(super) fn execute_setglob(engine: &mut Engine) -> Failure {
+pub(super) fn execute_setglob(engine: &mut Engine) -> Status {
     execute_setget_globalvar(engine, "SETGLOB", SET | CMD)
 }

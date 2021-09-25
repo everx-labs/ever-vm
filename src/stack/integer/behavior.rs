@@ -50,7 +50,7 @@ impl OperationBehavior for Signaling {
     fn quiet() -> bool {
         false
     }
-    fn name_prefix() -> Option<&'static str> { 
+    fn name_prefix() -> Option<&'static str> {
         None
     }
     fn on_integer_overflow(file: &'static str, line: u32) -> Status {
@@ -68,7 +68,7 @@ impl OperationBehavior for Quiet {
     fn quiet() -> bool {
         true
     }
-    fn name_prefix() -> Option<&'static str> { 
+    fn name_prefix() -> Option<&'static str> {
         Some("Q")
     }
     fn on_integer_overflow(_: &'static str, _: u32) -> Status {

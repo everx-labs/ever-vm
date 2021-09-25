@@ -12,7 +12,7 @@
 */
 
 use crate::stack::{
-    BuilderData, 
+    BuilderData,
     integer::{IntegerData, serialization::{Encoding, common::extend_buffer_le}},
     serialization::{Serializer, Deserializer}
 };

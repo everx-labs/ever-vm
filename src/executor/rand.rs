@@ -14,84 +14,69 @@
 use crate::{
     executor::{engine::{Engine, storage::fetch_stack}, types::Instruction},
     stack::{
-        StackItem, 
+        StackItem,
         integer::{
             IntegerData,
-            serialization::{Encoding, IntoSliceExt, UnsignedIntegerBigEndianEncoding}
+            behavior::Signaling,
+            serialization::{Encoding, UnsignedIntegerBigEndianEncoding}
         },
         serialization::Deserializer
     },
-    types::Failure
+    types::Status
 };
 use sha2::Digest;
 use std::sync::Arc;
 
 // (x - )
-pub(crate) fn execute_addrand(engine: &mut Engine) -> Failure {
-    engine.load_instruction(Instruction::new("ADDRAND"))
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let mut hasher = sha2::Sha256::new();
-        hasher.input(ctx.engine.rand()?
-            .into_builder::<UnsignedIntegerBigEndianEncoding>(256)?.data());
-        hasher.input(ctx.engine.cmd.var(0).as_integer()?
-            .into_builder::<UnsignedIntegerBigEndianEncoding>(256)?.data());
-        let sha256 = hasher.result();
-        ctx.engine.set_rand(UnsignedIntegerBigEndianEncoding::new(256)
-            .deserialize(&sha256))?;
-        Ok(ctx)
-    })
-    .err()
+pub(crate) fn execute_addrand(engine: &mut Engine) -> Status {
+    engine.load_instruction(Instruction::new("ADDRAND"))?;
+    fetch_stack(engine, 1)?;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(engine.rand()?
+        .as_builder::<UnsignedIntegerBigEndianEncoding>(256)?.data());
+    hasher.update(engine.cmd.var(0).as_integer()?
+        .as_builder::<UnsignedIntegerBigEndianEncoding>(256)?.data());
+    let sha256 = hasher.finalize();
+    engine.set_rand(UnsignedIntegerBigEndianEncoding::new(256)
+        .deserialize(&sha256))?;
+    Ok(())
 }
 
 // (y - z)
-pub(crate) fn execute_rand(engine: &mut Engine) -> Failure {
-    engine.load_instruction(Instruction::new("RAND"))
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let mut hasher = sha2::Sha512::new();
-        hasher.input(ctx.engine.rand()?
-            .into_builder::<UnsignedIntegerBigEndianEncoding>(256)?.data());
-        let sha512 = hasher.result();
-        let rand = ctx.engine.cmd.var(0).as_integer()?.take_value_of(|value|
-            Some(
-                num::BigInt::from_bytes_be(
-                    num::bigint::Sign::Plus, &sha512[32..]) * value >> 256
-                )
-            )?;
-            ctx.engine.cc.stack.push(StackItem::Integer(Arc::new(IntegerData::from(rand)?)));
-        ctx.engine.set_rand(UnsignedIntegerBigEndianEncoding::new(256)
-            .deserialize(&sha512[..32]))?;
-        Ok(ctx)
-    })
-    .err()
+pub(crate) fn execute_rand(engine: &mut Engine) -> Status {
+    engine.load_instruction(Instruction::new("RAND"))?;
+    fetch_stack(engine, 1)?;
+    let mut hasher = sha2::Sha512::new();
+    hasher.update(engine.rand()?
+        .as_builder::<UnsignedIntegerBigEndianEncoding>(256)?.data());
+    let sha512 = hasher.finalize();
+    let value = IntegerData::from_unsigned_bytes_be(&sha512[32..]);
+    let rand = value.mul_shr256::<Signaling>(engine.cmd.var(0).as_integer()?)?;
+    engine.cc.stack.push(StackItem::integer(rand));
+    engine.set_rand(UnsignedIntegerBigEndianEncoding::new(256)
+        .deserialize(&sha512[..32]))?;
+    Ok(())
 }
 
 // ( - x)
-pub(crate) fn execute_randu256(engine: &mut Engine) -> Failure {
-    engine.load_instruction(Instruction::new("RANDU256"))
-    .and_then(|ctx| {
-        let mut hasher = sha2::Sha512::new();
-        hasher.input(ctx.engine.rand()?
-            .into_builder::<UnsignedIntegerBigEndianEncoding>(256)?.data());
-        let sha512 = hasher.result();
-        ctx.engine.set_rand(UnsignedIntegerBigEndianEncoding::new(256)
-            .deserialize(&sha512[..32]))?;
-        ctx.engine.cc.stack.push(StackItem::Integer(Arc::new(UnsignedIntegerBigEndianEncoding::new(256)
-            .deserialize(&sha512[32..]))));
-        Ok(ctx)
-    })
-    .err()
+pub(crate) fn execute_randu256(engine: &mut Engine) -> Status {
+    engine.load_instruction(Instruction::new("RANDU256"))?;
+    let mut hasher = sha2::Sha512::new();
+    hasher.update(engine.rand()?
+        .as_builder::<UnsignedIntegerBigEndianEncoding>(256)?.data());
+    let sha512 = hasher.finalize();
+    engine.set_rand(UnsignedIntegerBigEndianEncoding::new(256)
+        .deserialize(&sha512[..32]))?;
+    engine.cc.stack.push(StackItem::Integer(Arc::new(UnsignedIntegerBigEndianEncoding::new(256)
+        .deserialize(&sha512[32..]))));
+    Ok(())
 }
 
 // (x - )
-pub(crate) fn execute_setrand(engine: &mut Engine) -> Failure {
-    engine.load_instruction(Instruction::new("SETRAND"))
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let rand = ctx.engine.cmd.var_mut(0).as_integer_mut()?;
-        ctx.engine.set_rand(rand)?;
-        Ok(ctx)
-    })
-    .err()
+pub(crate) fn execute_setrand(engine: &mut Engine) -> Status {
+    engine.load_instruction(Instruction::new("SETRAND"))?;
+    fetch_stack(engine, 1)?;
+    let rand = engine.cmd.var_mut(0).as_integer_mut()?;
+    engine.set_rand(rand)?;
+    Ok(())
 }
