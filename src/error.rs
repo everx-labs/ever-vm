@@ -54,11 +54,7 @@ pub fn tvm_exception_code(err: &failure::Error) -> Option<ExceptionCode> {
         Some(TvmError::TvmExceptionFull(err, _)) => err.exception_code(),
         Some(TvmError::TvmException(err)) => Some(*err),
         Some(_) => None,
-        None => if let Some(err) = err.downcast_ref::<ton_types::types::ExceptionCode>() {
-            Some(*err)
-        } else {
-            None
-        }
+        None => err.downcast_ref::<ton_types::types::ExceptionCode>().cloned()
     }
 }
 
@@ -80,10 +76,10 @@ pub fn tvm_exception_full(err: &failure::Error) -> Option<Exception> {
         Some(TvmError::TvmExceptionFull(err, _)) => Some(err.clone()),
         Some(TvmError::TvmException(err)) => Some(Exception::from_code(*err, file!(), line!())),
         Some(_) => None,
-        None => if let Some(err) = err.downcast_ref::<ton_types::types::ExceptionCode>() {
-            Some(Exception::from_code(*err, file!(), line!()))
-        } else {
-            None
+        None => {
+            err.downcast_ref::<ton_types::types::ExceptionCode>().map(|err| 
+                Exception::from_code(*err, file!(), line!())
+            )
         }
     }
 }

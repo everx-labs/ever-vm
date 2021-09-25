@@ -20,6 +20,12 @@ pub struct SaveList {
     storage: HashMap<usize, StackItem>,
 }
 
+impl Default for SaveList {
+    fn default() -> Self {
+        SaveList::new()
+    }
+}
+
 impl SaveList {
     pub fn new() -> SaveList {
         SaveList {
@@ -57,7 +63,7 @@ impl SaveList {
         } else if value.is_null() {
             Ok(self.storage.remove(&index))
         } else {
-            Ok(self.storage.insert(index, value.withdraw())) 
+            Ok(self.storage.insert(index, value.withdraw()))
         }
     }
     pub fn remove(&mut self, index: usize) -> Option<StackItem> {
@@ -118,24 +124,24 @@ impl PartialEq for SaveList {
         }
         for k in self.storage.keys() {
             if !savelist.storage.contains_key(k) {
-                return false;
+                return false
             }
             if !Stack::eq_item(self.storage.get(k).unwrap(), savelist.storage.get(k).unwrap()) {
-                return false;
+                return false
             }
         }
-        return true;
+        true
     }
 }
 
 impl fmt::Display for SaveList {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "--- Control registers ------------------\n")?;
+        writeln!(f, "--- Control registers ------------------")?;
         for i in 0..16 {
             if self.storage.contains_key(&i) {
-                write!(f, "{}: {}\n", i, self.get(i).unwrap())?
+                writeln!(f, "{}: {}", i, self.get(i).unwrap())?
             }
-        }        
-        write!(f, "{:-<40}\n", "")
+        }
+        writeln!(f, "{:-<40}", "")
     }
 }

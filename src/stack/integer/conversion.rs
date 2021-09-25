@@ -12,7 +12,7 @@
 */
 
 use crate::{
-    error::TvmError, 
+    error::TvmError,
     stack::integer::{
         Int, IntegerData, IntegerValue,
         utils::{check_overflow, twos_complement}
@@ -97,14 +97,15 @@ impl IntegerData {
 
     /// Constructs new IntegerData value from the given one of another supported type.
     #[inline]
-    pub fn from<T: Into<Int>>(value: T) -> Result<IntegerData> {
-        let bigint: Int = value.into();
-        if !check_overflow(&bigint) {
-            return err!(ExceptionCode::IntegerOverflow);
+    pub fn from(value: impl Into<Int>) -> Result<IntegerData> {
+        let bigint = value.into();
+        match check_overflow(&bigint) {
+            true => {
+                let value = IntegerValue::Value(bigint);
+                Ok(IntegerData { value })
+            }
+            false => err!(ExceptionCode::IntegerOverflow)
         }
-        Ok(IntegerData {
-            value: IntegerValue::Value(bigint)
-        })
     }
 
     /// Constructs new IntegerData value from the little-endian slice of u32
@@ -127,11 +128,6 @@ impl IntegerData {
         Ok(IntegerData {
             value: IntegerValue::Value(bigint)
         })
-    }
-
-    /// Parses string literal using radix 10 and constructs new IntegerData.
-    pub fn from_str(literal: &str) -> Result<IntegerData> {
-        Self::from_str_radix(literal, 10)
     }
 
     /// Parses string literal with given radix and constructs new IntegerData.
@@ -166,12 +162,19 @@ impl IntegerData {
             IntegerValue::NaN => err!(ExceptionCode::IntegerOverflow),
             IntegerValue::Value(ref value) => {
                 if let Some(value) = convert(value) {
-                    return Ok(value);
+                    Ok(value)
                 } else {
-                    return err!(ExceptionCode::RangeCheckError);
+                    err!(ExceptionCode::RangeCheckError)
                 }
             }
         }
+    }
+}
+
+impl std::str::FromStr for IntegerData {
+    type Err = failure::Error;
+    fn from_str(s: &str) -> Result<Self> {
+        Self::from_str_radix(s, 10)
     }
 }
 

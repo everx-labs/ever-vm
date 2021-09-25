@@ -12,7 +12,7 @@
 */
 
 use crate::stack::integer::{
-    IntegerData, behavior::OperationBehavior, 
+    IntegerData, behavior::OperationBehavior,
     utils::{binary_op, construct_single_nan, process_single_result, unary_op}
 };
 use ton_types::Result;
@@ -23,7 +23,7 @@ impl IntegerData {
         T: OperationBehavior
     {
         binary_op::<T, _, _, _, _, _>(
-            &self,
+            self,
             other,
             |x, y| x & y,
             construct_single_nan,
@@ -36,7 +36,7 @@ impl IntegerData {
         T: OperationBehavior
     {
         binary_op::<T, _, _, _, _, _>(
-            &self,
+            self,
             other,
             |x, y| x | y,
             construct_single_nan,
@@ -49,7 +49,7 @@ impl IntegerData {
         T: OperationBehavior
     {
         binary_op::<T, _, _, _, _, _>(
-            &self,
+            self,
             other,
             |x, y| x ^ y,
             construct_single_nan,
@@ -62,7 +62,7 @@ impl IntegerData {
         T: OperationBehavior
     {
         unary_op::<T, _, _, _, _, _>(
-            &self,
+            self,
             |x| !x,
             construct_single_nan,
             process_single_result::<T, _>
@@ -74,7 +74,7 @@ impl IntegerData {
         T: OperationBehavior
     {
         unary_op::<T, _, _, _, _, _>(
-            &self,
+            self,
             |x| x << shift,
             construct_single_nan,
             process_single_result::<T, _>
@@ -86,7 +86,7 @@ impl IntegerData {
         T: OperationBehavior
     {
         unary_op::<T, _, _, _, _, _>(
-            &self,
+            self,
             |x| x >> shift,
             construct_single_nan,
             process_single_result::<T, _>

@@ -12,26 +12,26 @@
 */
 
 use crate::{
-    error::TvmError, 
+    error::TvmError,
     executor::{
         Mask,
         engine::{
-            Engine, data::convert,                                      
+            Engine, data::convert,
             storage::{
                 apply_savelist, copy_to_var, fetch_reference, fetch_stack,
                 pop_range, pop_all, swap
             }
         },
         microcode::{VAR, SAVELIST, CC, CELL, CTRL, SLICE, CONTINUATION},
-        types::{Ctx, Instruction, InstructionOptions, InstructionParameter, Undo}
+        types::{Instruction, InstructionOptions, InstructionParameter}
     },
     stack::{
-        StackItem, continuation::{ContinuationData, ContinuationType}, 
+        StackItem, continuation::{ContinuationData, ContinuationType},
         integer::{IntegerData, behavior::Signaling}
     },
-    types::{Exception, Failure}
+    types::{Exception, Status}
 };
-use ton_types::{error, fail, Result, types::ExceptionCode};
+use ton_types::{error, fail, types::ExceptionCode};
 use std::{mem, ops::{Range, RangeInclusive}, sync::Arc};
 
 const CALLX: u8 = 0x40;   // CALLX to found value
@@ -40,71 +40,67 @@ const PREPARE: u8 = 0xC0; // pass found value to stack
 
 // Utilities ******************************************************************
 
-// (continuation - ), 
+// (continuation - ),
 // pargs = cmd.pargs if any else cc.stack.depth
 // if pargs > cc.stack.depth {
 //     StackOverflow
-// } 
+// }
 // move_out = cc.stack[0..pargs]
-// move_in  = if continuation.nargs < 0 { 
+// move_in  = if continuation.nargs < 0 {
 //     move_out
-// } else if continuation.nargs > pargs { 
+// } else if continuation.nargs > pargs {
 //     StackOverflow
 // } else {
 //     move_out[0..pargs + continuation.nargs - continuation.stack.depth]
 // }
-// cc.stack -= move_out, continuation.stack += move_in, 
+// cc.stack -= move_out, continuation.stack += move_in,
 // if cmd.nargs exists {
 //     if cmd.nargs < 0 {
 //         cc.nargs = -1
 //     } else {
 //         cc.nargs = cc.stack.depth + cmd.nargs
-//     }    
+//     }
 // }
 // continuation.stack.push(cc), cc = continuation, c[*] = cc.savelist[*]
-fn callcc(ctx: Ctx, callee: usize) -> Result<Ctx> {
-    let vars = ctx.engine.cmd.var_count();
-    if  vars < callee {
-        fail!("callcc: {:X}", callee)
-    } else if vars == callee {
-        fetch_stack(ctx, 1)
-    } else {
-        Ok(ctx)
+fn callcc(engine: &mut Engine, callee: usize) -> Status {
+    let vars = engine.cmd.var_count();
+    match vars.cmp(&callee) {
+        std::cmp::Ordering::Less => fail!("callcc: {:X}", callee),
+        std::cmp::Ordering::Equal => fetch_stack(engine, 1)?,
+        _ => ()
     }
-    .and_then(|ctx| pop_all(ctx, var!(callee)))
-    .and_then(|ctx| swap(ctx, var!(callee), CC))
-    .and_then(|ctx| apply_savelist(ctx, 0..0))  
-    .and_then(|ctx| {
-        let mut old_cc = 
-            ctx.engine.cmd.var_mut(callee).as_continuation_mut()?.withdraw();
-        if let Some(nargs) = ctx.engine.cmd.ictx.nargs() {
-            old_cc.nargs = nargs
-        }
-        ctx.engine.cc.stack.push_cont(old_cc);
-        Ok(ctx)
-    })
+    pop_all(engine, var!(callee))?;
+    swap(engine, var!(callee), CC)?;
+    apply_savelist(engine, 0..0)?;
+    let mut old_cc =
+        engine.cmd.var_mut(callee).as_continuation_mut()?.withdraw();
+    if let Some(nargs) = engine.cmd.ictx.nargs() {
+        old_cc.nargs = nargs
+    }
+    engine.cc.stack.push_cont(old_cc);
+    Ok(())
 }
 
-// (continuation - ), 
+// (continuation - ),
 // pargs = cmd.pargs if any else cc.stack.depth
 // if pargs > cc.stack.depth {
 //     StackOverflow
-// } 
+// }
 // move_out = cc.stack[0..pargs]
-// move_in  = if continuation.nargs < 0 { 
+// move_in  = if continuation.nargs < 0 {
 //     move_out
-// } else if continuation.nargs > pargs { 
+// } else if continuation.nargs > pargs {
 //     StackOverflow
 // } else {
 //     move_out[0..pargs + continuation.nargs - continuation.stack.depth]
 // }
-// cc.stack -= move_out, continuation.stack += move_in, 
+// cc.stack -= move_out, continuation.stack += move_in,
 // if cmd.nargs exists {
 //     if cmd.nargs < 0 {
 //         cc.nargs = -1
 //     } else {
 //         cc.nargs = cc.stack.depth + cmd.nargs
-//     }    
+//     }
 // } else if cmd.rargs exists {
 //     cc.nargs = cc.stack.depth + cmd.rargs
 // }
@@ -113,356 +109,295 @@ fn callcc(ctx: Ctx, callee: usize) -> Result<Ctx> {
 //     continuation.savelist[0] = cc
 // }
 // cc = continuation, c[*] = cc.savelist[*]
-pub(super) fn callx(ctx: Ctx, callee: usize, need_convert: bool) -> Result<Ctx> {
-    let vars = ctx.engine.cmd.var_count();
+pub(super) fn callx(engine: &mut Engine, callee: usize, need_convert: bool) -> Status {
+    let vars = engine.cmd.var_count();
     if  vars < callee {
         fail!("callx {:X}", callee)
     } else if vars == callee {
-        fetch_stack(ctx, 1)
-    } else if need_convert && ctx.engine.cmd.var(callee).as_cell().is_ok() {
-        convert(ctx, var!(callee), CONTINUATION, CELL)
-    } else {
-        Ok(ctx)
+        fetch_stack(engine, 1)?;
+    } else if need_convert && engine.cmd.var(callee).as_cell().is_ok() {
+        convert(engine, var!(callee), CONTINUATION, CELL)?;
     }
-    .and_then(|ctx| pop_all(ctx, var!(callee)))
-    .and_then(|ctx| {
-        let has_c0 = 
-            ctx.engine.cmd.var(callee).as_continuation()?.savelist.get(0).is_some();
-        if has_c0 {
-            swap(ctx, var!(callee), CC)
-        } else {
-            swap(ctx, ctrl!(1), savelist!(CC, 1))
-            .and_then(|ctx| swap(ctx, ctrl!(0), savelist!(CC, 0)))
-            .and_then(|ctx| swap(ctx, var!(callee), CC))
-            .and_then(|ctx| swap(ctx, var!(callee), ctrl!(0)))
-        }
-    })
-    .and_then(|ctx| apply_savelist(ctx, 0..0))
-    .and_then(|ctx| {
-        if let Some(nargs) = ctx.engine.cmd.ictx.nargs() {
-            continuation_mut_by_address!(ctx, ctrl!(0))?.nargs = nargs
-        } else if let Some(rargs) = ctx.engine.cmd.ictx.rargs() {
-            continuation_mut_by_address!(ctx, ctrl!(0))?.nargs = rargs as isize
-        } else {
-            continuation_mut_by_address!(ctx, ctrl!(0))?.nargs = -1;
-        }
-        Ok(ctx)
-    })
+    pop_all(engine, var!(callee))?;
+    let has_c0 =
+        engine.cmd.var(callee).as_continuation()?.savelist.get(0).is_some();
+    if has_c0 {
+        swap(engine, var!(callee), CC)?;
+    } else {
+        swap(engine, ctrl!(1), savelist!(CC, 1))?;
+        swap(engine, ctrl!(0), savelist!(CC, 0))?;
+        swap(engine, var!(callee), CC)?;
+        swap(engine, var!(callee), ctrl!(0))?;
+    }
+    apply_savelist(engine, 0..0)?;
+    if let Some(nargs) = engine.cmd.ictx.nargs() {
+        continuation_mut_by_address!(engine, ctrl!(0))?.nargs = nargs
+    } else if let Some(rargs) = engine.cmd.ictx.rargs() {
+        continuation_mut_by_address!(engine, ctrl!(0))?.nargs = rargs as isize
+    } else {
+        continuation_mut_by_address!(engine, ctrl!(0))?.nargs = -1;
+    }
+    Ok(())
 }
 
 type NRange = RangeInclusive<isize>;
 type PRange = RangeInclusive<isize>;
 
-fn fetch_nargs(ctx: Ctx, idx: usize, nrange: NRange) -> Result<Ctx> {
-    let nargs = ctx.engine.cmd.var(idx).as_integer()?.into(nrange)?;
-    ctx.engine.cmd.ictx.params.push(InstructionParameter::Nargs(nargs));
-    Ok(ctx)
+fn fetch_nargs(engine: &mut Engine, idx: usize, nrange: NRange) -> Status {
+    let nargs = engine.cmd.var(idx).as_integer()?.into(nrange)?;
+    engine.cmd.ictx.params.push(InstructionParameter::Nargs(nargs));
+    Ok(())
 }
 
-fn fetch_pargs(ctx: Ctx, idx: usize, prange: PRange) -> Result<Ctx> {
-    let pargs = ctx.engine.cmd.var(idx).as_integer()?.into(prange)?;
+fn fetch_pargs(engine: &mut Engine, idx: usize, prange: PRange) -> Status {
+    let pargs = engine.cmd.var(idx).as_integer()?.into(prange)?;
     if pargs >= 0 {
-        ctx.engine.cmd.ictx.params.push(InstructionParameter::Pargs(pargs as usize));
+        engine.cmd.ictx.params.push(InstructionParameter::Pargs(pargs as usize));
     }
-    Ok(ctx)
+    Ok(())
 }
 
-fn fetch_nargs_pargs(ctx: Ctx, nrange: NRange, prange: PRange) -> Result<Ctx> {
-    fetch_nargs(ctx, 0, nrange).and_then(|ctx| fetch_pargs(ctx, 1, prange))
+fn fetch_nargs_pargs(engine: &mut Engine, nrange: NRange, prange: PRange) -> Status {
+    fetch_nargs(engine, 0, nrange)?;
+    fetch_pargs(engine, 1, prange)
 }
 
-// (continuation - ), 
+// (continuation - ),
 // move_out = cc.stack
-// move_in  = if continuation.nargs < 0 { 
+// move_in  = if continuation.nargs < 0 {
 //     move_out
-// } else if continuation.nargs > cc.stack.depth { 
+// } else if continuation.nargs > cc.stack.depth {
 //     StackOverflow
 // } else {
 //     move_out[0..cc.stack.depth + continuation.nargs - continuation.stack.depth]
 // }
-// cc.stack -= move_out, continuation.stack += move_in, 
+// cc.stack -= move_out, continuation.stack += move_in,
 // tmp = cc, cc = continuation, c[*] = cc.savelist[*], cc.stack.push(slice(tmp))
-fn jmpxdata(ctx: Ctx) -> Result<Ctx> {
-    pop_all(ctx, var!(0))
-    .and_then(|ctx| swap(ctx, var!(0), CC))
-    .and_then(|ctx| apply_savelist(ctx, 0..0))  
-    .and_then(|ctx| {
-        let slice = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        ctx.engine.cc.stack.push(StackItem::Slice(slice));
-        Ok(ctx)
-    })
+fn jmpxdata(engine: &mut Engine) -> Status {
+    pop_all(engine, var!(0))?;
+    swap(engine, var!(0), CC)?;
+    apply_savelist(engine, 0..0)?;
+    let slice = engine.cmd.var(0).as_continuation()?.code().clone();
+    engine.cc.stack.push(StackItem::Slice(slice));
+    Ok(())
 }
 
-// checks special case for REPEAT*, UNTIL*, WHILE* 
+// checks special case for REPEAT*, UNTIL*, WHILE*
 // works as a continue, not as a break
-pub(super) fn ret(ctx: Ctx) -> Result<Ctx> {
-    switch(ctx, ctrl!(0))
+pub(super) fn ret(engine: &mut Engine) -> Status {
+    switch(engine, ctrl!(0))
 }
 
-fn retalt(ctx: Ctx) -> Result<Ctx> {
-    switch(ctx, ctrl!(1))
+fn retalt(engine: &mut Engine) -> Status {
+    switch(engine, ctrl!(1))
 }
 
 // ( - ), if c[?].savelist[i].is_none() { c[?].savelist[i] = c[i] }
-fn save(ctx: Ctx, index: usize) -> Result<Ctx> {
-    let creg = ctx.engine.cmd.creg();
-    let skip = match ctx.engine.ctrls.get(index) {
+fn save(engine: &mut Engine, index: usize) -> Status {
+    let creg = engine.cmd.creg();
+    let skip = match engine.ctrls.get(index) {
         Some(c) => c.as_continuation()?.savelist.get(creg).is_some(),
         None => return err!(ExceptionCode::TypeCheckError)
     };
     if !skip {
-        let v = ctx.engine.cmd.var_count() as u16;
-        copy_to_var(ctx, ctrl!(creg))
-        .and_then(|ctx| swap(ctx, var!(v), savelist!(ctrl!(index), creg)))
+        let v = engine.cmd.var_count() as u16;
+        copy_to_var(engine, ctrl!(creg))?;
+        swap(engine, var!(v), savelist!(ctrl!(index), creg))
     } else {
-        Ok(ctx)
+        Ok(())
     }
 }
 
 // (x1 ... xR y {R N} - continuation), y->continuation, continuation.stack.push(x1 ... xR)
-fn setcont(ctx: Ctx, v: usize, need_to_convert: bool) -> Result<Ctx> {
-    fetch_stack(ctx, v + 1) // fetch slice or continuation from stack and nargs/parags
-    .and_then(|ctx| match v {
-        0 => Ok(ctx),
-        1 => fetch_nargs(ctx, 0, -1..=255),
-        2 => fetch_nargs_pargs(ctx, -1..=255, 0..=255),
+fn setcont(engine: &mut Engine, v: usize, need_to_convert: bool) -> Status {
+    fetch_stack(engine, v + 1)?; // fetch slice or continuation from stack and nargs/parags
+    match v {
+        0 => {},
+        1 => fetch_nargs(engine, 0, -1..=255)?,
+        2 => fetch_nargs_pargs(engine, -1..=255, 0..=255)?,
         _ => return err!(ExceptionCode::FatalError)
-    })
-    .and_then(|ctx| {
-        if need_to_convert {
-            ctx.engine.cmd.var(v).as_slice()?;
-        } else {
-            ctx.engine.cmd.var(v).as_continuation()?;
-        }
-        if ctx.engine.cc.stack.depth() < ctx.engine.cmd.pargs() {
-            err!(ExceptionCode::StackUnderflow)
-        } else if need_to_convert {
-            convert(ctx, var!(v as u16), CONTINUATION, SLICE)
-        } else {
-            Ok(ctx)
-        }
-    })
-    .and_then(|ctx| {
-        let pargs = ctx.engine.cmd.pargs();
-        if pargs == 0 {
-            Ok(ctx)
-        } else {
-            pop_range(ctx, 0..pargs, pargs, var!(v as u16))
-        }
-    })
-    .and_then(|ctx| { // update nargs
-        let nargs = ctx.engine.cmd.nargs();
-        if nargs >= 0 {
-            let old_nargs = ctx.engine.cmd.var(v).as_continuation()?.nargs;
-            ctx.engine.cmd.undo.push(Undo::WithAddressAndNargs(undo_set_nargs, var!(v), old_nargs));
-            ctx.engine.cmd.var_mut(v).as_continuation_mut()
-            .map(|cdata| cdata.nargs = nargs)?;
-        }
-        Ok(ctx)
-    })
-    .and_then(|ctx| { // return continuation to stack
-        ctx.engine.cc.stack.push(ctx.engine.cmd.vars.pop().unwrap());
-        Ok(ctx)
-    })
+    }
+    if need_to_convert {
+        engine.cmd.var(v).as_slice()?;
+    } else {
+        engine.cmd.var(v).as_continuation()?;
+    }
+    if engine.cc.stack.depth() < engine.cmd.pargs() {
+        return err!(ExceptionCode::StackUnderflow)
+    } else if need_to_convert {
+        convert(engine, var!(v as u16), CONTINUATION, SLICE)?
+    }
+    let pargs = engine.cmd.pargs();
+    if pargs != 0 {
+        pop_range(engine, 0..pargs, var!(v as u16))?
+    }
+    // update nargs
+    let nargs = engine.cmd.nargs();
+    if nargs >= 0 {
+        engine.cmd.var_mut(v).as_continuation_mut()?.nargs = nargs;
+    }
+    // return continuation to stack
+    engine.cc.stack.push(engine.cmd.pop_var()?);
+    Ok(())
 }
 
 // switch to continuation from var!(0)
-fn jmpx(ctx: Ctx, need_convert: bool) -> Result<Ctx> {
-    if need_convert && ctx.engine.cmd.var(0).as_cell().is_ok() {
-        convert(ctx, var!(0), CONTINUATION, CELL)
-    } else {
-        Ok(ctx)
+fn jmpx(engine: &mut Engine, need_convert: bool) -> Status {
+    if need_convert && engine.cmd.var(0).as_cell().is_ok() {
+        convert(engine, var!(0), CONTINUATION, CELL)?;
     }
-    .and_then(|ctx| pop_all(ctx, var!(0)))
-    .and_then(|ctx| swap(ctx, var!(0), CC))
-    .and_then(|ctx| apply_savelist(ctx, 0..2))
+    pop_all(engine, var!(0))?;
+    swap(engine, var!(0), CC)?;
+    apply_savelist(engine, 0..2)
 }
 
-// (continuation - ), 
+// (continuation - ),
 // pargs = cmd.pargs if any else cc.stack.depth
 // if pargs > cc.stack.depth {
 //     StackOverflow
-// } 
+// }
 // move_out = cc.stack[0..pargs]
-// move_in  = if continuation.nargs < 0 { 
+// move_in  = if continuation.nargs < 0 {
 //     move_out
-// } else if continuation.nargs > pargs { 
+// } else if continuation.nargs > pargs {
 //     StackOverflow
 // } else {
 //     move_out[0..pargs + continuation.nargs - continuation.stack.depth]
 // }
-// cc.stack -= move_out, continuation.stack += move_in, 
+// cc.stack -= move_out, continuation.stack += move_in,
 // cc = continuation, c[*] = cc.savelist[*]
-pub(super) fn switch(ctx: Ctx, continuation: u16) -> Result<Ctx> {
-    pop_all(ctx, continuation)
-    .and_then(|ctx| swap(ctx, continuation, CC))
-    .and_then(|ctx| {
-        let drop_c0 = (continuation == ctrl!(0)) && ctx.engine.cc.savelist.get(0).is_none();
-        let drop_c1 = (continuation == ctrl!(1)) && ctx.engine.cc.savelist.get(1).is_none();
-        apply_savelist(ctx, 0..0)
-        .and_then(|ctx| {
-            if drop_c0 {
-                ctx.engine.ctrls.remove(0);
-            }
-            if drop_c1 {
-                let cont = ContinuationData::with_type(ContinuationType::Quit(1));
-                ctx.engine.ctrls.put(1, &mut StackItem::continuation(cont))?;
-            }
-            Ok(ctx)
-        })
-    })
-}
-
-pub(super) fn undo_set_nargs(ctx: &mut Ctx, address: u16, nargs: isize) {
-    let cdata = match address_tag!(address) {
-        VAR => ctx.engine.cmd.var_mut(storage_index!(address)).as_continuation_mut(),
-        CTRL => match ctx.engine.ctrls.get_mut(storage_index!(address)) {
-            Some(ctrl) => ctrl.as_continuation_mut(),
-            None => return
-        },
-        _ => return
-    };
-    if let Ok(cdata) = cdata {
-        cdata.nargs = nargs;
+pub(super) fn switch(engine: &mut Engine, continuation: u16) -> Status {
+    pop_all(engine, continuation)?;
+    swap(engine, continuation, CC)?;
+    let drop_c0 = (continuation == ctrl!(0)) && engine.cc.savelist.get(0).is_none();
+    let drop_c1 = (continuation == ctrl!(1)) && engine.cc.savelist.get(1).is_none();
+    apply_savelist(engine, 0..0)?;
+    if drop_c0 {
+        engine.ctrls.remove(0);
     }
+    if drop_c1 {
+        let cont = ContinuationData::with_type(ContinuationType::Quit(1));
+        engine.ctrls.put(1, &mut StackItem::continuation(cont))?;
+    }
+    Ok(())
 }
 
 // Continuation related instructions ******************************************
 // (c - ), execute C infinitely
-pub(super) fn execute_again(engine: &mut Engine) -> Failure {
+pub(super) fn execute_again(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("AGAIN")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        let cont = ContinuationData::with_type(ContinuationType::AgainLoopBody(body));
-        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-        Ok(ctx)
-    })
-    .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) ) // cc.savelist[0] = c[0]
-    .and_then(|ctx| copy_to_var(ctx, CC) )
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)) ) // again.savelist[0] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // continuation.savelist[0] = again
-    .and_then(|ctx| switch(ctx, var!(0)))
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    let body = engine.cmd.var(0).as_continuation()?.code().clone();
+    let cont = ContinuationData::with_type(ContinuationType::AgainLoopBody(body));
+    engine.cmd.vars.push(StackItem::continuation(cont));
+    swap(engine, savelist!(CC, 0), ctrl!(0))?; // cc.savelist[0] = c[0]
+    copy_to_var(engine, CC)?;
+    swap(engine, savelist!(var!(1), 0), var!(2))?; // again.savelist[0] = cc
+    swap(engine, savelist!(var!(0), 0), var!(1))?; // continuation.savelist[0] = again
+    switch(engine, var!(0))
 }
 
 // Continuation related instructions ******************************************
 // (c - ), execute C infinitely with break
-pub(super) fn execute_again_break(engine: &mut Engine) -> Failure {
+pub(super) fn execute_again_break(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("AGAINBRK")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        let cont = ContinuationData::with_type(ContinuationType::AgainLoopBody(body));
-        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-        Ok(ctx)
-    })
-    .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) ) // cc.savelist[0] = c[0]
-    .and_then(|ctx| copy_to_var(ctx, CC) )                  // var[2] = cc
-    .and_then(|ctx| copy_to_var(ctx, var!(2)) )             // var[3] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)) ) // again.savelist[0] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // body.savelist[0] = again
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 1), var!(3)) ) // body.savelist[1] = cc
-    .and_then(|ctx| switch(ctx, var!(0))) // jump to body
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    let body = engine.cmd.var(0).as_continuation()?.code().clone();
+    let cont = ContinuationData::with_type(ContinuationType::AgainLoopBody(body));
+    engine.cmd.vars.push(StackItem::continuation(cont));
+    swap(engine, savelist!(CC, 0), ctrl!(0))?; // cc.savelist[0] = c[0]
+    swap(engine, savelist!(CC, 1), ctrl!(1))?; // cc.savelist[1] = c[1]
+    copy_to_var(engine, CC)?;                  // var[2] = cc
+    copy_to_var(engine, var!(2))?;             // var[3] = cc
+    swap(engine, savelist!(var!(1), 0), var!(2))?; // again.savelist[0] = cc
+    swap(engine, savelist!(var!(0), 0), var!(1))?; // body.savelist[0] = again
+    swap(engine, savelist!(var!(0), 1), var!(3))?; // body.savelist[1] = cc
+    switch(engine, var!(0)) // jump to body
 }
 
 // ( - ), execute CC infinitely
-pub(super) fn execute_againend(engine: &mut Engine) -> Failure {
+pub(super) fn execute_againend(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("AGAINEND")
-    )
-    .and_then(|ctx| {
-        let body = ctx.engine.cc.code_mut().withdraw();
-        let cont = ContinuationData::with_code(body.clone());
-        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-        let cont = ContinuationData::with_type(ContinuationType::AgainLoopBody(body));
-        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-        Ok(ctx)
-    })
-    .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) ) // cc.savelist[0] = c[0]
-    .and_then(|ctx| copy_to_var(ctx, CC) )
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)) ) // again.savelist[0] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // continuation.savelist[0] = again
-    .and_then(|ctx| switch(ctx, var!(0)))
-    .err()
+    )?;
+    let body = engine.cc.code_mut().withdraw();
+    let cont = ContinuationData::with_code(body.clone());
+    engine.cmd.vars.push(StackItem::continuation(cont));
+    let cont = ContinuationData::with_type(ContinuationType::AgainLoopBody(body));
+    engine.cmd.vars.push(StackItem::continuation(cont));
+    swap(engine, savelist!(CC, 0), ctrl!(0))?; // cc.savelist[0] = c[0]
+    copy_to_var(engine, CC)?;
+    swap(engine, savelist!(var!(1), 0), var!(2))?; // again.savelist[0] = cc
+    swap(engine, savelist!(var!(0), 0), var!(1))?; // continuation.savelist[0] = again
+    switch(engine, var!(0))
 }
 
 // ( - ), execute CC infinitely with break
-pub(super) fn execute_againend_break(engine: &mut Engine) -> Failure {
+pub(super) fn execute_againend_break(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("AGAINENDBRK")
-    )
-    .and_then(|ctx| {
-        let body = ctx.engine.cc.code_mut().withdraw();
-        let cont = ContinuationData::with_code(body.clone());
-        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-        let cont = ContinuationData::with_type(ContinuationType::AgainLoopBody(body));
-        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-        Ok(ctx)
-    })
-    .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) )     // cc.savelist[0] = c[0]
-    .and_then(|ctx| copy_to_var(ctx, CC) )                      // var[2] = cc
-    .and_then(|ctx| copy_to_var(ctx, var!(2) ) )                // var[3] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)) ) // again.savelist[0] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // body.savelist[0] = again
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 1), var!(3)) ) // body.savelist[1] = cc
-    .and_then(|ctx| switch(ctx, var!(0))) // jump to body
-    .err()
+    )?;
+    let body = engine.cc.code_mut().withdraw();
+    let cont = ContinuationData::with_code(body.clone());
+    engine.cmd.vars.push(StackItem::continuation(cont));
+    let cont = ContinuationData::with_type(ContinuationType::AgainLoopBody(body));
+    engine.cmd.vars.push(StackItem::continuation(cont));
+    swap(engine, savelist!(CC, 0), ctrl!(0))?;     // cc.savelist[0] = c[0]
+    copy_to_var(engine, CC)?;                      // var[2] = cc
+    copy_to_var(engine, var!(2))?;                // var[3] = cc
+    swap(engine, savelist!(var!(1), 0), var!(2))?; // again.savelist[0] = cc
+    swap(engine, savelist!(var!(0), 0), var!(1))?; // body.savelist[0] = again
+    swap(engine, savelist!(var!(0), 1), var!(3))?; // body.savelist[1] = cc
+    switch(engine, var!(0)) // jump to body
 }
 
 // (continuation - ), continuation.savelist[0] = c[0], c[0] = continuation
-pub(super) fn execute_atexit(engine: &mut Engine) -> Failure {
+pub(super) fn execute_atexit(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("ATEXIT")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| swap(ctx, var!(0), ctrl!(0)))
-    .and_then(|ctx| swap(ctx, var!(0), savelist!(ctrl!(0), 0)))
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    swap(engine, var!(0), ctrl!(0))?;
+    swap(engine, var!(0), savelist!(ctrl!(0), 0))
 }
 
 // (continuation - ), continuation.savelist[1] = c[1], c[1] = continuation
-pub(super) fn execute_atexitalt(engine: &mut Engine) -> Failure {
+pub(super) fn execute_atexitalt(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("ATEXITALT")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| swap(ctx, var!(0), ctrl!(1)))
-    .and_then(|ctx| swap(ctx, var!(0), savelist!(ctrl!(1), 1)))
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    swap(engine, var!(0), ctrl!(1))?;
+    swap(engine, var!(0), savelist!(ctrl!(1), 1))
 }
 
 // (slice - continuation)
-pub(super) fn execute_bless(engine: &mut Engine) -> Failure {
+pub(super) fn execute_bless(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("BLESS")
-    )
-    .and_then(|ctx| setcont(ctx, 0, true))
-    .err()
+    )?;
+    setcont(engine, 0, true)
 }
 
 // (x1 ... xR slice - continuation), continuation.stack.push(x1 ... xR)
-pub(super) fn execute_blessargs(engine: &mut Engine) -> Failure {
+pub(super) fn execute_blessargs(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("BLESSARGS")
             .set_opts(InstructionOptions::ArgumentConstraints)
-    )
-    .and_then(|ctx| setcont(ctx, 0, true))
-    .err()
+    )?;
+    setcont(engine, 0, true)
 }
 
 // (x1 ... xR slice R N - continuation), continuation.stack.push(x1 ... xR)
-pub(super) fn execute_blessva(engine: &mut Engine) -> Failure {
+pub(super) fn execute_blessva(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("BLESSVARARGS")
-    )
-    .and_then(|ctx| setcont(ctx, 2, true))
-    .err()
+    )?;
+    setcont(engine, 2, true)
 }
 
 //(c - )
@@ -470,137 +405,115 @@ pub(super) fn execute_blessva(engine: &mut Engine) -> Failure {
 // c''= continuation {PUSHINT 0}, c''[0] = cc
 //c[0] = c', c[1] = c''
 //execute c
-pub(super) fn execute_booleval(engine: &mut Engine) -> Failure {
+pub(super) fn execute_booleval(engine: &mut Engine) -> Status {
     let mut old_cc_idx = ctrl!(0);
     engine.load_instruction(
         Instruction::new("BOOLEVAL")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        ctx.engine.cmd.var(0).as_continuation()?;
-        let cont = ContinuationData::with_type(ContinuationType::PushInt(-1));
-        ctx.engine.cmd.push_var(StackItem::continuation(cont));
-        let cont = ContinuationData::with_type(ContinuationType::PushInt(0));
-        ctx.engine.cmd.push_var(StackItem::continuation(cont));
-        Ok(ctx)
-    })
-    .and_then(|ctx| callx(ctx, 0, false))
-    .and_then(|ctx| {
-        let has_save_c0 = !ctx.engine.cc.can_put_to_savelist_once(0);
-        if has_save_c0 {
-            old_cc_idx = var!(0)
-        };
-        copy_to_var(ctx, old_cc_idx)
-    })
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), old_cc_idx))
-    .and_then(|ctx| swap(ctx, savelist!(var!(2), 0), var!(3)))
-    .and_then(|ctx| swap(ctx, ctrl!(0), var!(1)))
-    .and_then(|ctx| swap(ctx, ctrl!(1), var!(2)))
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    engine.cmd.var(0).as_continuation()?;
+    let cont = ContinuationData::with_type(ContinuationType::PushInt(-1));
+    engine.cmd.push_var(StackItem::continuation(cont));
+    let cont = ContinuationData::with_type(ContinuationType::PushInt(0));
+    engine.cmd.push_var(StackItem::continuation(cont));
+    callx(engine, 0, false)?;
+    let has_save_c0 = !engine.cc.can_put_to_savelist_once(0);
+    if has_save_c0 {
+        old_cc_idx = var!(0)
+    };
+    copy_to_var(engine, old_cc_idx)?;
+    swap(engine, savelist!(var!(1), 0), old_cc_idx)?;
+    swap(engine, savelist!(var!(2), 0), var!(3))?;
+    swap(engine, ctrl!(0), var!(1))?;
+    swap(engine, ctrl!(1), var!(2))
 }
 
 // n ( - n), calls the continuation in c3
 // approximately equivalent to PUSHINT n; PUSH c3; EXECUTE
-fn execute_call(engine: &mut Engine, name: &'static str, range: Range<isize>, how: u8) -> Failure {
+fn execute_call(engine: &mut Engine, name: &'static str, range: Range<isize>, how: u8) -> Status {
     engine.load_instruction(
         Instruction::new(name).set_opts(InstructionOptions::Integer(range)),
-    ).and_then(|ctx| {
-        let n = ctx.engine.cmd.integer();
-        if how == PREPARE {
-            copy_to_var(ctx, ctrl!(3))
-            .and_then(|ctx| {
-                ctx.engine.cc.stack.push(int!(n));
-                ctx.engine.cc.stack.push(ctx.engine.cmd.vars.pop().unwrap());
-                Ok(ctx)
-            })
-        } else {
-            let depth = ctx.engine.cc.stack.depth();
-            ctx.engine.cc.stack.push(int!(n));
-            ctx.engine.cmd.undo.push(Undo::WithSize(undo_execute_call, depth));
-            copy_to_var(ctx, ctrl!(3))
-            .and_then(|ctx| {
-                match how {
-                    SWITCH => switch(ctx, var!(0)),
-                    CALLX => callx(ctx, 0, false),
-                    _ => fail!("how: 0x{:X}", how)
-                }
-            })
+    )?;
+    let n = engine.cmd.integer();
+    if how == PREPARE {
+        copy_to_var(engine, ctrl!(3))?;
+        engine.cc.stack.push(int!(n));
+        engine.cc.stack.push(engine.cmd.pop_var()?);
+        Ok(())
+    } else {
+        engine.cc.stack.push(int!(n));
+        copy_to_var(engine, ctrl!(3))?;
+        match how {
+            SWITCH => switch(engine, var!(0)),
+            CALLX => callx(engine, 0, false),
+            _ => fail!("how: 0x{:X}", how)
         }
-    })
-    .err()
-}
-fn undo_execute_call(ctx: &mut Ctx, index: usize) {
-    ctx.engine.cc.stack.drop(index).unwrap();
+    }
 }
 
 // 0 =< n =< 255
-pub(super) fn execute_call_short(engine: &mut Engine) -> Failure {
+pub(super) fn execute_call_short(engine: &mut Engine) -> Status {
     execute_call(engine, "CALLDICT", 0..256, CALLX)
 }
 // 0 =< n < (2 ^ 14)
-pub(super) fn execute_call_long(engine: &mut Engine) -> Failure {
+pub(super) fn execute_call_long(engine: &mut Engine) -> Status {
     execute_call(engine, "CALLDICT", 0..16384, CALLX)
 }
 // 0 =< n < (2 ^ 14)
-pub(super) fn execute_jmp(engine: &mut Engine) -> Failure {
+pub(super) fn execute_jmp(engine: &mut Engine) -> Status {
     execute_call(engine, "JMP", 0..16384, SWITCH)
 }
 // 0 =< n < (2 ^ 14)
-pub(super) fn execute_prepare(engine: &mut Engine) -> Failure {
+pub(super) fn execute_prepare(engine: &mut Engine) -> Status {
     execute_call(engine, "PREPARE", 0..16384, PREPARE)
 }
 
 // (continuation - ), callcc pattern
-pub(super) fn execute_callcc(engine: &mut Engine) -> Failure {
-    engine.load_instruction(Instruction::new("CALLCC"))
-    .and_then(|ctx| callcc(ctx, 0))
-    .err()
+pub(super) fn execute_callcc(engine: &mut Engine) -> Status {
+    engine.load_instruction(Instruction::new("CALLCC"))?;
+    callcc(engine, 0)
 }
 
 // (continuation - ), callcc pattern
-pub(super) fn execute_callccargs(engine: &mut Engine) -> Failure {
+pub(super) fn execute_callccargs(engine: &mut Engine) -> Status {
     engine.load_instruction(
-        Instruction::new("CALLCCARGS") 
+        Instruction::new("CALLCCARGS")
             .set_opts(InstructionOptions::ArgumentConstraints)
-    )
-    .and_then(|ctx| callcc(ctx, 0))
-    .err()
+    )?;
+    callcc(engine, 0)
 }
 
 // (continuation pargs rargs - ), callcc pattern
-pub(super) fn execute_callccva(engine: &mut Engine) -> Failure {
+pub(super) fn execute_callccva(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("CALLCCVARARGS")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 3))
-    .and_then(|ctx| fetch_nargs_pargs(ctx, -1..=255, -1..=255))
-    .and_then(|ctx| callcc(ctx, 2))
-    .err()
+    )?;
+    fetch_stack(engine, 3)?;
+    fetch_nargs_pargs(engine, -1..=255, -1..=255)?;
+    callcc(engine, 2)
 }
 
 // equivalent to PUSHREFCONT; CALLX
 // e.g. remove first reference from CC and then call it
-pub(super) fn execute_callref(engine: &mut Engine) -> Failure {
+pub(super) fn execute_callref(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("CALLREF")
-    )
-    .and_then(|ctx| fetch_reference(ctx, CC))
-    .and_then(|ctx| convert(ctx, var!(0), CONTINUATION, CELL))
-    .and_then(|ctx| callx(ctx, 0, false))
-    .err()
+    )?;
+    fetch_reference(engine, CC)?;
+    convert(engine, var!(0), CONTINUATION, CELL)?;
+    callx(engine, 0, false)
 }
 
 // (continuation - ), callx pattern
-pub(super) fn execute_callx(engine: &mut Engine) -> Failure {
+pub(super) fn execute_callx(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("CALLX")
-    )
-    .and_then(|ctx| callx(ctx, 0, false))
-    .err()
+    )?;
+    callx(engine, 0, false)
 }
 
 // (continuation - ), callx pattern
-pub(super) fn execute_callxargs(engine: &mut Engine) -> Failure {
+pub(super) fn execute_callxargs(engine: &mut Engine) -> Status {
     let cmd = engine.cc.last_cmd();
     engine.load_instruction(
         Instruction::new("CALLXARGS").set_opts(
@@ -610,115 +523,91 @@ pub(super) fn execute_callxargs(engine: &mut Engine) -> Failure {
                 InstructionOptions::Pargs(0..16)
             }
         )
-    )
-    .and_then(|ctx| callx(ctx, 0, false))
-    .err()
+    )?;
+    callx(engine, 0, false)
 }
 
 // (continuation pargs rargs - ), callx pattern
-pub(super) fn execute_callxva(engine: &mut Engine) -> Failure {
+pub(super) fn execute_callxva(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("CALLXVARARGS")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 3))
-    .and_then(|ctx| fetch_nargs_pargs(ctx, -1..=254, -1..=254))
-    .and_then(|ctx| callx(ctx, 2, false))
-    .err()
+    )?;
+    fetch_stack(engine, 3)?;
+    fetch_nargs_pargs(engine, -1..=254, -1..=254)?;
+    callx(engine, 2, false)
 }
 
 // (continuation1 continuation2 - continuation1), continuation1.savelist[0] = continuation2
-pub(super) fn execute_compos(engine: &mut Engine) -> Failure {
+pub(super) fn execute_compos(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("COMPOS")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 2))
-    .and_then(|ctx| {
-        ctx.engine.cmd.var(0).as_continuation()?;
-        ctx.engine.cmd.var(1).as_continuation()?;
-        swap(ctx, var!(0), savelist!(var!(1), 0))
-    })
-    .and_then(|ctx| {
-        ctx.engine.cc.stack.push(ctx.engine.cmd.vars.pop().unwrap());
-        Ok(ctx)
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 2)?;
+    engine.cmd.var(0).as_continuation()?;
+    engine.cmd.var(1).as_continuation()?;
+    swap(engine, var!(0), savelist!(var!(1), 0))?;
+    engine.cc.stack.push(engine.cmd.pop_var()?);
+    Ok(())
 }
 
 // (continuation1 continuation2 - continuation1), continuation1.savelist[1] = continuation2
-pub(super) fn execute_composalt(engine: &mut Engine) -> Failure {
+pub(super) fn execute_composalt(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("COMPOSALT")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 2))
-    .and_then(|ctx| {
-        ctx.engine.cmd.var(0).as_continuation()?;
-        ctx.engine.cmd.var(1).as_continuation()?;
-        swap(ctx, var!(0), savelist!(var!(1), 1))
-    })
-    .and_then(|ctx| {
-        ctx.engine.cc.stack.push(ctx.engine.cmd.vars.pop().unwrap());
-        Ok(ctx)
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 2)?;
+    engine.cmd.var(0).as_continuation()?;
+    engine.cmd.var(1).as_continuation()?;
+    swap(engine, var!(0), savelist!(var!(1), 1))?;
+    engine.cc.stack.push(engine.cmd.pop_var()?);
+    Ok(())
 }
 
 // (continuation1 continuation2 - continuation1),
 // continuation1.savelist[0] = continuation2, continuation1.savelist[1] = continuation2
-pub(super) fn execute_composboth(engine: &mut Engine) -> Failure {
+pub(super) fn execute_composboth(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("COMPOSBOTH")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 2))
-    .and_then(|ctx| {
-        ctx.engine.cmd.var(0).as_continuation()?;
-        ctx.engine.cmd.var(1).as_continuation()?;
-        Ok(ctx)
-    })
-    .and_then(|ctx| copy_to_var(ctx, var!(0)))
-    .and_then(|ctx| swap(ctx, var!(0), savelist!(var!(1), 0)))
-    .and_then(|ctx| swap(ctx, var!(2), savelist!(var!(1), 1)))
-    .and_then(|ctx| {
-        ctx.engine.cc.stack.push(ctx.engine.cmd.vars.remove(1));
-        Ok(ctx)
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 2)?;
+    engine.cmd.var(0).as_continuation()?;
+    engine.cmd.var(1).as_continuation()?;
+    copy_to_var(engine, var!(0))?;
+    swap(engine, var!(0), savelist!(var!(1), 0))?;
+    swap(engine, var!(2), savelist!(var!(1), 1))?;
+    engine.cc.stack.push(engine.cmd.vars.remove(1));
+    Ok(())
 }
 
 // (f x y - ), x f != 0 else y
-pub(super) fn execute_condsel(engine: &mut Engine) -> Failure {
+pub(super) fn execute_condsel(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("CONDSEL")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 3))
-    .and_then(|ctx| {
-        if !ctx.engine.cmd.var(2).as_bool()? {
-            ctx.engine.cc.stack.push(ctx.engine.cmd.vars.remove(0));
-        } else {
-            ctx.engine.cc.stack.push(ctx.engine.cmd.vars.remove(1));
-        }
-        Ok(ctx)
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 3)?;
+    if !engine.cmd.var(2).as_bool()? {
+        engine.cc.stack.push(engine.cmd.vars.remove(0));
+    } else {
+        engine.cc.stack.push(engine.cmd.vars.remove(1));
+    }
+    Ok(())
 }
 
 // (f x y - ), x f != 0 else y, throws exception, if types mismatch
-pub(super) fn execute_condselchk(engine: &mut Engine) -> Failure {
+pub(super) fn execute_condselchk(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("CONDSELCHK")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 3))
-    .and_then(|ctx| {
-        if mem::discriminant(ctx.engine.cmd.var(0)) != mem::discriminant(ctx.engine.cmd.var(1)) {
-            return err!(ExceptionCode::TypeCheckError)
-        }
-        if !ctx.engine.cmd.var(2).as_bool()? {
-            ctx.engine.cc.stack.push(ctx.engine.cmd.vars.remove(0));
-        } else {
-            ctx.engine.cc.stack.push(ctx.engine.cmd.vars.remove(1));
-        }
-        Ok(ctx)
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 3)?;
+    if mem::discriminant(engine.cmd.var(0)) != mem::discriminant(engine.cmd.var(1)) {
+        return err!(ExceptionCode::TypeCheckError)
+    }
+    if !engine.cmd.var(2).as_bool()? {
+        engine.cc.stack.push(engine.cmd.vars.remove(0));
+    } else {
+        engine.cc.stack.push(engine.cmd.vars.remove(1));
+    }
+    Ok(())
 }
 
 const CALL:  u8 = 0x00; // call cont
@@ -731,7 +620,7 @@ const INV:   u8 = 0x20; // condition not
 const ELSE:  u8 = 0x40; // IFELSE
 const THROW: u8 = 0x80; // checks if condition is NaN then throw IntegerOverflow
 
-fn execute_if_mask(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
+fn execute_if_mask(engine: &mut Engine, name: &'static str, how: u8) -> Status {
     let mut params = 2;
     if how.bit(ELSE) {
         params += 1;
@@ -746,257 +635,238 @@ fn execute_if_mask(engine: &mut Engine, name: &'static str, how: u8) -> Failure 
         params -= 1;
     }
 
-    engine.load_instruction(Instruction::new(name))
-    .and_then(|ctx| match how.bit(REF) {
-        true => fetch_reference(ctx, CC),
-        false => Ok(ctx)
-    })
-    .and_then(|ctx| match how.bit(REF2) {
-        true => fetch_reference(ctx, CC),
-        false => Ok(ctx)
-    })
-    .and_then(|ctx| fetch_stack(ctx, params))
-    .and_then(|ctx| if how.bit(THROW) && ctx.engine.cmd.vars.last().unwrap().as_integer()?.is_nan() {
-        err!(ExceptionCode::IntegerOverflow)
-    } else {
-        Ok(ctx)
-    })
-    .and_then(|ctx| match ctx.engine.cmd.vars.last().unwrap().as_bool()? ^ how.bit(INV) {
+    engine.load_instruction(Instruction::new(name))?;
+    if how.bit(REF) {
+        fetch_reference(engine, CC)?
+    }
+    if how.bit(REF2) {
+        fetch_reference(engine, CC)?
+    }
+    fetch_stack(engine, params)?;
+    if how.bit(THROW) && engine.cmd.last_var()?.as_integer()?.is_nan() {
+        return err!(ExceptionCode::IntegerOverflow)
+    }
+    match engine.cmd.last_var()?.as_bool()? ^ how.bit(INV) {
         false if how.bit(ELSE) => {
             if !how.bit(REF) {
-                ctx.engine.cmd.var(0).as_continuation()?;
+                engine.cmd.var(0).as_continuation()?;
             }
-            callx(ctx, 1, how.bit(REF2))
+            callx(engine, 1, how.bit(REF2))
         }
-        false => Ok(ctx),
+        false => Ok(()),
         true if how.bit(ELSE) => {
             if !how.bit(REF2) {
-                ctx.engine.cmd.var(1).as_continuation()?;
+                engine.cmd.var(1).as_continuation()?;
             }
-            callx(ctx, 0, how.bit(REF))
+            callx(engine, 0, how.bit(REF))
         }
-        true if how.bit(JMP ) => jmpx(ctx, how.bit(REF)),
-        true if how.bit(ALT ) => retalt(ctx),
-        true if how.bit(RET ) => ret(ctx),
-        true                  => callx(ctx, 0, how.bit(REF)),
-    })
-    .err()
+        true if how.bit(JMP ) => jmpx(engine, how.bit(REF)),
+        true if how.bit(ALT ) => retalt(engine),
+        true if how.bit(RET ) => ret(engine),
+        true                  => callx(engine, 0, how.bit(REF)),
+    }
 }
 
 // (condition continuation - ): callx if condition != 0
-pub(super) fn execute_if(engine: &mut Engine) -> Failure {
+pub(super) fn execute_if(engine: &mut Engine) -> Status {
     execute_if_mask(engine, "IF", CALL)
 }
 
 // (condition continuation1 continuation2 - ): if condition != 0 callx continuation1 else callx continuation2
-pub(super) fn execute_ifelse(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifelse(engine: &mut Engine) -> Status {
     execute_if_mask(engine, "IFELSE", CALL | ELSE | INV)
 }
 
 // (condition continuation - ): equivalent to PUSHREFCONT; IFELSE
-pub(super) fn execute_ifelseref(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifelseref(engine: &mut Engine) -> Status {
     execute_if_mask(engine, "IFELSEREF", CALL | ELSE | INV | REF)
 }
 
 // (condition continuation - ): switch if condition != 0
-pub(super) fn execute_ifjmp(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifjmp(engine: &mut Engine) -> Status {
     execute_if_mask(engine, "IFJMP", JMP)
 }
 
 // (condition continuation - ): callx if condition == 0
-pub(super) fn execute_ifnot(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifnot(engine: &mut Engine) -> Status {
     execute_if_mask(engine, "IFNOT", CALL | INV)
 }
-      
+
 // (condition continuation - ): switch if condition == 0
-pub(super) fn execute_ifnotjmp(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifnotjmp(engine: &mut Engine) -> Status {
     execute_if_mask(engine, "IFNOTJMP", JMP | INV)
 }
 
 // (condition - Continuation): pushrefcont if condition == 0
-pub(super) fn execute_ifnotref(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifnotref(engine: &mut Engine) -> Status {
     execute_if_mask(engine, "IFNOTREF", CALL | INV | REF)
 }
 
 // (condition - ): switch to continuation from references[0] if condition != 0
-pub(super) fn execute_ifjmpref(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifjmpref(engine: &mut Engine) -> Status {
     execute_if_mask(engine, "IFJMPREF", JMP | REF)
 }
 
 // (condition - ): switch to continuation from references[0] if condition == 0
-pub(super) fn execute_ifnotjmpref(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifnotjmpref(engine: &mut Engine) -> Status {
     execute_if_mask(engine, "IFNOTJMPREF", JMP | INV | REF)
 }
 
 // (condition - ): switch if condition == 0
-pub(super) fn execute_ifnotret(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifnotret(engine: &mut Engine) -> Status {
     execute_if_mask(engine, "IFNOTRET", RET | INV)
 }
 
 // (condition - Continuation): pushrefcont if condition != 0
-pub(super) fn execute_ifref(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifref(engine: &mut Engine) -> Status {
     execute_if_mask(engine, "IFREF", CALL | REF)
 }
 
 // (condition continuation - ): equivalent to PUSHREFCONT; SWAP; IFELSE
-pub(super) fn execute_ifrefelse(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifrefelse(engine: &mut Engine) -> Status {
     execute_if_mask(engine, "IFREFELSE", CALL | ELSE | REF)
 }
 
 // (condition - ): equivalent to PUSHREFCONT; PUSHREFCONT; IFELSE
-pub(super) fn execute_ifrefelseref(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifrefelseref(engine: &mut Engine) -> Status {
     execute_if_mask(engine, "IFREFELSEREF", CALL | ELSE | REF | REF2)
 }
 
 // (condition - ): switch if condition != 0
-pub(super) fn execute_ifret(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifret(engine: &mut Engine) -> Status {
     execute_if_mask(engine, "IFRET", RET | THROW)
 }
 
 // (f - ), RETALT f != 0
-pub(super) fn execute_ifretalt(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifretalt(engine: &mut Engine) -> Status {
     execute_if_mask(engine, "IFRETALT", RET | ALT)
 }
 
 // (f - ), RETALT f == 0
-pub(super) fn execute_ifnotretalt(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifnotretalt(engine: &mut Engine) -> Status {
     execute_if_mask(engine, "IFNOTRETALT", RET | ALT | INV)
 }
 
 // c[0] <-> c[1]
-pub(super) fn execute_invert(engine: &mut Engine) -> Failure {
+pub(super) fn execute_invert(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("INVERT")
-    )
-    .and_then(|ctx| swap(ctx, ctrl!(0), ctrl!(1)))
-    .err()
+    )?;
+    swap(engine, ctrl!(0), ctrl!(1))
 }
 
-pub(super) fn execute_jmpref(engine: &mut Engine) -> Failure {
+pub(super) fn execute_jmpref(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("JMPREF")
-    )
-    .and_then(|ctx| fetch_reference(ctx, CC))
-    .and_then(|ctx| jmpx(ctx, true))
-    .err()
+    )?;
+    fetch_reference(engine, CC)?;
+    jmpx(engine, true)
 }
 
-pub(super) fn execute_jmprefdata(engine: &mut Engine) -> Failure {
+pub(super) fn execute_jmprefdata(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("JMPREFDATA")
-    )
-    .and_then(|ctx| fetch_reference(ctx, CC))
-    .and_then(|ctx| convert(ctx, var!(0), CONTINUATION, CELL))
-    .and_then(|ctx| jmpxdata(ctx))
-    .err()
+    )?;
+    fetch_reference(engine, CC)?;
+    convert(engine, var!(0), CONTINUATION, CELL)?;
+    jmpxdata(engine)
 }
 
 // (continuation - ), switch pattern
-pub(super) fn execute_jmpx(engine: &mut Engine) -> Failure {
+pub(super) fn execute_jmpx(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("JMPX")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| jmpx(ctx, false))
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    jmpx(engine, false)
 }
 
-fn execute_ifbit_mask(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
+fn execute_ifbit_mask(engine: &mut Engine, name: &'static str, how: u8) -> Status {
     engine.load_instruction(
         Instruction::new(name).set_opts(InstructionOptions::Integer(0..32))
-    )
-    .and_then(|ctx| if how.bit(REF) {
-        fetch_reference(ctx, CC)
+    )?;
+    if how.bit(REF) {
+        fetch_reference(engine, CC)?;
     } else {
-        fetch_stack(ctx, 1)
-        .and_then(|ctx| {
-            ctx.engine.cmd.var(0).as_continuation()?;
-            Ok(ctx)
-        })
-    })
-    .and_then(|ctx| {
-        if ctx.engine.cc.stack.depth() < 1 {
-            return err!(ExceptionCode::StackUnderflow);
-        }
-        let is_zero = {
-            let x = ctx.engine.cc.stack.get(0).as_integer()?;
-            let nbit = ctx.engine.cmd.integer() as u32;
-            let test_bit_mask = IntegerData::from_u32(1 << nbit);
-            x.and::<Signaling>(&test_bit_mask)?.is_zero()
-        };
-        if is_zero ^ how.bit(INV) {
-            Ok(ctx)
-        } else {
-            jmpx(ctx, how.bit(REF))
-        }
-    })
-    .err()
+        fetch_stack(engine, 1)?;
+        engine.cmd.var(0).as_continuation()?;
+    }
+    if engine.cc.stack.depth() < 1 {
+        return err!(ExceptionCode::StackUnderflow);
+    }
+    let is_zero = {
+        let x = engine.cc.stack.get(0).as_integer()?;
+        let nbit = engine.cmd.integer() as u32;
+        let test_bit_mask = IntegerData::from_u32(1 << nbit);
+        x.and::<Signaling>(&test_bit_mask)?.is_zero()
+    };
+    if is_zero ^ how.bit(INV) {
+        Ok(())
+    } else {
+        jmpx(engine, how.bit(REF))
+    }
 }
 
 // (x continuation - x), switch if n's bit of x is set
-pub(super) fn execute_ifbitjmp(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifbitjmp(engine: &mut Engine) -> Status {
     execute_ifbit_mask(engine, "IFBITJMP", 0)
 }
 
 // (x continuation - x), switch if n's bit of x is not set
-pub(super) fn execute_ifnbitjmp(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifnbitjmp(engine: &mut Engine) -> Status {
     execute_ifbit_mask(engine, "IFNBITJMP", INV)
 }
 
 // (x - x), switch pattern if n'th bit is set
-pub(super) fn execute_ifbitjmpref(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifbitjmpref(engine: &mut Engine) -> Status {
     execute_ifbit_mask(engine, "IFBITJMPREF", REF)
 }
 
 // (x - x), switch pattern if n'th bit is not set
-pub(super) fn execute_ifnbitjmpref(engine: &mut Engine) -> Failure {
+pub(super) fn execute_ifnbitjmpref(engine: &mut Engine) -> Status {
     execute_ifbit_mask(engine, "IFNBITJMPREF", REF | INV)
 }
 
 // (continuation - ), continuation.nargs = cmd.pargs, then switch pattern
-pub(super) fn execute_jmpxargs(engine: &mut Engine) -> Failure {
+pub(super) fn execute_jmpxargs(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("JMPXARGS").set_opts(InstructionOptions::Pargs(0..16))
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| switch(ctx, var!(0)))
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    switch(engine, var!(0))
 }
 
 // (continuation p - ), continuation.nargs = cmd.pargs, then switch pattern
-pub(super) fn execute_jmpxva(engine: &mut Engine) -> Failure {
+pub(super) fn execute_jmpxva(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("JMPXVARARGS")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 2))
-    .and_then(|ctx| fetch_pargs(ctx, 0, -1..=254).and_then(|ctx| switch(ctx, var!(1))))
-    .err()
+    )?;
+    fetch_stack(engine, 2)?;
+    fetch_pargs(engine, 0, -1..=254)?;
+    switch(engine, var!(1))
 }
 
 // (integer_repeat_count body_continuation - )
 // body.savelist[0] = cc
 // cc.savelist[0] = c[0]
-pub(super) fn execute_repeat(engine: &mut Engine) -> Failure {
+pub(super) fn execute_repeat(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("REPEAT")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 2))
-    .and_then(|ctx| {
-        let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        let counter = ctx.engine.cmd.var(1).as_integer()?.into(-0x80000000..=0x7FFFFFFF)?;
-        if counter <= 0 {
-            Ok(ctx)
-        } else {
-            let cont = ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter));
-            ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-            swap(ctx, savelist!(CC, 0), ctrl!(0)) // cc.savelist[0] = c[0]
-            .and_then(|ctx| copy_to_var(ctx, CC))
-            .and_then(|ctx| swap(ctx, savelist!(var!(2), 0), var!(3))) // ec_repeat.savelist[0] = cc
-            .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(2))) // body.savelist[0] = ec_repeat
-            .and_then(|ctx| switch(ctx, var!(0)))
-        }
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 2)?;
+    let body = engine.cmd.var(0).as_continuation()?.code().clone();
+    let counter = engine.cmd.var(1).as_integer()?.into(-0x80000000..=0x7FFFFFFF)?;
+    if counter <= 0 {
+        Ok(())
+    } else {
+        let cont = ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter));
+        engine.cmd.vars.push(StackItem::continuation(cont));
+        swap(engine, savelist!(CC, 0), ctrl!(0))?; // cc.savelist[0] = c[0]
+        copy_to_var(engine, CC)?;
+        swap(engine, savelist!(var!(2), 0), var!(3))?; // ec_repeat.savelist[0] = cc
+        swap(engine, savelist!(var!(0), 0), var!(2))?; // body.savelist[0] = ec_repeat
+        switch(engine, var!(0))
+    }
 }
 
 // (integer_repeat_count body_continuation - )
@@ -1004,389 +874,332 @@ pub(super) fn execute_repeat(engine: &mut Engine) -> Failure {
 // ec_repeat.savelist[0] = cc
 // body.savelist[0] = ec_repeat
 // body.savelist[1] = cc
-pub(super) fn execute_repeat_break(engine: &mut Engine) -> Failure {
+pub(super) fn execute_repeat_break(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("REPEATBRK")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 2))
-    .and_then(|ctx| {
-        let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        let counter = ctx.engine.cmd.var(1).as_integer()?.into(-0x80000000..=0x7FFFFFFF)?;
-        if counter <= 0 {
-            Ok(ctx)
-        } else {
-            let cont = ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter));
-            ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-            swap(ctx, savelist!(CC, 0), ctrl!(0)) // cc.savelist[0] = c[0]
-            .and_then(|ctx| copy_to_var(ctx, CC))
-            .and_then(|ctx| copy_to_var(ctx, var!(3)))
-            .and_then(|ctx| swap(ctx, savelist!(var!(2), 0), var!(3))) // ec_repeat.savelist[0] = cc
-            .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(2))) // body.savelist[0] = ec_repeat
-            .and_then(|ctx| swap(ctx, savelist!(var!(0), 1), var!(4))) // body.savelist[1] = cc
-            .and_then(|ctx| switch(ctx, var!(0))) // jump to body
-        }
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 2)?;
+    let body = engine.cmd.var(0).as_continuation()?.code().clone();
+    let counter = engine.cmd.var(1).as_integer()?.into(-0x80000000..=0x7FFFFFFF)?;
+    if counter <= 0 {
+        Ok(())
+    } else {
+        let cont = ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter));
+        engine.cmd.vars.push(StackItem::continuation(cont));
+        swap(engine, savelist!(CC, 0), ctrl!(0))?; // cc.savelist[0] = c[0]
+        swap(engine, savelist!(CC, 1), ctrl!(1))?;     // cc.savelist[1] = c[1]
+        copy_to_var(engine, CC)?;
+        copy_to_var(engine, var!(3))?;
+        swap(engine, savelist!(var!(2), 0), var!(3))?; // ec_repeat.savelist[0] = cc
+        swap(engine, savelist!(var!(0), 0), var!(2))?; // body.savelist[0] = ec_repeat
+        swap(engine, savelist!(var!(0), 1), var!(4))?; // body.savelist[1] = cc
+        switch(engine, var!(0)) // jump to body
+    }
 }
 
 // (integer_repeat_count - )
 // body.savelist[0] = cc
 // cc.savelist[0] = c[0]
-pub(super) fn execute_repeatend(engine: &mut Engine) -> Failure {
+pub(super) fn execute_repeatend(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("REPEATEND")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let body = ctx.engine.cc.code().clone();
-        let counter = ctx.engine.cmd.var(0).as_integer()?.into(-0x80000000..=0x7FFFFFFF)?;
-        if counter <= 0 {
-            ret(ctx)
-        } else {
-            let cont = ContinuationData::with_code(body.clone());
-            ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-            let cont = ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter));
-            ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-            swap(ctx, savelist!(var!(2), 0), ctrl!(0))                 // ec_repeat.savelist[0] = c[0]
-            .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2))) // body.savelist[0] = ec_repeat
-            .and_then(|ctx| switch(ctx, var!(1)))
-        }
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    let body = engine.cc.code().clone();
+    let counter = engine.cmd.var(0).as_integer()?.into(-0x80000000..=0x7FFFFFFF)?;
+    if counter <= 0 {
+        ret(engine)
+    } else {
+        let cont = ContinuationData::with_code(body.clone());
+        engine.cmd.vars.push(StackItem::continuation(cont));
+        let cont = ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter));
+        engine.cmd.vars.push(StackItem::continuation(cont));
+        swap(engine, savelist!(var!(2), 0), ctrl!(0))?; // ec_repeat.savelist[0] = c[0]
+        swap(engine, savelist!(var!(1), 0), var!(2))?;  // body.savelist[0] = ec_repeat
+        switch(engine, var!(1))
+    }
 }
 
 // (integer_repeat_count - )
 // ec_repeat.savelist[0] = c[0]
 // body.savelist[0] = ec_repeat
 // body.savelist[1] = c[0]
-pub(super) fn execute_repeatend_break(engine: &mut Engine) -> Failure {
+pub(super) fn execute_repeatend_break(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("REPEATENDBRK")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let body = ctx.engine.cc.code().clone();
-        let counter = ctx.engine.cmd.var(0).as_integer()?.into(-0x80000000..=0x7FFFFFFF)?;
-        if counter <= 0 {
-            ret(ctx)
-        } else {
-            let cont = ContinuationData::with_code(body.clone());
-            ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-            let cont = ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter));
-            ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-            copy_to_var(ctx, ctrl!(0))
-            .and_then(|ctx| swap(ctx, savelist!(var!(2), 0), ctrl!(0))) // ec_repeat.savelist[0] = c[0]
-            .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)))  // body.savelist[0] = ec_repeat
-            .and_then(|ctx| swap(ctx, savelist!(var!(1), 1), var!(3)))  // body.savelist[1] = c[0]
-            .and_then(|ctx| switch(ctx, var!(1)))
-        }
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    let body = engine.cc.code().clone();
+    let counter = engine.cmd.var(0).as_integer()?.into(-0x80000000..=0x7FFFFFFF)?;
+    if counter <= 0 {
+        ret(engine)
+    } else {
+        let cont = ContinuationData::with_code(body.clone());
+        engine.cmd.vars.push(StackItem::continuation(cont));
+        let cont = ContinuationData::with_type(ContinuationType::RepeatLoopBody(body, counter));
+        engine.cmd.vars.push(StackItem::continuation(cont));
+        copy_to_var(engine, ctrl!(0))?;
+        swap(engine, savelist!(var!(2), 0), ctrl!(0))?; // ec_repeat.savelist[0] = c[0]
+        swap(engine, savelist!(var!(1), 0), var!(2))?;  // body.savelist[0] = ec_repeat
+        swap(engine, savelist!(var!(1), 1), var!(3))?;  // body.savelist[1] = c[0]
+        switch(engine, var!(1))
+    }
 }
 
 // c[0].stack = cc.stack, cc.stack = ()
 // cc = continuation, c[2..] = cc.savelist[2..]
 // (continuation - ), var[0] = cc.stack.pop(), then jmpxdata pattern
-pub(super) fn execute_jmpxdata(engine: &mut Engine) -> Failure {
+pub(super) fn execute_jmpxdata(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("JMPXDATA")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| jmpxdata(ctx))
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    jmpxdata(engine)
 }
 
 // switch to c[0]
-pub(super) fn execute_ret(engine: &mut Engine) -> Failure {
-    engine.load_instruction(Instruction::new("RET"))
-    .and_then(|ctx| ret(ctx))
-    .err()
+pub(super) fn execute_ret(engine: &mut Engine) -> Status {
+    engine.load_instruction(Instruction::new("RET"))?;
+    ret(engine)
 }
 
 // switch to c[1]
-pub(super) fn execute_retalt(engine: &mut Engine) -> Failure {
+pub(super) fn execute_retalt(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("RETALT")
-    )
-    .and_then(|ctx| retalt(ctx))
-    .err()
+    )?;
+    retalt(engine)
 }
 
 // switch to c[0] with pargs
-pub(super) fn execute_retargs(engine: &mut Engine) -> Failure {
+pub(super) fn execute_retargs(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("RETARGS").set_opts(InstructionOptions::Pargs(0..16))
-    )
-    .and_then(|ctx| switch(ctx, ctrl!(0)))
-    .err()
+    )?;
+    switch(engine, ctrl!(0))
 }
 
 // (p - ) switch to c[0] with p params
-pub(super) fn execute_retva(engine: &mut Engine) -> Failure {
+pub(super) fn execute_retva(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("RETVARARGS")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| fetch_pargs(ctx, 0, -1..=254).and_then(|ctx| switch(ctx, ctrl!(0))))
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    fetch_pargs(engine, 0, -1..=254)?;
+    switch(engine, ctrl!(0))
 }
 
 
 // (condition - ), if condition != 0 then RET else RETALT
-pub(super) fn execute_retbool(engine: &mut Engine) -> Failure {
+pub(super) fn execute_retbool(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("RETBOOL")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        match ctx.engine.cmd.var(0).as_bool()? {
-            false => retalt(ctx),
-            _ => ret(ctx)
-        }
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    match engine.cmd.var(0).as_bool()? {
+        false => retalt(engine),
+        _ => ret(engine)
+    }
 }
 
 // var[0] = c[0], then jmpxdata pattern
-pub(super) fn execute_retdata(engine: &mut Engine) -> Failure {
+pub(super) fn execute_retdata(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("RETDATA")
-    )
-    .and_then(|ctx| {
-        let cont = ContinuationData::with_type(ContinuationType::Quit(ExceptionCode::NormalTermination as i32));
-        ctx.engine.cmd.push_var(StackItem::continuation(cont));
-        swap(ctx, ctrl!(0), var!(0))
-    })
-    .and_then(|ctx| jmpxdata(ctx))
-    .err()
+    )?;
+    let cont = ContinuationData::with_type(ContinuationType::Quit(ExceptionCode::NormalTermination as i32));
+    engine.cmd.push_var(StackItem::continuation(cont));
+    swap(engine, ctrl!(0), var!(0))?;
+    jmpxdata(engine)
 }
 
 // (xN ... xN-p xN-p-1 ... x0 - xN-p-1 ... x0), c0.stack.push(xN ... xN-p)
-pub(super) fn execute_returnargs(engine: &mut Engine) -> Failure {
+pub(super) fn execute_returnargs(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("RETURNARGS")
            .set_opts(InstructionOptions::Rargs(0..16))
-    )
-    .and_then(|ctx| if ctx.engine.cc.stack.depth() < ctx.engine.cmd.rargs() {
+    )?;
+    if engine.cc.stack.depth() < engine.cmd.rargs() {
         err!(ExceptionCode::StackUnderflow)
     } else {
-        let drop = ctx.engine.cmd.rargs()..ctx.engine.cc.stack.depth();
-        let save = drop.end - drop.start;
-        pop_range(ctx, drop, save, ctrl!(0))
-    })
-    .err()
+        let drop = engine.cmd.rargs()..engine.cc.stack.depth();
+        pop_range(engine, drop, ctrl!(0))
+    }
 }
 
 // (xN ... xN-p xN-p-1 ... x0 p - xN-p-1 ... x0), c0.stack.push(xN ... xN-p)
-pub(super) fn execute_returnva(engine: &mut Engine) -> Failure {
+pub(super) fn execute_returnva(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("RETURNVARARGS")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let rargs = ctx.engine.cmd.var(0).as_integer()?.into(0..=255)?;
-        if ctx.engine.cc.stack.depth() < rargs {
-            err!(ExceptionCode::StackUnderflow)
-        } else {
-            let drop = rargs..ctx.engine.cc.stack.depth();
-            let save = drop.end - drop.start;
-            pop_range(ctx, drop, save, ctrl!(0))
-        }
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    let rargs = engine.cmd.var(0).as_integer()?.into(0..=255)?;
+    if engine.cc.stack.depth() < rargs {
+        err!(ExceptionCode::StackUnderflow)
+    } else {
+        let drop = rargs..engine.cc.stack.depth();
+        pop_range(engine, drop, ctrl!(0))
+    }
 }
 
 
 // ( - ), c[1] = c[0]
-pub(super) fn execute_samealt(engine: &mut Engine) -> Failure {
+pub(super) fn execute_samealt(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("SAMEALT")
-    )
-    .and_then(|ctx| copy_to_var(ctx, ctrl!(0)) )
-    .and_then(|ctx| swap(ctx, ctrl!(1), var!(0)) )
-    .err()
+    )?;
+    copy_to_var(engine, ctrl!(0))?;
+    swap(engine, ctrl!(1), var!(0))
 }
 
 // ( - ), c[0].savelist[1] = c[1], c[1] = c[0]
-pub(super) fn execute_samealt_save(engine: &mut Engine) -> Failure {
+pub(super) fn execute_samealt_save(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("SAMEALTSAV")
-    )
-    .and_then(|ctx| swap(ctx, savelist!(ctrl!(0), 1), ctrl!(1)) )
-    .and_then(|ctx| copy_to_var(ctx, ctrl!(0)) )
-    .and_then(|ctx| swap(ctx, ctrl!(1), var!(0)) )
-    .err()
+    )?;
+    swap(engine, savelist!(ctrl!(0), 1), ctrl!(1))?;
+    copy_to_var(engine, ctrl!(0))?;
+    swap(engine, ctrl!(1), var!(0))
 }
 
 // ( - ), if c[0].savelist[i].is_none() { c[0].savelist[i] = c[i] }
-pub(super) fn execute_save(engine: &mut Engine) -> Failure {
+pub(super) fn execute_save(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("SAVE").set_opts(InstructionOptions::ControlRegister)
-    )
-    .and_then(|ctx| save(ctx, 0))
-    .err()
+    )?;
+    save(engine, 0)
 }
 
 // ( - ), if c[1].savelist[i].is_none() { c[1].savelist[i] = c[i] }
-pub(super) fn execute_savealt(engine: &mut Engine) -> Failure {
+pub(super) fn execute_savealt(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("SAVEALT").set_opts(InstructionOptions::ControlRegister)
-    )
-    .and_then(|ctx| save(ctx, 1))
-    .err()
+    )?;
+    save(engine, 1)
 }
 
 // ( - ), if c[0].savelist[i].is_none() { c[0].savelist[i] = c[i] }
 // if c[1].savelist[i].is_none() { c[1].savelist[i] = c[i] }
-pub(super) fn execute_saveboth(engine: &mut Engine) -> Failure {
+pub(super) fn execute_saveboth(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("SAVEBOTH").set_opts(InstructionOptions::ControlRegister)
-    )
-    .and_then(|ctx| if ctx.engine.ctrl(0).is_ok() || ctx.engine.ctrl(1).is_ok() {
-        err!(ExceptionCode::TypeCheckError)
+    )?;
+    if engine.ctrl(0).is_ok() || engine.ctrl(1).is_ok() {
+        return err!(ExceptionCode::TypeCheckError)
     } else {
-        save(ctx, 0)
-    })
-    .and_then(|ctx| save(ctx, 1))
-    .err()
+        save(engine, 0)?;
+    }
+    save(engine, 1)
 }
 
 // (x - ), c1.savelist[i] = x
-pub(super) fn execute_setaltctr(engine: &mut Engine) -> Failure {
+pub(super) fn execute_setaltctr(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("SETALTCTR").set_opts(InstructionOptions::ControlRegister)
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let creg = ctx.engine.cmd.creg();
-        swap(ctx, var!(0), savelist!(ctrl!(1), creg))
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    let creg = engine.cmd.creg();
+    swap(engine, var!(0), savelist!(ctrl!(1), creg))
 }
 
 // (x1 ... xR continuation - continuation), continuation.stack.push(x1 ... xR)
-pub(super) fn execute_setcontargs(engine: &mut Engine) -> Failure {
+pub(super) fn execute_setcontargs(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("SETCONTARGS").set_opts(InstructionOptions::ArgumentConstraints)
-    )
-    .and_then(|ctx| setcont(ctx, 0, false))
-    .err()
+    )?;
+    setcont(engine, 0, false)
 }
 
 // (x1 ... xR continuation R N - continuation), continuation.stack.push(x1 ... xR)
-pub(super) fn execute_setcontva(engine: &mut Engine) -> Failure {
+pub(super) fn execute_setcontva(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("SETCONTVARARGS")
-    )
-    .and_then(|ctx| setcont(ctx, 2, false))
-    .err()
+    )?;
+    setcont(engine, 2, false)
 }
 
 // (continuation n - continuation)
-pub(super) fn execute_setnumvarargs(engine: &mut Engine) -> Failure {
+pub(super) fn execute_setnumvarargs(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("SETNUMVARARGS")
-    )
-    .and_then(|ctx| setcont(ctx, 1, false))
-    .err()
+    )?;
+    setcont(engine, 1, false)
 }
 
 // (x continuation - continuation), continuation.savelist[i] = x
-pub(super) fn execute_setcontctr(engine: &mut Engine) -> Failure {
+pub(super) fn execute_setcontctr(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("SETCONTCTR").set_opts(InstructionOptions::ControlRegister)
-    )
-    .and_then(|ctx| fetch_stack(ctx, 2))
-    .and_then(|ctx| {
-        ctx.engine.cmd.var(0).as_continuation()?;
-        let creg = ctx.engine.cmd.creg();
-        swap(ctx, var!(1), savelist!(var!(0), creg))
-    })
-    .and_then(|ctx| {
-        ctx.engine.cc.stack.push(ctx.engine.cmd.vars.remove(0));
-        Ok(ctx)
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 2)?;
+    engine.cmd.var(0).as_continuation()?;
+    let creg = engine.cmd.creg();
+    swap(engine, var!(1), savelist!(var!(0), creg))?;
+    engine.cc.stack.push(engine.cmd.vars.remove(0));
+    Ok(())
 }
 
 // (x continuation i - continuation), continuation.savelist[i] = x
-pub(super) fn execute_setcontctrx(engine: &mut Engine) -> Failure {
+pub(super) fn execute_setcontctrx(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("SETCONTCTRX")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 3))
-    .and_then(|ctx| {
-        let creg = ctx.engine.cmd.var(0).as_integer()?.into(0..=255)?;
-        ctx.engine.cmd.var(1).as_continuation()?;
-        swap(ctx, var!(2), savelist!(var!(1), creg))
-    })
-    .and_then(|ctx| {
-        ctx.engine.cc.stack.push(ctx.engine.cmd.vars.remove(1));
-        Ok(ctx)
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 3)?;
+    let creg = engine.cmd.var(0).as_integer()?.into(0..=255)?;
+    engine.cmd.var(1).as_continuation()?;
+    swap(engine, var!(2), savelist!(var!(1), creg))?;
+    engine.cc.stack.push(engine.cmd.vars.remove(1));
+    Ok(())
 }
 
 // (continuation - ), continuation.savelist[0] = c[0], continuation.savelist[1] = c[1],
 // c[1] = continuation
-pub(super) fn execute_setexitalt(engine: &mut Engine) -> Failure {
+pub(super) fn execute_setexitalt(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("SETEXITALT")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| copy_to_var(ctx, ctrl!(0)))
-    .and_then(|ctx| swap(ctx, var!(1), savelist!(var!(0), 0)))
-    .and_then(|ctx| if ctx.engine.cc.savelist.get(1).is_some() {
-        copy_to_var(ctx, ctrl!(1))
-        .and_then(|ctx| swap(ctx, var!(2), savelist!(var!(0), 1)))
-    } else {
-        Ok(ctx)
-    })
-    .and_then(|ctx| swap(ctx, var!(0), ctrl!(1)))
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    copy_to_var(engine, ctrl!(0))?;
+    swap(engine, var!(1), savelist!(var!(0), 0))?;
+    if engine.cc.savelist.get(1).is_some() {
+        copy_to_var(engine, ctrl!(1))?;
+        swap(engine, var!(2), savelist!(var!(0), 1))?;
+    }
+    swap(engine, var!(0), ctrl!(1))
 }
 
 // (x - ), c0.savelist[i] = x
-pub(super) fn execute_setretctr(engine: &mut Engine) -> Failure {
+pub(super) fn execute_setretctr(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("SETRETCTR").set_opts(InstructionOptions::ControlRegister)
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let creg = ctx.engine.cmd.creg();
-        swap(ctx, var!(0), savelist!(ctrl!(0), creg))
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    let creg = engine.cmd.creg();
+    swap(engine, var!(0), savelist!(ctrl!(0), creg))
 }
 
 // (continuation - continuation), continuation.savelist[0] = c[0]
-pub(super) fn execute_thenret(engine: &mut Engine) -> Failure {
+pub(super) fn execute_thenret(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("THENRET")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| copy_to_var(ctx, ctrl!(0)))
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)))
-    .and_then(|ctx| {
-        ctx.engine.cc.stack.push(ctx.engine.cmd.vars.remove(0));
-        Ok(ctx)
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    copy_to_var(engine, ctrl!(0))?;
+    swap(engine, savelist!(var!(0), 0), var!(1))?;
+    engine.cc.stack.push(engine.cmd.vars.remove(0));
+    Ok(())
 }
 
 // (continuation - continuation), continuation.savelist[0] = c[1]
-pub(super) fn execute_thenretalt(engine: &mut Engine) -> Failure {
+pub(super) fn execute_thenretalt(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("THENRETALT")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| copy_to_var(ctx, ctrl!(1)))
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)))
-    .and_then(|ctx| {
-        ctx.engine.cc.stack.push(ctx.engine.cmd.vars.remove(0));
-        Ok(ctx)
-    })
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    copy_to_var(engine, ctrl!(1))?;
+    swap(engine, savelist!(var!(0), 0), var!(1))?;
+    engine.cc.stack.push(engine.cmd.vars.remove(0));
+    Ok(())
 }
 
 // (body - )
@@ -1394,23 +1207,19 @@ pub(super) fn execute_thenretalt(engine: &mut Engine) -> Failure {
 // condition.savelist[0] = cc
 // body.savelist[0] = condition
 // switch to body
-pub(super) fn execute_until(engine: &mut Engine) -> Failure {
+pub(super) fn execute_until(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("UNTIL")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        let cont = ContinuationData::with_type(ContinuationType::UntilLoopCondition(body));
-        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-        Ok(ctx)
-    })
-    .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) )     // cc.savelist[0] = c[0]
-    .and_then(|ctx| copy_to_var(ctx, CC) )
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)) ) // ec_until.savelist[0] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // body.savelist[0] = ec_until
-    .and_then(|ctx| switch(ctx, var!(0)))
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    let body = engine.cmd.var(0).as_continuation()?.code().clone();
+    let cont = ContinuationData::with_type(ContinuationType::UntilLoopCondition(body));
+    engine.cmd.vars.push(StackItem::continuation(cont));
+    swap(engine, savelist!(CC, 0), ctrl!(0))?;     // cc.savelist[0] = c[0]
+    copy_to_var(engine, CC)?;
+    swap(engine, savelist!(var!(1), 0), var!(2))?; // ec_until.savelist[0] = cc
+    swap(engine, savelist!(var!(0), 0), var!(1))?; // body.savelist[0] = ec_until
+    switch(engine, var!(0))
 }
 
 // (body - )
@@ -1419,47 +1228,40 @@ pub(super) fn execute_until(engine: &mut Engine) -> Failure {
 // body.savelist[0] = ec_until
 // body.savelist[1] = cc
 // switch to body
-pub(super) fn execute_until_break(engine: &mut Engine) -> Failure {
+pub(super) fn execute_until_break(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("UNTILBRK")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        let cont = ContinuationData::with_type(ContinuationType::UntilLoopCondition(body));
-        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-        Ok(ctx)
-    })
-    .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) )     // cc.savelist[0] = c[0]
-    .and_then(|ctx| copy_to_var(ctx, CC) )
-    .and_then(|ctx| copy_to_var(ctx, var!(2)) )
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)) ) // ec_until.savelist[0] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // body.savelist[0] = ec_until
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 1), var!(3)) ) // body.savelist[1] = cc
-    .and_then(|ctx| switch(ctx, var!(0)))
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    let body = engine.cmd.var(0).as_continuation()?.code().clone();
+    let cont = ContinuationData::with_type(ContinuationType::UntilLoopCondition(body));
+    engine.cmd.vars.push(StackItem::continuation(cont));
+    swap(engine, savelist!(CC, 0), ctrl!(0))?;     // cc.savelist[0] = c[0]
+    swap(engine, savelist!(CC, 1), ctrl!(1))?;     // cc.savelist[1] = c[1]
+    copy_to_var(engine, CC)?;
+    copy_to_var(engine, var!(2))?;
+    swap(engine, savelist!(var!(1), 0), var!(2))?; // ec_until.savelist[0] = cc
+    swap(engine, savelist!(var!(0), 0), var!(1))?; // body.savelist[0] = ec_until
+    swap(engine, savelist!(var!(0), 1), var!(3))?; // body.savelist[1] = cc
+    switch(engine, var!(0))
 }
 
 // cc is body
 // condition.savelist[0] = c[0]
 // body.savelist[0] = condition
 // switch to body
-pub(super) fn execute_untilend(engine: &mut Engine) -> Failure {
+pub(super) fn execute_untilend(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("UNTILEND")
-    )
-    .and_then(|ctx| {
-        let body = ctx.engine.cc.code_mut().withdraw();
-        let cont = ContinuationData::with_code(body.clone());
-        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-        let cont = ContinuationData::with_type(ContinuationType::UntilLoopCondition(body));
-        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-        Ok(ctx)
-    })
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), ctrl!(0)) ) // ec_until.savelist[0] = c[0]
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // body.savelist[0] = ec_until
-    .and_then(|ctx| switch(ctx, var!(0)))
-    .err()
+    )?;
+    let body = engine.cc.code_mut().withdraw();
+    let cont = ContinuationData::with_code(body.clone());
+    engine.cmd.vars.push(StackItem::continuation(cont));
+    let cont = ContinuationData::with_type(ContinuationType::UntilLoopCondition(body));
+    engine.cmd.vars.push(StackItem::continuation(cont));
+    swap(engine, savelist!(var!(1), 0), ctrl!(0))?; // ec_until.savelist[0] = c[0]
+    swap(engine, savelist!(var!(0), 0), var!(1))?; // body.savelist[0] = ec_until
+    switch(engine, var!(0))
 }
 
 // cc is body
@@ -1467,24 +1269,20 @@ pub(super) fn execute_untilend(engine: &mut Engine) -> Failure {
 // body.savelist[0] = ec_until
 // body.savelist[1] = c[0]
 // switch to body
-pub(super) fn execute_untilend_break(engine: &mut Engine) -> Failure {
+pub(super) fn execute_untilend_break(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("UNTILENDBRK")
-    )
-    .and_then(|ctx| {
-        let body = ctx.engine.cc.code_mut().withdraw();
-        let cont = ContinuationData::with_code(body.clone());
-        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-        let cont = ContinuationData::with_type(ContinuationType::UntilLoopCondition(body));
-        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-        Ok(ctx)
-    })
-    .and_then(|ctx| copy_to_var(ctx, ctrl!(0)) )
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), ctrl!(0)) ) // ec_until.savelist[0] = c[0]
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // body.savelist[0] = ec_until
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 1), var!(2)) ) // body.savelist[1] = c[0]
-    .and_then(|ctx| switch(ctx, var!(0)))
-    .err()
+    )?;
+    let body = engine.cc.code_mut().withdraw();
+    let cont = ContinuationData::with_code(body.clone());
+    engine.cmd.vars.push(StackItem::continuation(cont));
+    let cont = ContinuationData::with_type(ContinuationType::UntilLoopCondition(body));
+    engine.cmd.vars.push(StackItem::continuation(cont));
+    copy_to_var(engine, ctrl!(0))?;
+    swap(engine, savelist!(var!(1), 0), ctrl!(0))?; // ec_until.savelist[0] = c[0]
+    swap(engine, savelist!(var!(0), 0), var!(1))?; // body.savelist[0] = ec_until
+    swap(engine, savelist!(var!(0), 1), var!(2))?; // body.savelist[1] = c[0]
+    switch(engine, var!(0))
 }
 // .set(0x18, execute_while_break)
 // .set(0x19, execute_whileend_break)
@@ -1494,24 +1292,20 @@ pub(super) fn execute_untilend_break(engine: &mut Engine) -> Failure {
 // ec_while.savelist[0] = cc
 // condition.savelist[0] = ec_while
 // switch to condition
-pub(super) fn execute_while(engine: &mut Engine) -> Failure {
+pub(super) fn execute_while(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("WHILE")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 2))
-    .and_then(|ctx| {
-        let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        let cond = ctx.engine.cmd.var(1).as_continuation()?.code().clone();
-        let cont = ContinuationData::with_type(ContinuationType::WhileLoopCondition(body, cond));
-        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-        Ok(ctx)
-    })
-    .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) )     // cc.savelist[0] = c[0]
-    .and_then(|ctx| copy_to_var(ctx, CC))
-    .and_then(|ctx| swap(ctx, savelist!(var!(2), 0), var!(3)) ) // ec_while.savelist[0] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)) ) // condition.savelist[0] = ec_while
-    .and_then(|ctx| switch(ctx, var!(1)))
-    .err()
+    )?;
+    fetch_stack(engine, 2)?;
+    let body = engine.cmd.var(0).as_continuation()?.code().clone();
+    let cond = engine.cmd.var(1).as_continuation()?.code().clone();
+    let cont = ContinuationData::with_type(ContinuationType::WhileLoopCondition(body, cond));
+    engine.cmd.vars.push(StackItem::continuation(cont));
+    swap(engine, savelist!(CC, 0), ctrl!(0))?;     // cc.savelist[0] = c[0]
+    copy_to_var(engine, CC)?;
+    swap(engine, savelist!(var!(2), 0), var!(3))?; // ec_while.savelist[0] = cc
+    swap(engine, savelist!(var!(1), 0), var!(2))?; // condition.savelist[0] = ec_while
+    switch(engine, var!(1))
 }
 
 // (condition body - )
@@ -1520,26 +1314,25 @@ pub(super) fn execute_while(engine: &mut Engine) -> Failure {
 // condition.savelist[0] = ec_while
 // condition.savelist[1] = cc
 // switch to condition
-pub(super) fn execute_while_break(engine: &mut Engine) -> Failure {
+pub(super) fn execute_while_break(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("WHILEBRK")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 2))
-    .and_then(|ctx| {
-        let body = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        let cond = ctx.engine.cmd.var(1).as_continuation()?.code().clone();
-        let cont = ContinuationData::with_type(ContinuationType::WhileLoopCondition(cond, body));
-        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-        Ok(ctx)
-    })
-    .and_then(|ctx| swap(ctx, savelist!(CC, 0), ctrl!(0)) )     // cc.savelist[0] = c[0]
-    .and_then(|ctx| copy_to_var(ctx, CC))
-    .and_then(|ctx| copy_to_var(ctx, var!(3)))
-    .and_then(|ctx| swap(ctx, savelist!(var!(2), 0), var!(3)) ) // ec_while.savelist[0] = cc
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), var!(2)) ) // condition.savelist[0] = ec_while
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 1), var!(4)) ) // condition.savelist[1] = cc
-    .and_then(|ctx| switch(ctx, var!(1)))
-    .err()
+    )?;
+    fetch_stack(engine, 2)?;
+    let body = engine.cmd.var(0).as_continuation()?.code().clone();
+    let cond = engine.cmd.var(1).as_continuation()?.code().clone();
+    let cont = ContinuationData::with_type(ContinuationType::WhileLoopCondition(body, cond));
+    engine.cmd.vars.push(StackItem::continuation(cont));
+    swap(engine, savelist!(CC, 0), ctrl!(0))?;     // cc.savelist[0] = c[0]
+    swap(engine, savelist!(CC, 1), ctrl!(1))?;     // cc.savelist[1] = c[1]
+    copy_to_var(engine, CC)?;
+    copy_to_var(engine, var!(3))?;
+    copy_to_var(engine, var!(3))?;
+    swap(engine, savelist!(var!(2), 0), var!(3))?; // ec_while.savelist[0] = cc
+    swap(engine, savelist!(var!(1), 0), var!(2))?; // condition.savelist[0] = ec_while
+    swap(engine, savelist!(var!(1), 1), var!(4))?; // condition.savelist[1] = cc
+    swap(engine, savelist!(var!(0), 1), var!(5))?; // body.savelist[1] = cc
+    switch(engine, var!(1))
 }
 
 // cc is body
@@ -1547,22 +1340,18 @@ pub(super) fn execute_while_break(engine: &mut Engine) -> Failure {
 // condition.savelist[0] = c[0]
 // ec_while.savelist[0] = condition
 // switch to condition
-pub(super) fn execute_whileend(engine: &mut Engine) -> Failure {
+pub(super) fn execute_whileend(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("WHILEEND")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| {
-        let body = ctx.engine.cc.code_mut().withdraw();
-        let cond = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        let cont = ContinuationData::with_type(ContinuationType::WhileLoopCondition(body, cond));
-        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-        Ok(ctx)
-    })
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), ctrl!(0)) ) // ec_while.savelist[0] = c[0]
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) ) // condition.savelist[0] = ec_while
-    .and_then(|ctx| switch(ctx, var!(0)))
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    let body = engine.cc.code_mut().withdraw();
+    let cond = engine.cmd.var(0).as_continuation()?.code().clone();
+    let cont = ContinuationData::with_type(ContinuationType::WhileLoopCondition(body, cond));
+    engine.cmd.vars.push(StackItem::continuation(cont));
+    swap(engine, savelist!(var!(1), 0), ctrl!(0))?; // ec_while.savelist[0] = c[0]
+    swap(engine, savelist!(var!(0), 0), var!(1))?; // condition.savelist[0] = ec_while
+    switch(engine, var!(0))
 }
 
 // cc is body
@@ -1570,23 +1359,19 @@ pub(super) fn execute_whileend(engine: &mut Engine) -> Failure {
 // condition.savelist[0] = c[0]
 // ec_while.savelist[0] = condition
 // switch to condition
-pub(super) fn execute_whileend_break(engine: &mut Engine) -> Failure {
+pub(super) fn execute_whileend_break(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("WHILEENDBRK")
-    )
-    .and_then(|ctx| fetch_stack(ctx, 1))
-    .and_then(|ctx| pop_all(ctx, var!(0)))                      // move stack to cond check
-    .and_then(|ctx| {
-        let body = ctx.engine.cc.code_mut().withdraw();
-        let cond = ctx.engine.cmd.var(0).as_continuation()?.code().clone();
-        let cont = ContinuationData::with_type(ContinuationType::WhileLoopCondition(body, cond));
-        ctx.engine.cmd.vars.push(StackItem::continuation(cont));
-        Ok(ctx)
-    })
-    .and_then(|ctx| copy_to_var(ctx, ctrl!(0)))
-    .and_then(|ctx| swap(ctx, savelist!(var!(1), 0), ctrl!(0)) ) // ec_while.savelist[0] = c[0]
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 0), var!(1)) )  // condition.savelist[0] = ec_while
-    .and_then(|ctx| swap(ctx, savelist!(var!(0), 1), var!(2)) )  // condition.savelist[1] = ec_while
-    .and_then(|ctx| switch(ctx, var!(0)))
-    .err()
+    )?;
+    fetch_stack(engine, 1)?;
+    pop_all(engine, var!(0))?;                      // move stack to cond check
+    let body = engine.cc.code_mut().withdraw();
+    let cond = engine.cmd.var(0).as_continuation()?.code().clone();
+    let cont = ContinuationData::with_type(ContinuationType::WhileLoopCondition(body, cond));
+    engine.cmd.vars.push(StackItem::continuation(cont));
+    copy_to_var(engine, ctrl!(0))?;
+    swap(engine, savelist!(var!(1), 0), ctrl!(0))?; // ec_while.savelist[0] = c[0]
+    swap(engine, savelist!(var!(0), 0), var!(1))?;  // condition.savelist[0] = ec_while
+    swap(engine, savelist!(var!(0), 1), var!(2))?;  // condition.savelist[1] = ec_while
+    switch(engine, var!(0))
 }

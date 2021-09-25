@@ -11,8 +11,8 @@
 * limitations under the License.
 */
 
-use crate::{int, stack::{StackItem, integer::IntegerData}};
-use std::{fmt, str, sync::Arc};
+use crate::stack::{StackItem, integer::IntegerData};
+use std::fmt;
 use ton_types::{Result, types::ExceptionCode};
 
 pub const ACTION_SEND_MSG: u32 = 0x0ec3c86d;
@@ -91,10 +91,11 @@ impl Exception {
     pub fn from_code(code: ExceptionCode, file: &'static str, line: u32) -> Exception {
         Self::from_code_and_value(code, 0, file, line)
     }
-    pub fn from_code_and_value(code: ExceptionCode, value: i32, file: &'static str, line: u32) -> Exception {
+    pub fn from_code_and_value(code: ExceptionCode, value: impl Into<IntegerData>, file: &'static str, line: u32) -> Exception {
+        // panic!("{} {} {}:{}", code, IntegerData::from(value), file, line)
         Exception {
             exception: ExceptionType::System(code),
-            value: int!(value),
+            value: StackItem::integer(value.into()),
             file,
             line,
         }
@@ -129,6 +130,12 @@ macro_rules! exception {
     ($code:expr, $msg:literal, $($arg:tt)*) => {
         error!(TvmError::TvmExceptionFull(Exception::from_code($code, file!(), line!()), format!($msg, $($arg)*)))
     };
+    ($code:expr, $value:expr, $msg:literal, $($arg:tt)*) => {
+        error!(TvmError::TvmExceptionFull(Exception::from_code_and_value($code, $value, file!(), line!()), format!($msg, $($arg)*)))
+    };
+    ($code:expr, $value:expr, $msg:literal) => {
+        error!(TvmError::TvmExceptionFull(Exception::from_code_and_value($code, $value, file!(), line!()), format!($msg)))
+    };
     ($code:expr, $msg:literal) => {
         error!(TvmError::TvmExceptionFull(Exception::from_code($code, file!(), line!()), format!($msg)))
     };
@@ -144,6 +151,9 @@ macro_rules! err {
     };
     ($code:expr, $msg:literal, $($arg:tt)*) => {{
         Err(exception!($code, $msg, $($arg)*))
+    }};
+    ($msg:literal, $($arg:tt)*) => {{
+        Err(exception!(ExceptionCode::FatalError, $msg, $($arg)*))
     }};
     ($code:expr, $msg:literal) => {{
         Err(exception!($code, $msg))
@@ -203,7 +213,6 @@ impl fmt::Debug for Exception {
 }
 
 // pub(crate) use ton_types::Result;
-pub(crate) type Failure = Option<failure::Error>;
 pub(crate) type ResultMut<'a, T> = Result<&'a mut T>;
 pub(crate) type ResultOpt<T> = Result<Option<T>>;
 pub(crate) type ResultRef<'a, T> = Result<&'a T>;

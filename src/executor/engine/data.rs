@@ -12,35 +12,35 @@
 */
 
 use crate::{
-    executor::{microcode::{VAR, CELL, SLICE, BUILDER, CONTINUATION}, types::{Ctx, Undo}},
+    executor::{engine::Engine, microcode::{VAR, CELL, SLICE, BUILDER, CONTINUATION}},
     stack::{StackItem, continuation::ContinuationData}, types::Status
 };
 use std::sync::Arc;
-use ton_types::{fail, GasConsumer, Result};
+use ton_types::{fail, GasConsumer};
 
 // Utilities ******************************************************************
 
-fn convert_any(ctx: &mut Ctx, x: u16, to: u16, from: u16) -> Status {
-    if ctx.engine.cmd.vars.len() <= storage_index!(x) {
+fn convert_any(engine: &mut Engine, x: u16, to: u16, from: u16) -> Status {
+    if engine.cmd.vars.len() <= storage_index!(x) {
         fail!("convert_any no var {} in cmd", storage_index!(x));
     }
     let data = match address_tag!(x) {
         VAR => {
             match from {
                 BUILDER => {
-                    let var = ctx.engine.cmd.var_mut(storage_index!(x));
+                    let var = engine.cmd.var_mut(storage_index!(x));
                     let builder = var.as_builder_mut()?;
-                    let cell = ctx.engine.finalize_cell(builder)?;
+                    let cell = engine.finalize_cell(builder)?;
                     match to {
                         CELL => StackItem::Cell(cell),
-                        SLICE => StackItem::Slice(ctx.engine.load_cell(cell)?),
+                        SLICE => StackItem::Slice(engine.load_cell(cell)?),
                         _ => StackItem::None
                     }
                 }
                 CELL => {
-                    let var = ctx.engine.cmd.var(storage_index!(x));
+                    let var = engine.cmd.var(storage_index!(x));
                     let cell = var.as_cell()?.clone();
-                    let slice = ctx.engine.load_cell(cell)?;
+                    let slice = engine.load_cell(cell)?;
                     match to {
                         CONTINUATION => StackItem::Continuation(Arc::new(ContinuationData::with_code(slice))),
                         SLICE => StackItem::Slice(slice),
@@ -48,7 +48,7 @@ fn convert_any(ctx: &mut Ctx, x: u16, to: u16, from: u16) -> Status {
                     }
                 }
                 SLICE => {
-                    let var = ctx.engine.cmd.var(storage_index!(x));
+                    let var = engine.cmd.var(storage_index!(x));
                     let slice = var.as_slice()?.clone();
                     match to {
                         CONTINUATION => StackItem::Continuation(Arc::new(ContinuationData::with_code(slice))),
@@ -58,7 +58,7 @@ fn convert_any(ctx: &mut Ctx, x: u16, to: u16, from: u16) -> Status {
                     }
                 }
                 CONTINUATION => { // it only for undo
-                    let var = ctx.engine.cmd.var(storage_index!(x));
+                    let var = engine.cmd.var(storage_index!(x));
                     let slice = var.as_continuation()?.code();
                     match to {
                         CELL => StackItem::Cell(slice.cell().clone()),
@@ -74,7 +74,7 @@ fn convert_any(ctx: &mut Ctx, x: u16, to: u16, from: u16) -> Status {
     if data.is_null() {
         fail!("cannot convert_any x: {:X}, to: {:X}, from: {:X}", x, to, from)
     } else {
-        *ctx.engine.cmd.var_mut(storage_index!(x)) = data;
+        *engine.cmd.var_mut(storage_index!(x)) = data;
     }
     Ok(())
 }
@@ -83,12 +83,6 @@ fn convert_any(ctx: &mut Ctx, x: u16, to: u16, from: u16) -> Status {
 
 // Convert type of x; x addressing is described in executor/microcode.rs
 // to, from are one of { BUILDER, CELL, CONTINUATION, SLICE }
-pub(in crate::executor) fn convert(mut ctx: Ctx, x: u16, to: u16, from: u16) -> Result<Ctx> {
-    convert_any(&mut ctx, x, to, from)?;                                                                             
-    ctx.engine.cmd.undo.push(Undo::WithCodeTriplet(undo_convert, x, to, from));
-    Ok(ctx)
-}
-
-fn undo_convert(ctx: &mut Ctx, x: u16, to: u16, from: u16) {
-    convert_any(ctx, x, from, to).unwrap()
+pub(in crate::executor) fn convert(engine: &mut Engine, x: u16, to: u16, from: u16) -> Status {
+    convert_any(engine, x, to, from)
 }

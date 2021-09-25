@@ -12,22 +12,11 @@
 */
 
 use crate::{
-    executor::{engine::Engine, math::DivMode}, 
-    stack::{StackItem, integer::IntegerData, savelist::SaveList}
+    executor::math::DivMode,
+    stack::{StackItem, integer::IntegerData}
 };
 use std::{fmt, ops::Range};
-use ton_types::SliceData;
-
-pub(super) struct Ctx<'a> {
-    pub(super) engine: &'a mut Engine,
-//    pub(super) instruction: &'a mut Instruction
-}
-
-impl<'a> Ctx<'a> {
-    pub fn new(engine: &'a mut Engine) -> Ctx {
-        Self {engine}
-    }
-}
+use ton_types::{error, Result, SliceData};
 
 #[derive(Debug)]
 pub(super) struct Context {
@@ -186,16 +175,6 @@ pub(super) struct LengthAndIndex {
     pub(super) index: usize
 }
 
-pub(super) enum Undo {
-    WithCode(fn(&mut Ctx, u16), u16),
-    WithCodePair(fn(&mut Ctx, u16, u16), u16, u16),
-    WithCodeTriplet(fn(&mut Ctx, u16, u16, u16), u16, u16, u16),
-    WithAddressAndNargs(fn(&mut Ctx, u16, isize), u16, isize),
-    WithSaveList(fn(&mut Ctx, SaveList), SaveList),
-    WithSize(fn(&mut Ctx, usize), usize),
-    WithSizeDataAndCode(fn(&mut Ctx, usize, Vec<StackItem>, u16), usize, Vec<StackItem>, u16),
-}
-
 pub(super) struct Instruction {
     /// Instruction mnemonic
     pub(super) name: &'static str,
@@ -206,22 +185,25 @@ pub(super) struct Instruction {
     pub(super) ictx: Context,
     /// Variables
     pub(super) vars: Vec<StackItem>,
-    /// Undo
-    pub(super) undo: Vec<Undo>
 }
 
 impl Instruction {
     pub(super) fn new(name: &'static str) -> Instruction {
         Instruction {
-            name: name,
+            name,
             name_prefix: None,
             opts: None,
             ictx: Context {
                 exceptions_off: false,
                 params: Vec::new()
-            }, 
+            },
             vars: Vec::new(),
-            undo: Vec::new()
+        }
+    }
+    fn name(&self) -> String {
+        match self.name_prefix {
+            Some(prefix) => prefix.to_string() + self.name,
+            None => self.name.to_string()
         }
     }
     pub(super) fn set_name_prefix(mut self, prefix: Option<&'static str>) -> Instruction {
@@ -251,16 +233,16 @@ impl Instruction {
         self.ictx.length().unwrap()
     }
     pub(super) fn nargs(&self) -> isize {
-        self.ictx.nargs().unwrap_or(-1)	
+        self.ictx.nargs().unwrap_or(-1)
     }
     pub(super) fn pargs(&self) -> usize {
-        self.ictx.pargs().unwrap_or(0)	
+        self.ictx.pargs().unwrap_or(0)
     }
     pub(super) fn push_var(&mut self, var: StackItem) {
         self.vars.push(var)
     }
     pub(super) fn rargs(&self) -> usize {
-        self.ictx.rargs().unwrap_or(0)	
+        self.ictx.rargs().unwrap_or(0)
     }
     pub(super) fn slice(&self) -> &SliceData {
         self.ictx.slice().unwrap()
@@ -285,6 +267,12 @@ impl Instruction {
     }
     pub(super) fn var_mut(&mut self, index: usize) -> &mut StackItem {
         self.vars.get_mut(index).unwrap()
+    }
+    pub(super) fn last_var(&self) -> Result<&StackItem> {
+        self.vars.last().ok_or_else(|| error!("no vars for {}", self.name()))
+    }
+    pub(super) fn pop_var(&mut self) -> Result<StackItem> {
+        self.vars.pop().ok_or_else(|| error!("no vars for {}", self.name()))
     }
     #[allow(dead_code)]
     pub(super) fn dump_with_params(&self) -> Option<String> {

@@ -23,7 +23,7 @@ macro_rules! declare {
 //
 // CC                   - engine.cc
 // ctrl!(i)             - c(i)
-// savelist!(x, i)      - x.savelist(i), x is addressed independently 
+// savelist!(x, i)      - x.savelist(i), x is addressed independently
 //                        and supposed to be a continuation
 // stack!(i)            - cc.stack(i)
 // var!(i)              - engine.current_command.vars(i)
@@ -66,7 +66,7 @@ macro_rules! storage_index {
 #[macro_export]
 macro_rules! stack {
     ($index:expr) => {
-        STACK | (($index & 0xFF) as u16) 
+        STACK | (($index & 0xFF) as u16)
     };
 }
 
@@ -87,7 +87,7 @@ macro_rules! var {
 // Address tags
 declare!(CC,           0x0000); // Current continuation
 declare!(CTRL,         0x0100); // Control register
-declare!(STACK,        0x0200); // Data stack 
+declare!(STACK,        0x0200); // Data stack
 declare!(VAR,          0x0300); // Instruction variable
 declare!(SAVELIST,     0x0800); // Savelist
 
