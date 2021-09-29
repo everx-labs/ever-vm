@@ -216,7 +216,7 @@ pub(super) fn execute_pick(engine: &mut Engine) -> Status {
 }
 
 // (x ... y - y ...)
-fn execute_pop_internal(engine: &mut Engine, name: &'static str) -> Status {
+pub(super) fn execute_pop(engine: &mut Engine) -> Status {
     let cmd = engine.cc.last_cmd();
     let range = if (cmd & 0xF0) == 0x30 {
         0..16
@@ -226,23 +226,11 @@ fn execute_pop_internal(engine: &mut Engine, name: &'static str) -> Status {
         fail!("execute_pop cmd: {:X}", cmd)
     };
     engine.load_instruction(
-        Instruction::new(name).set_opts(InstructionOptions::StackRegister(range))
+        Instruction::new("POP").set_opts(InstructionOptions::StackRegister(range))
     )?;
     engine.cc.stack.swap(0, engine.cmd.sreg())?;
     engine.cc.stack.drop(0)?;
     Ok(())
-}
-
-pub(super) fn execute_drop(engine: &mut Engine) -> Status {
-    execute_pop_internal(engine, "DROP")
-}
-
-pub(super) fn execute_nip(engine: &mut Engine) -> Status {
-    execute_pop_internal(engine, "NIP")
-}
-
-pub(super) fn execute_pop(engine: &mut Engine) -> Status {
-    execute_pop_internal(engine, "POP")
 }
 
 
@@ -299,7 +287,7 @@ pub(super) fn execute_pu2xc(engine: &mut Engine) -> Status {
 }
 
 // (x ... - x ... x)
-fn execute_push_internal(engine: &mut Engine, name: &'static str) -> Status {
+pub(super) fn execute_push(engine: &mut Engine) -> Status {
     let cmd = engine.cc.last_cmd();
     let range = if (cmd & 0xF0) == 0x20 {
         0..16
@@ -309,7 +297,7 @@ fn execute_push_internal(engine: &mut Engine, name: &'static str) -> Status {
         fail!("execute_push: cmd {:X}", cmd)
     };
     engine.load_instruction(
-        Instruction::new(name).set_opts(InstructionOptions::StackRegister(range))
+        Instruction::new("PUSH").set_opts(InstructionOptions::StackRegister(range))
     )?;
     let ra = engine.cmd.sreg();
     if engine.cc.stack.depth() <= ra {
@@ -317,18 +305,6 @@ fn execute_push_internal(engine: &mut Engine, name: &'static str) -> Status {
     }
     engine.cc.stack.push_copy(ra)?;
     Ok(())
-}
-
-pub(super) fn execute_dup(engine: &mut Engine) -> Status {
-    execute_push_internal(engine, "DROP")
-}
-
-pub(super) fn execute_over(engine: &mut Engine) -> Status {
-    execute_push_internal(engine, "OVER")
-}
-
-pub(super) fn execute_push(engine: &mut Engine) -> Status {
-    execute_push_internal(engine, "PUSH")
 }
 
 // (x ... y ... - x ... y ... x y)

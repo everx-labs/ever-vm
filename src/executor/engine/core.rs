@@ -258,7 +258,13 @@ impl Engine {
 
     fn trace_info(&self, info_type: EngineTraceInfoType, gas: i64, log_string: Option<String>) {
         if let Some(callback) = &self.trace_callback {
-            let cmd_str = log_string.or_else(|| self.cmd.dump_with_params()).unwrap_or_else(String::new);
+            // bigint param has been withdrawn during execution, so take it from the stack
+            let cmd_str = if self.cmd.ictx.biginteger().is_some() {
+                format!("{}{} {}", self.cmd.name_prefix.unwrap_or(""),
+                    self.cmd.name, self.cc.stack.get(0).as_integer().unwrap())
+            } else {
+                log_string.or_else(|| self.cmd.dump_with_params()).unwrap_or_else(String::new)
+            };
             let info = EngineTraceInfo {
                 info_type,
                 step: self.step,
