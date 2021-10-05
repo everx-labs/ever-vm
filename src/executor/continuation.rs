@@ -124,7 +124,6 @@ pub(super) fn callx(engine: &mut Engine, callee: usize, need_convert: bool) -> S
     if has_c0 {
         swap(engine, var!(callee), CC)?;
     } else {
-        swap(engine, ctrl!(1), savelist!(CC, 1))?;
         swap(engine, ctrl!(0), savelist!(CC, 0))?;
         swap(engine, var!(callee), CC)?;
         swap(engine, var!(callee), ctrl!(0))?;
