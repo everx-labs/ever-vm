@@ -18,7 +18,7 @@
 edition = "2018"
 build = "build.rs"
 name = "ton_vm"
-version = "1.8.18"
+version = "1.8.19"
 
 [dependencies]
 ton_types = { git = "https://github.com/tonlabs/ton-labs-types.git" }
