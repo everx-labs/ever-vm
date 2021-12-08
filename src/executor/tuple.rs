@@ -1,5 +1,5 @@
 /*
-* Copyright 2018-2020 TON DEV SOLUTIONS LTD.
+* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -278,6 +278,7 @@ fn set_index(engine: &mut Engine, name: &'static str, how: u8) -> Status {
         engine.cmd.var_mut(params - 1).as_tuple_mut()?
     };
     let var = engine.cmd.var_mut(params - 2).withdraw();
+    let value_is_null = var.is_null();
     let len = tuple.len();
     if n < len {
         tuple[n] = var;
@@ -287,7 +288,9 @@ fn set_index(engine: &mut Engine, name: &'static str, how: u8) -> Status {
     } else {
         return err!(ExceptionCode::RangeCheckError)
     }
-    engine.use_gas(Gas::tuple_gas_price(tuple.len()));
+    if !value_is_null {
+        engine.use_gas(Gas::tuple_gas_price(tuple.len()));
+    }
     engine.cc.stack.push_tuple(tuple);
     Ok(())
 }

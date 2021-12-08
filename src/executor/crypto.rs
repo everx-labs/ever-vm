@@ -1,5 +1,5 @@
 /*
-* Copyright 2018-2020 TON DEV SOLUTIONS LTD.
+* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -25,7 +25,7 @@ use crate::{
     },
     types::{Exception, Status}
 };
-use ed25519::signature::{Signature, Verifier};
+use ed25519::signature::Verifier;
 use std::sync::Arc;
 use ton_types::{BuilderData, error, GasConsumer, ExceptionCode, UInt256};
 
@@ -92,7 +92,7 @@ pub(super) fn execute_chksigns(engine: &mut Engine) -> Status {
     let pub_key = ed25519_dalek::PublicKey::from_bytes(
         &pub_key.data()[..PUBLIC_KEY_BYTES]
     ).map_err(|_| exception!(ExceptionCode::FatalError))?;
-    let signature = ed25519::Signature::from_bytes(
+    let signature = ed25519::signature::Signature::from_bytes(
         &engine.cmd.var(1).as_slice()?.get_bytestring(0)[..SIGNATURE_BYTES]
     ).map_err(|_| exception!(ExceptionCode::FatalError))?;
 
@@ -119,7 +119,7 @@ pub(super) fn execute_chksignu(engine: &mut Engine) -> Status {
     let signature = engine.cmd.var(1).as_slice()?.get_bytestring(0);
 
     let mut result = false;
-    if let Ok(signature) = ed25519::Signature::from_bytes(&signature[..SIGNATURE_BYTES]) {
+    if let Ok(signature) = ed25519::signature::Signature::from_bytes(&signature[..SIGNATURE_BYTES]) {
         if let Ok(pub_key) = ed25519_dalek::PublicKey::from_bytes(pub_key.data()) {
             result = pub_key.verify(hash.data(), &signature).is_ok();
         }

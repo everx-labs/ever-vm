@@ -1,5 +1,5 @@
 /*
-* Copyright 2018-2020 TON DEV SOLUTIONS LTD.
+* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -77,7 +77,7 @@ pub fn tvm_exception_full(err: &failure::Error) -> Option<Exception> {
         Some(TvmError::TvmException(err)) => Some(Exception::from_code(*err, file!(), line!())),
         Some(_) => None,
         None => {
-            err.downcast_ref::<ton_types::types::ExceptionCode>().map(|err| 
+            err.downcast_ref::<ton_types::types::ExceptionCode>().map(|err|
                 Exception::from_code(*err, file!(), line!())
             )
         }

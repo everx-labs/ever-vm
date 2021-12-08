@@ -1,5 +1,5 @@
 /*
-* Copyright 2018-2020 TON DEV SOLUTIONS LTD.
+* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -155,7 +155,7 @@ impl SmartContractInfo{
         self.init_code_hash = init_code_hash;
     }
 
-    pub fn into_temp_data(self) -> StackItem {
+    pub fn into_temp_data_with_init_code_hash(self, is_init_code_hash: bool) -> StackItem {
         let mut params = vec![
             int!(0x076ef1ea),      // magic - should be changed because of structure change
             int!(self.actions),    // actions
@@ -175,8 +175,14 @@ impl SmartContractInfo{
                 .map(|params| StackItem::Cell(params.clone()))
                 .unwrap_or_else(StackItem::default),
         ];
-        params.push(StackItem::cell(self.mycode.clone()));
-        params.push(StackItem::int(IntegerData::from_unsigned_bytes_be(self.init_code_hash.as_slice())));
+        if is_init_code_hash {
+            params.push(StackItem::cell(self.mycode.clone()));
+            params.push(StackItem::int(IntegerData::from_unsigned_bytes_be(self.init_code_hash.as_slice())));
+        }
         StackItem::tuple(vec![StackItem::tuple(params)])
+    }
+
+    pub fn into_temp_data(self) -> StackItem {
+        self.into_temp_data_with_init_code_hash(true)
     }
 }
