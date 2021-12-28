@@ -270,7 +270,7 @@ fn set_index(engine: &mut Engine, name: &'static str, how: u8) -> Status {
     } else if how.bit(STACK) {
         engine.cmd.var(0).as_integer()?.into(0..=254)?
     } else {
-        0
+        unreachable!("internal error in set_index, how = {}", how)
     };
     let mut tuple = if how.bit(QUIET) && engine.cmd.var(params - 1).is_null() {
         vec![]
@@ -278,18 +278,18 @@ fn set_index(engine: &mut Engine, name: &'static str, how: u8) -> Status {
         engine.cmd.var_mut(params - 1).as_tuple_mut()?
     };
     let var = engine.cmd.var_mut(params - 2).withdraw();
-    let value_is_null = var.is_null();
     let len = tuple.len();
     if n < len {
         tuple[n] = var;
+        engine.use_gas(Gas::tuple_gas_price(len));
     } else if how.bit(QUIET) {
-        tuple.append(&mut vec![StackItem::None; n - len]);
-        tuple.push(var);
+        if !var.is_null() {
+            tuple.append(&mut vec![StackItem::None; n - len]);
+            tuple.push(var);
+            engine.use_gas(Gas::tuple_gas_price(n + 1));
+        }
     } else {
         return err!(ExceptionCode::RangeCheckError)
-    }
-    if !value_is_null {
-        engine.use_gas(Gas::tuple_gas_price(tuple.len()));
     }
     engine.cc.stack.push_tuple(tuple);
     Ok(())

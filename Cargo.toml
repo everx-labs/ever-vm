@@ -2,7 +2,7 @@
 build = 'build.rs'
 edition = '2018'
 name = 'ton_vm'
-version = '1.8.27'
+version = '1.8.28'
 
 [dependencies]
 ed25519 = '1.2'
