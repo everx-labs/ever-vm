@@ -20,7 +20,6 @@ use ton_types::{error, Result, SliceData};
 
 #[derive(Debug)]
 pub(super) struct Context {
-    pub(super) exceptions_off: bool,
     pub(super) params: Vec<InstructionParameter>
 }
 
@@ -194,7 +193,6 @@ impl Instruction {
             name_prefix: None,
             opts: None,
             ictx: Context {
-                exceptions_off: false,
                 params: Vec::new()
             },
             vars: Vec::new(),
