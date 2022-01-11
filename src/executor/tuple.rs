@@ -254,6 +254,14 @@ pub(super) fn execute_tuple_explodevar(engine: &mut Engine) -> Status {
 }
 
 fn set_index(engine: &mut Engine, name: &'static str, how: u8) -> Status {
+    if engine.version < 2 {
+        set_index_v1(engine, name, how)
+    } else {
+        set_index_v2(engine, name, how)
+    }
+}
+
+fn set_index_v2(engine: &mut Engine, name: &'static str, how: u8) -> Status {
     let mut params = 2;
     let mut inst = Instruction::new(name);
 
@@ -290,6 +298,48 @@ fn set_index(engine: &mut Engine, name: &'static str, how: u8) -> Status {
         }
     } else {
         return err!(ExceptionCode::RangeCheckError)
+    }
+    engine.cc.stack.push_tuple(tuple);
+    Ok(())
+}
+
+fn set_index_v1(engine: &mut Engine, name: &'static str, how: u8) -> Status {
+    let mut params = 2;
+    let mut inst = Instruction::new(name);
+
+    if how.bit(STACK) {
+        params += 1;
+    }
+    if how.bit(CMD) {
+        inst = inst.set_opts(InstructionOptions::Length(0..16));
+    }
+    engine.load_instruction(inst)?;
+    fetch_stack(engine, params)?;
+    let n = if how.bit(CMD) {
+        engine.cmd.length()
+    } else if how.bit(STACK) {
+        engine.cmd.var(0).as_integer()?.into(0..=254)?
+    } else {
+        0
+    };
+    let mut tuple = if how.bit(QUIET) && engine.cmd.var(params - 1).is_null() {
+        vec![]
+    } else {
+        engine.cmd.var_mut(params - 1).as_tuple_mut()?
+    };
+    let var = engine.cmd.var_mut(params - 2).withdraw();
+    let value_is_null = var.is_null();
+    let len = tuple.len();
+    if n < len {
+        tuple[n] = var;
+    } else if how.bit(QUIET) {
+        tuple.append(&mut vec![StackItem::None; n - len]);
+        tuple.push(var);
+    } else {
+        return err!(ExceptionCode::RangeCheckError)
+    }
+    if !value_is_null {
+        engine.use_gas(Gas::tuple_gas_price(tuple.len()));
     }
     engine.cc.stack.push_tuple(tuple);
     Ok(())

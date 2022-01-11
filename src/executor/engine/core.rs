@@ -53,6 +53,7 @@ pub struct Engine {
     trace: u8,
     trace_callback: Option<Box<dyn Fn(&Engine, &EngineTraceInfo)>>,
     log_string: Option<&'static str>,
+    pub version: usize,
 }
 
 impl Default for Engine {
@@ -193,6 +194,17 @@ impl Engine {
             trace,
             trace_callback,
             log_string: None,
+            version: 2,
+        }
+    }
+
+    pub fn set_version(&mut self, version: usize) -> Status {
+        let versions = [1, 2];
+        if versions.contains(&version) {
+            self.version = version;
+            Ok(())
+        } else {
+            Err(error!("internal error: version is not available"))
         }
     }
 
