@@ -2,7 +2,7 @@
 build = 'build.rs'
 edition = '2018'
 name = 'ton_vm'
-version = '1.8.29'
+version = '1.8.30'
 
 [dependencies]
 ed25519 = '1.2'
@@ -16,7 +16,7 @@ num-traits = '0.2'
 rand = '0.7'
 sha2 = '0.9'
 criterion = { features = [ 'html_reports' ], version = '0.3' }
-ton_labs_assembler = { git = 'https://github.com/tonlabs/ton-labs-assembler.git', tag = '1.2.30' }
+ton_labs_assembler = { git = 'https://github.com/tonlabs/ton-labs-assembler.git', tag = '1.2.31' }
 ton_types = { git = 'https://github.com/tonlabs/ton-labs-types.git', tag = '1.10.12' }
 
 [features]
