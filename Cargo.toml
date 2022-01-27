@@ -15,9 +15,10 @@ num = '0.4'
 num-traits = '0.2'
 rand = '0.7'
 sha2 = '0.9'
-criterion = { features = [ 'html_reports' ], version = '0.3' }
-ton_labs_assembler = { git = 'https://github.com/tonlabs/ton-labs-assembler.git', tag = '1.2.31' }
 ton_types = { git = 'https://github.com/tonlabs/ton-labs-types.git', tag = '1.10.12' }
+
+ton_labs_assembler = { git = 'https://github.com/tonlabs/ton-labs-assembler.git', tag = '1.2.31' }
+criterion = { features = [ 'html_reports' ], version = '0.3' }
 
 [features]
 ci_run = [  ]
@@ -26,6 +27,5 @@ log_file = [  ]
 verbose = [  ]
 
 [[bench]]
+name = "benchmarks"
 harness = false
-name = 'benchmarks'
-
