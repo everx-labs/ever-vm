@@ -155,7 +155,7 @@ impl SmartContractInfo{
         self.init_code_hash = init_code_hash;
     }
 
-    pub fn into_temp_data_with_init_code_hash(self, is_init_code_hash: bool) -> StackItem {
+    pub fn into_temp_data_with_init_code_hash(self, is_init_code_hash: bool, with_mycode: bool) -> StackItem {
         let mut params = vec![
             int!(0x076ef1ea),      // magic - should be changed because of structure change
             int!(self.actions),    // actions
@@ -175,14 +175,19 @@ impl SmartContractInfo{
                 .map(|params| StackItem::Cell(params.clone()))
                 .unwrap_or_else(StackItem::default),
         ];
-        if is_init_code_hash {
+        if with_mycode {
             params.push(StackItem::cell(self.mycode.clone()));
+        }
+        if is_init_code_hash {
+            if !with_mycode {
+                params.push(StackItem::default());
+            }
             params.push(StackItem::int(IntegerData::from_unsigned_bytes_be(self.init_code_hash.as_slice())));
         }
         StackItem::tuple(vec![StackItem::tuple(params)])
     }
 
     pub fn into_temp_data(self) -> StackItem {
-        self.into_temp_data_with_init_code_hash(true)
+        self.into_temp_data_with_init_code_hash(true, true)
     }
 }
