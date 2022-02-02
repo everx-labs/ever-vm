@@ -38,7 +38,7 @@ pub(super) fn execute_isnull(engine: &mut Engine) -> Status {
 const ARG: u8 = 0x03;     // args number
 const DBL: u8 = 0x04;     // DouBLe NULL in result
 const INV: u8 = 0x08;     // INVert rule to get output value: get it upon unsuccessful call
-const ZERO: u8 = 0xA0;    // zeroswapif instead nullswapif
+const ZERO: u8 = 0x10;    // zeroswapif instead nullswapif
 
 fn nullzeroswapif(engine: &mut Engine, name: &'static str, how: u8) -> Status {
     let args = how.mask(ARG);
@@ -47,12 +47,12 @@ fn nullzeroswapif(engine: &mut Engine, name: &'static str, how: u8) -> Status {
         Instruction::new(name)
     )?;
     fetch_stack(engine, args as usize)?;
-    let (attr, new_element) = if how.bit(ZERO) {
-        (!engine.cmd.var(0).is_null(), int!(0))
+    let new_element = if how.bit(ZERO) {
+        int!(0)
     } else {
-        (engine.cmd.var(0).as_bool()?, StackItem::None)
+        StackItem::None
     };
-    if attr ^ how.bit(INV) {
+    if engine.cmd.var(0).as_bool()? ^ how.bit(INV) {
         if how.bit(DBL) {
             engine.cc.stack.push(new_element.clone());
         }
