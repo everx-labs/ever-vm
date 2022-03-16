@@ -16,7 +16,8 @@ use crate::{
     stack::{StackItem, integer::IntegerData}, types::Status
 };
 use std::sync::Arc;
-use ton_types::{BuilderData, HashmapE, IBitstring};
+use ton_block::GlobalCapabilities;
+use ton_types::{BuilderData, HashmapE, IBitstring, types::ExceptionCode};
 
 fn execute_config_param(engine: &mut Engine, name: &'static str, opt: bool) -> Status {
     engine.load_instruction(Instruction::new(name))?;
@@ -106,7 +107,11 @@ pub(super) fn execute_my_addr(engine: &mut Engine) -> Status {
 
 // - cell
 pub(super) fn execute_my_code(engine: &mut Engine) -> Status {
-    extract_config(engine, "MYCODE")
+    if !engine.check_capabilities(GlobalCapabilities::CapMycode as u64) {
+        Status::Err(ExceptionCode::InvalidOpcode.into())
+    } else {
+        extract_config(engine, "MYCODE")
+    }
 }
 
 // - x
@@ -116,5 +121,9 @@ pub(super) fn execute_randseed(engine: &mut Engine) -> Status {
 
 // - integer | none
 pub(super) fn execute_init_code_hash(engine: &mut Engine) -> Status {
-    extract_config(engine, "INITCODEHASH")
+    if !engine.check_capabilities(GlobalCapabilities::CapInitCodeHash as u64) {
+        Status::Err(ExceptionCode::InvalidOpcode.into())
+    } else {
+        extract_config(engine, "INITCODEHASH")
+    }
 }

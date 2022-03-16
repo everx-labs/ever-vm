@@ -25,12 +25,15 @@ use crate::{
         }
     },
     types::{
-        ACTION_RESERVE, ACTION_SEND_MSG, ACTION_SET_CODE, ACTION_CHANGE_LIB,
         Exception, Status
     }
 };
 use num::{BigInt, bigint::Sign};
 use std::sync::Arc;
+use ton_block::{
+    ACTION_CHANGE_LIB, ACTION_RESERVE, ACTION_SEND_MSG, ACTION_SET_CODE,
+    GlobalCapabilities
+};
 use ton_types::{
     BuilderData, Cell, error, GasConsumer, IBitstring, Result, SliceData,
     types::ExceptionCode,
@@ -65,6 +68,9 @@ fn add_action(engine: &mut Engine, action_id: u32, cell: Option<Cell>, suffix: B
 
 /// CHANGELIB (h x - )
 pub(super) fn execute_changelib(engine: &mut Engine) -> Status {
+    if !engine.check_capabilities(GlobalCapabilities::CapSetLibCode as u64) {
+        return Status::Err(ExceptionCode::InvalidOpcode.into());
+    }
     engine.load_instruction(Instruction::new("CHANGELIB"))?;
     fetch_stack(engine, 2)?;
     let x = engine.cmd.var(0).as_integer()?.into(0..=2)? as u8;
@@ -95,6 +101,9 @@ pub(super) fn execute_setcode(engine: &mut Engine) -> Status {
 
 /// SETLIBCODE (c x - )
 pub(super) fn execute_setlibcode(engine: &mut Engine) -> Status {
+    if !engine.check_capabilities(GlobalCapabilities::CapSetLibCode as u64) {
+        return Status::Err(ExceptionCode::InvalidOpcode.into());
+    }
     engine.load_instruction(Instruction::new("SETLIBCODE"))?;
     fetch_stack(engine, 2)?;
     let x = engine.cmd.var(0).as_integer()?.into(0..=2)? as u8;

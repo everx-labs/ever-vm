@@ -53,13 +53,7 @@ pub struct Engine {
     trace: u8,
     trace_callback: Option<Box<dyn Fn(&Engine, &EngineTraceInfo)>>,
     log_string: Option<&'static str>,
-    pub version: usize,
-}
-
-impl Default for Engine {
-    fn default() -> Self {
-        Self::new()
-    }
+    capabilities: u64
 }
 
 #[derive(Eq, Debug, PartialEq)]
@@ -147,17 +141,18 @@ lazy_static::lazy_static! {
 }
 
 impl Engine {
+
     pub const TRACE_NONE:  u8 = 0x00;
     pub const TRACE_CODE:  u8 = 0x01;
     pub const TRACE_GAS:   u8 = 0x02;
     pub const TRACE_STACK: u8 = 0x04;
     pub const TRACE_CTRLS: u8 = 0x08;
     pub const TRACE_ALL:   u8 = 0xFF;
-    pub const TRACE_ALL_BUT_CTRLS:   u8 = 0x07;
+    pub const TRACE_ALL_BUT_CTRLS: u8 = 0x07;
 
     // External API ***********************************************************
 
-    pub fn new() -> Engine {
+    pub fn with_capabilities(capabilities: u64) -> Engine {
         let trace = if cfg!(feature="fift_check") {
             Engine::TRACE_ALL_BUT_CTRLS
         } else if cfg!(feature="verbose") {
@@ -194,17 +189,7 @@ impl Engine {
             trace,
             trace_callback,
             log_string: None,
-            version: 2,
-        }
-    }
-
-    pub fn set_version(&mut self, version: usize) -> Status {
-        let versions = [1, 2];
-        if versions.contains(&version) {
-            self.version = version;
-            Ok(())
-        } else {
-            Err(error!("internal error: version is not available"))
+            capabilities
         }
     }
 
@@ -219,6 +204,10 @@ impl Engine {
     pub fn assert_stack(&self, stack: &Stack) -> &Engine {
         assert!(self.cc.stack.eq(stack));
         self
+    }
+
+    pub fn check_capabilities(&self, capabilities: u64) -> bool {
+        (self.capabilities & capabilities) == capabilities
     }
 
     pub fn eq_stack(&self, stack: &Stack) -> bool {

@@ -15,11 +15,6 @@ use crate::stack::{StackItem, integer::IntegerData};
 use std::fmt;
 use ton_types::{Result, types::ExceptionCode};
 
-pub const ACTION_SEND_MSG: u32 = 0x0ec3c86d;
-pub const ACTION_SET_CODE: u32 = 0xad4de08e;
-pub const ACTION_RESERVE:  u32 = 0x36e6b809;
-pub const ACTION_CHANGE_LIB: u32 = 0x26fa1dd4;
-
 #[derive(Clone, PartialEq)]
 enum ExceptionType {
     System(ExceptionCode),

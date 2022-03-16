@@ -21,6 +21,7 @@ use crate::{
     types::{Exception, Status}
 };
 use std::sync::Arc;
+use ton_block::GlobalCapabilities;
 use ton_types::{error, types::ExceptionCode};
 
 fn tuple(engine: &mut Engine, name: &'static str, how: u8) -> Status {
@@ -254,10 +255,10 @@ pub(super) fn execute_tuple_explodevar(engine: &mut Engine) -> Status {
 }
 
 fn set_index(engine: &mut Engine, name: &'static str, how: u8) -> Status {
-    if engine.version < 2 {
-        set_index_v1(engine, name, how)
-    } else {
+    if engine.check_capabilities(GlobalCapabilities::CapFixTupleIndexBug as u64) {
         set_index_v2(engine, name, how)
+    } else {
+        set_index_v1(engine, name, how)
     }
 }
 
