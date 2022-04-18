@@ -453,6 +453,7 @@ impl Engine {
                 swap(self, savelist!(var!(n + 1), 0), ctrl!(0))?; // ec_repeat.savelist[0] = cc
                 swap(self, savelist!(var!(n), 0), var!(n + 1))?; // body.savelist[0] = ec_repeat
                 switch(self, var!(n))?;
+                self.cmd.vars.truncate(n);
             } else {
                 self.log_string = Some("RET FROM REPEAT");
                 switch(self, ctrl!(0))?;
@@ -488,6 +489,7 @@ impl Engine {
         copy_to_var(self, CC)?;
         swap(self, savelist!(var!(n), 0), var!(n + 1))?;  // body.savelist[0] = ec_again
         switch(self, var!(n))?;
+        self.cmd.vars.truncate(n);
         Ok(None)
     }
 

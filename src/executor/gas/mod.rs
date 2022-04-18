@@ -14,20 +14,33 @@
 use crate::{
     error::TvmError,
     executor::{engine::{Engine, storage::fetch_stack}, types::Instruction},
-    stack::{StackItem, integer::{IntegerData, conversion::FromInt}},
+    stack::{StackItem, integer::{IntegerData, conversion::FromInt, behavior::Quiet, math::Round}},
     types::{Exception, Status}
 };
 use std::sync::Arc;
-use ton_types::{error, types::ExceptionCode};
+use ton_types::{error, types::ExceptionCode, Result};
 
 pub mod gas_state;
-use gas_state::SPEC_LIMIT;
+
+fn gramtogas(engine: &Engine, nanograms: &IntegerData) -> Result<i64> {
+    let gas_price = IntegerData::from_i64(engine.get_gas().get_gas_price());
+    let gas = nanograms.div::<Quiet>(&gas_price, Round::FloorToZero)?.0;
+    let ret = gas.take_value_of(|x| i64::from_int(x).ok()).unwrap_or(i64::MAX);
+    Ok(ret)
+}
+fn setgaslimit(engine: &mut Engine, gas_limit: i64) -> Status {
+    if gas_limit < engine.gas_used() {
+        return err!(ExceptionCode::OutOfGas);
+    }
+    engine.new_gas_limit(gas_limit);
+    Ok(())
+}
 
 // Application-specific primitives - A.10; Gas-related primitives - A.10.2
 // ACCEPT - F800
 pub fn execute_accept(engine: &mut Engine) -> Status {
     engine.load_instruction(Instruction::new("ACCEPT"))?;
-    engine.new_gas_limit(SPEC_LIMIT);
+    engine.new_gas_limit(i64::MAX);
     Ok(())
 }
 // Application-specific primitives - A.11; Gas-related primitives - A.11.2
@@ -37,22 +50,16 @@ pub fn execute_setgaslimit(engine: &mut Engine) -> Status {
     fetch_stack(engine, 1)?;
     let gas_limit = engine.cmd.var(0).as_integer()?
         .take_value_of(|x| i64::from_int(x).ok())?;
-    if gas_limit < engine.gas_used() {
-        return err!(ExceptionCode::OutOfGas);
-    }
-    engine.new_gas_limit(gas_limit);
-    Ok(())
+    setgaslimit(engine, gas_limit)
 }
 // Application-specific primitives - A.11; Gas-related primitives - A.11.2
 // BUYGAS - F802
 pub fn execute_buygas(engine: &mut Engine) -> Status {
     engine.load_instruction(Instruction::new("BUYGAS"))?;
     fetch_stack(engine, 1)?;
-    let nanograms = engine.cmd.var(0).as_integer()?
-        .take_value_of(|x| i64::from_int(x).ok())?;
-    let gas_price = engine.get_gas().get_gas_price();
-    engine.new_gas_limit(gas_price*nanograms);
-    Ok(())
+    let nanograms = engine.cmd.var(0).as_integer()?;
+    let gas_limit = gramtogas(engine, nanograms)?;
+    setgaslimit(engine, gas_limit)
 }
 // Application-specific primitives - A.11; Gas-related primitives - A.11.2
 // GRAMTOGAS - F804
@@ -63,9 +70,8 @@ pub fn execute_gramtogas(engine: &mut Engine) -> Status {
     let gas = if nanograms_input.as_integer()?.is_neg() {
         0
     } else {
-        let nanograms = nanograms_input.as_integer()?.take_value_of(|x| i64::from_int(x).ok())?;
-        let gas_price = engine.get_gas().get_gas_price();
-        std::cmp::min(SPEC_LIMIT, gas_price * nanograms)
+        let nanograms = nanograms_input.as_integer()?;
+        gramtogas(engine, nanograms)?
     };
     engine.cc.stack.push(int!(gas));
     Ok(())
