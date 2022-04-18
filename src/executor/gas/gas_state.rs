@@ -15,10 +15,6 @@ use crate::{error::TvmError, types::Exception};
 use std::{cmp::{max, min}};
 use ton_types::{error, Result, types::ExceptionCode};
 
-// Application-specific primitives - A.10; Gas-related primitives - A.10.2
-// Specification limit value - pow(2,63)-1
-pub static SPEC_LIMIT: i64 = 9223372036854775807;
-
 // Gas state
 #[derive(Clone, Debug, PartialEq)]
 pub struct Gas {

@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Version: 1.8.32
+## Version: 1.8.33
 
 ### New
  - Add mycode capability (#152)
@@ -46,12 +46,25 @@ All notable changes to this project will be documented in this file.
  - Co-authored-by: ViacheslavB &lt;bvscd@mail.ru&gt;
  - Co-authored-by: Slava &lt;slava@qey.ai&gt;
  - Co-authored-by: Alexey Danilevich &lt;alexvd@inbox.ru&gt;
+ - Fix empty AGAIN loop (#171)
+ - Fix empty AGAIN, REPEAT loops
+ - Fix GRAMTOGAS (#231)
+ - Fix GRAMTOGAS
+ - Recover benchmarks building
+ - Fix BUYGAS (#232)
+ - Simplify: SPEC_LIMIT is nothing more than i64::MAX
+ - Fix BUYGAS
+ - Address feedback
+ - Handle BUYGAS out-of-gas condition the same way as for SETGASLIMIT
+ - Extract common code to setgaslimit() private func
+ - Add negative input tests for SETGASLIMIT, BUYGAS
  - Co-authored-by: Suvorov Ivan &lt;sv_91@inbox.ru&gt;
  - Co-authored-by: SergeyY &lt;43989533+yaroslavser@users.noreply.github.com&gt;
  - Co-authored-by: Ivan Suvorov &lt;ivan.s@tonlabs.io&gt;
  - Co-authored-by: Tonjen &lt;jenkins@tonlabs.io&gt;
  - Co-authored-by: Slava &lt;slava@qey.ai&gt;
  - Co-authored-by: Alexey Danilevich &lt;alexvd@inbox.ru&gt;
+ - Co-authored-by: Mike &lt;mikhael.skvortsov@gmail.com&gt;
 
 
 

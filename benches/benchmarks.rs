@@ -16,6 +16,8 @@ use ton_types::SliceData;
 use ton_vm::{executor::Engine, stack::{savelist::SaveList, Stack, StackItem, integer::IntegerData}, int};
 use std::{sync::Arc, time::Duration};
 
+static DEFAULT_CAPABILITIES: u64 = 0x172e;
+
 fn load_boc(filename: &str) -> ton_types::Cell {
     let mut bytes = Vec::new();
     let mut file = std::fs::File::open(filename).unwrap();
@@ -65,7 +67,7 @@ fn criterion_bench_elector_algo_1000_vtors(c: &mut Criterion) {
     group.sample_size(10);
     group.sampling_mode(SamplingMode::Flat);
     group.bench_function("elector-algo-1000-vtors", |b| b.iter(|| {
-        let mut engine = Engine::new().setup_with_libraries(
+        let mut engine = Engine::with_capabilities(DEFAULT_CAPABILITIES).setup_with_libraries(
             SliceData::from(elector_code.clone()),
             Some(ctrls.clone()),
             Some(stack.clone()),
@@ -118,7 +120,7 @@ fn criterion_bench_tiny_loop_200000_iters(c: &mut Criterion) {
     group.sample_size(10);
     group.sampling_mode(SamplingMode::Flat);
     group.bench_function("tiny-loop-200000-iters", |b| b.iter(|| {
-        let mut engine = Engine::new().setup_with_libraries(
+        let mut engine = Engine::with_capabilities(DEFAULT_CAPABILITIES).setup_with_libraries(
             SliceData::from(tiny_code.clone()),
             Some(ctrls.clone()),
             Some(stack.clone()),
