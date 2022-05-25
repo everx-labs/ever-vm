@@ -53,6 +53,7 @@ pub struct Engine {
     trace: u8,
     trace_callback: Option<Box<dyn Fn(&Engine, &EngineTraceInfo)>>,
     log_string: Option<&'static str>,
+    flags: u64,
     capabilities: u64
 }
 
@@ -150,6 +151,8 @@ impl Engine {
     pub const TRACE_ALL:   u8 = 0xFF;
     pub const TRACE_ALL_BUT_CTRLS: u8 = 0x07;
 
+    pub (crate) const FLAG_COPYLEFTED: u64 = 0x01;
+
     // External API ***********************************************************
 
     pub fn with_capabilities(capabilities: u64) -> Engine {
@@ -189,6 +192,7 @@ impl Engine {
             trace,
             trace_callback,
             log_string: None,
+            flags: 0,
             capabilities
         }
     }
@@ -208,6 +212,15 @@ impl Engine {
 
     pub fn check_capabilities(&self, capabilities: u64) -> bool {
         (self.capabilities & capabilities) == capabilities
+    }
+
+    pub fn check_or_set_flags(&mut self, flags: u64) -> bool {
+        if (self.flags & flags) == flags {
+            true
+        } else {
+            self.flags |= flags;
+            false
+        }
     }
 
     pub fn eq_stack(&self, stack: &Stack) -> bool {
@@ -262,7 +275,7 @@ impl Engine {
                 format!("{}{} {}", self.cmd.name_prefix.unwrap_or(""),
                     self.cmd.name, self.cc.stack.get(0).as_integer().unwrap())
             } else {
-                log_string.or_else(|| self.cmd.dump_with_params()).unwrap_or_else(String::new)
+                log_string.or_else(|| self.cmd.dump_with_params()).unwrap_or_default()
             };
             let info = EngineTraceInfo {
                 info_type,

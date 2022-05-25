@@ -127,3 +127,12 @@ pub(super) fn execute_init_code_hash(engine: &mut Engine) -> Status {
         extract_config(engine, "INITCODEHASH")
     }
 }
+
+// - integer
+pub(super) fn execute_storage_fees_collected(engine: &mut Engine) -> Status {
+    if !engine.check_capabilities(GlobalCapabilities::CapStorageFeeToTvm as u64) {
+        Status::Err(ExceptionCode::InvalidOpcode.into())
+    } else {
+        extract_config(engine, "STORAGEFEE")
+    }
+}

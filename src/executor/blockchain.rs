@@ -14,29 +14,27 @@
 use crate::{
     error::TvmError,
     executor::{
-        serialize_currency_collection, engine::{Engine, storage::fetch_stack},
-        types::{Instruction}
+        engine::{storage::fetch_stack, Engine},
+        serialize_currency_collection,
+        types::Instruction,
     },
     stack::{
-        StackItem,
         integer::{
-            IntegerData, behavior::OperationBehavior,
-            serialization::UnsignedIntegerBigEndianEncoding
-        }
+            behavior::OperationBehavior, serialization::UnsignedIntegerBigEndianEncoding,
+            IntegerData,
+        },
+        StackItem,
     },
-    types::{
-        Exception, Status
-    }
+    types::{Exception, Status},
 };
-use num::{BigInt, bigint::Sign};
+use num::{bigint::Sign, BigInt};
 use std::sync::Arc;
 use ton_block::{
-    ACTION_CHANGE_LIB, ACTION_RESERVE, ACTION_SEND_MSG, ACTION_SET_CODE,
-    GlobalCapabilities
+    Deserializable, GlobalCapabilities, MsgAddressInt, ACTION_CHANGE_LIB, ACTION_COPYLEFT,
+    ACTION_RESERVE, ACTION_SEND_MSG, ACTION_SET_CODE,
 };
 use ton_types::{
-    BuilderData, Cell, error, GasConsumer, IBitstring, Result, SliceData,
-    types::ExceptionCode,
+    error, types::ExceptionCode, BuilderData, Cell, GasConsumer, IBitstring, Result, SliceData,
 };
 
 fn get_bigint(slice: &SliceData) -> BigInt {
@@ -109,6 +107,36 @@ pub(super) fn execute_setlibcode(engine: &mut Engine) -> Status {
     let x = engine.cmd.var(0).as_integer()?.into(0..=2)? as u8;
     let cell = engine.cmd.var(1).as_cell()?.clone();
     add_action(engine, ACTION_CHANGE_LIB, Some(cell), BuilderData::with_raw(vec![x * 2 + 1], 8)?)
+}
+
+/// COPYLEFT (s n - )
+pub(super) fn execute_copyleft(engine: &mut Engine) -> Status {
+    if !engine.check_capabilities(GlobalCapabilities::CapCopyleft as u64) {
+        return Status::Err(ExceptionCode::InvalidOpcode.into());
+    }
+    if engine.check_or_set_flags(Engine::FLAG_COPYLEFTED) {
+        return Status::Err(ExceptionCode::IllegalInstruction.into());
+    }
+    engine.load_instruction(Instruction::new("COPYLEFT"))?;
+
+    let mut myaddr_slice = engine.config_param(8)?.clone();
+    let myaddr = match &mut myaddr_slice {
+        StackItem::Slice(data) => MsgAddressInt::construct_from(data)?,
+        _ => return Status::Err(ExceptionCode::TypeCheckError.into())
+    };
+    fetch_stack(engine, 2)?;
+    if !myaddr.is_masterchain() {
+        let num = [engine.cmd.var(0).as_integer()?.into(0..=255)? as u8];
+        let slice = engine.cmd.var(1).as_slice()?;
+        if slice.remaining_bits() != 32 * 8 {
+            return Status::Err(ExceptionCode::TypeCheckError.into());
+        }
+        let mut suffix = BuilderData::new();
+        suffix.append_raw(&num, 8)?.append_bytestring(slice)?;
+        add_action(engine, ACTION_COPYLEFT, None, suffix)
+    } else {
+        Ok(())
+    }
 }
 
 /// RAWRESERVE (x y - )

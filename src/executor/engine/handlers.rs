@@ -670,6 +670,7 @@ impl Handlers {
                 .set(0x04, execute_setcode)
                 .set(0x06, execute_setlibcode)
                 .set(0x07, execute_changelib)
+                .set(0x0A, execute_copyleft)
             )
     }
 
@@ -849,6 +850,7 @@ impl Handlers {
                 .set(0x29, execute_config_root)
                 .set(0x2A, execute_my_code)
                 .set(0x2B, execute_init_code_hash)
+                .set(0x2C, execute_storage_fees_collected)
                 .set(0x30, execute_config_dict)
                 .set(0x32, execute_config_ref_param)
                 .set(0x33, execute_config_opt_param)
