@@ -16,10 +16,10 @@ num-traits = '0.2'
 rand = '0.7'
 sha2 = '0.9'
 ton_types = { git = 'https://github.com/tonlabs/ton-labs-types.git', tag = '1.11.1' }
-ton_block = { git = 'https://github.com/tonlabs/ton-labs-block', tag = '1.7.48' }
+ton_block = { git = 'https://github.com/tonlabs/ton-labs-block', tag = '1.7.49' }
 
 criterion = { features = [ 'html_reports' ], version = '0.3' }
-ton_labs_assembler = { git = 'https://github.com/tonlabs/ton-labs-assembler.git', tag = '1.2.38' }
+ton_labs_assembler = { git = 'https://github.com/tonlabs/ton-labs-assembler.git', tag = '1.2.39' }
 
 [features]
 ci_run = [  ]

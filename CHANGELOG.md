@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Version: 1.8.33
+## Version: 1.8.35
 
 ### New
  - Add mycode capability (#152)
@@ -58,13 +58,43 @@ All notable changes to this project will be documented in this file.
  - Handle BUYGAS out-of-gas condition the same way as for SETGASLIMIT
  - Extract common code to setgaslimit() private func
  - Add negative input tests for SETGASLIMIT, BUYGAS
+ - Add storage_fee command (#253)
+ - Add storage_fee command
+ - fix for clippy (#286)
+ - fix for clippy
+ - Supported new cells (possibly without tag) (#156)
+ - Supported new cells (possibly without tag)
+ - Auto update patch version
+ - Increased version
+ - Auto update patch version
+ - Update Cargo.toml
+ - Update test_dump.rs
+ - Co-authored-by: Tonjen &lt;jenkins@tonlabs.io&gt;
+ - Co-authored-by: SergeyY &lt;43989533+yaroslavser@users.noreply.github.com&gt;
+ - Copyleft real (#157)
+ - Revert &quot;Remove copyleft 2&quot;
+ - This reverts commit fe24a69c2a933c6fe939ade0efb4c996610dcc60.
+ - Revert &quot;Remove copyleft&quot;
+ - This reverts commit 3aff50268b52ccedc8446c1eb86201e4cd9f89a8.
+ - Address for copyleft is AccountId
+ - Auto update patch version
+ - Disable copyleft in masterchain
+ - Small refactoring
+ - Small refactoring
+ - Fix copyleft doc
+ - Don&#x27;t throw error if copyleft in masterchain
+ - Co-authored-by: Ivan Suvorov &lt;ivan.s@tonlabs.io&gt;
+ - Co-authored-by: Tonjen &lt;jenkins@tonlabs.io&gt;
+ - Co-authored-by: ViacheslavB &lt;bvscd@mail.ru&gt;
+ - Update Cargo.toml
  - Co-authored-by: Suvorov Ivan &lt;sv_91@inbox.ru&gt;
+ - Co-authored-by: ViacheslavB &lt;bvscd@mail.ru&gt;
  - Co-authored-by: SergeyY &lt;43989533+yaroslavser@users.noreply.github.com&gt;
  - Co-authored-by: Ivan Suvorov &lt;ivan.s@tonlabs.io&gt;
  - Co-authored-by: Tonjen &lt;jenkins@tonlabs.io&gt;
  - Co-authored-by: Slava &lt;slava@qey.ai&gt;
- - Co-authored-by: Alexey Danilevich &lt;alexvd@inbox.ru&gt;
  - Co-authored-by: Mike &lt;mikhael.skvortsov@gmail.com&gt;
+ - Co-authored-by: Kirill &lt;43584399+Sumrachek@users.noreply.github.com&gt;
 
 
 
