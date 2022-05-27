@@ -20,7 +20,7 @@ use crate::{
         rand::*, serialization::*, slice_comparison::*, stack::*, tuple::*,
         types::{InstructionOptions, Instruction}
     },
-    stack::{continuation::ContinuationData, integer::behavior::{Signaling, Quiet}},
+    stack::integer::behavior::{Signaling, Quiet},
     types::{Exception, Status}
 };
 use std::{fmt, ops::Range};
@@ -51,7 +51,7 @@ fn execute_setcpx(engine: &mut Engine) -> Status {
 }
 
 fn execute_unknown(engine: &mut Engine) -> Status {
-    let code = engine.cc.last_cmd();
+    let code = engine.last_cmd();
     log::trace!(target: "tvm", "Invalid code: {} ({:#X})\n", code, code);
     err!(ExceptionCode::InvalidOpcode)
 }
@@ -898,12 +898,12 @@ impl Handlers {
         )
     }
 
-    pub(super) fn get_handler(&self, cc: &mut ContinuationData) -> Result<ExecuteHandler> {
-        let cmd = cc.next_cmd()?;
+    pub(super) fn get_handler(&self, engine: &mut Engine) -> Result<ExecuteHandler> {
+        let cmd = engine.next_cmd()?;
         // log::debug!(target: "tvm", "get_handler cmd: {:X}\n", cmd);
         match self.directs[cmd as usize] {
             Some(Handler::Direct(handler)) => Ok(handler),
-            Some(Handler::Subset(i)) => self.subsets[i].get_handler(cc),
+            Some(Handler::Subset(i)) => self.subsets[i].get_handler(engine),
             None => Ok(execute_unknown)
         }
     }
@@ -954,8 +954,24 @@ impl Handlers {
     }
 }
 
+fn print_handlers(handlers: &Handlers, f: &mut fmt::Formatter, indent: String) -> fmt::Result {
+    for h in 0..handlers.directs.len() {
+        match handlers.directs[h] {
+            Some(Handler::Direct(func)) => {
+                writeln!(f, "{}{:02x}: 0x{:x}", indent, h, func as *const u8 as usize)?
+            }
+            Some(Handler::Subset(i)) => {
+                writeln!(f, "{}{:02x}: subset", indent, h)?;
+                print_handlers(&handlers.subsets[i], f, format!("  {}", indent))?;
+            }
+            None => {}
+        }
+    }
+    fmt::Result::Ok(())
+}
+
 impl fmt::Debug for Handlers {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "...")
+        print_handlers(self, f, String::new())
     }
 }

@@ -232,8 +232,8 @@ where F: FnOnce(&mut Engine, &str) -> Status {
 }
 
 pub(crate) fn execute_dump_string(engine: &mut Engine) -> Status {
-    let length = 1 + (0x0F & engine.cc.last_cmd() as usize);
-    match engine.cc.next_cmd() {
+    let length = 1 + (0x0F & engine.last_cmd() as usize);
+    match engine.next_cmd() {
         Ok(0) if length == 1 => internal_dump_string(engine, "LOGFLUSH", FLUSH, |_, _| {
             Ok(())
         }),

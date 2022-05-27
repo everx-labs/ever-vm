@@ -18,11 +18,15 @@ use std::{sync::Arc, time::Duration};
 
 static DEFAULT_CAPABILITIES: u64 = 0x172e;
 
-fn load_boc(filename: &str) -> ton_types::Cell {
+fn read_boc(filename: &str) -> std::io::Cursor<Vec<u8>> {
     let mut bytes = Vec::new();
     let mut file = std::fs::File::open(filename).unwrap();
     std::io::Read::read_to_end(&mut file, &mut bytes).unwrap();
-    let mut cur = std::io::Cursor::new(bytes.clone());
+    std::io::Cursor::new(bytes)
+}
+
+fn load_boc(filename: &str) -> ton_types::Cell {
+    let mut cur = read_boc(filename);
     ton_types::deserialize_tree_of_cells(&mut cur).unwrap()
 }
 
@@ -132,8 +136,103 @@ fn criterion_bench_tiny_loop_200000_iters(c: &mut Criterion) {
     }));
 }
 
+fn criterion_bench_num_bigint(c: &mut Criterion) {
+    c.bench_function("num-bigint", |b| b.iter( || {
+        let n = num::BigInt::from(1000000);
+        let mut accum = num::BigInt::from(0);
+        let mut iter = num::BigInt::from(0);
+        loop {
+            if !(iter < n) {
+                break;
+            }
+            accum += num::BigInt::from(iter.bits());
+            iter += 1;
+        }
+        assert_eq!(num::BigInt::from(18951425), accum);
+    }));
+}
+
+// Note: the gmp-mpfr-based rug crate shows almost the same perf as num-bigint
+
+// fn criterion_bench_rug_bigint(c: &mut Criterion) {
+//     c.bench_function("rug-bigint", |b| b.iter( || {
+//         let n = rug::Integer::from(1000000);
+//         let mut accum = rug::Integer::from(0);
+//         let mut iter = rug::Integer::from(0);
+//         loop {
+//             if !(iter < n) {
+//                 break;
+//             }
+//             accum += rug::Integer::from(iter.significant_bits());
+//             iter += 1;
+//         }
+//         assert_eq!(rug::Integer::from(18951425), accum);
+//     }));
+// }
+
+fn criterion_bench_load_boc(c: &mut Criterion) {
+    let cur = read_boc("benches/elector-data.boc");
+    c.bench_function("load-boc", |b| b.iter( || {
+        ton_types::deserialize_tree_of_cells(&mut cur.clone()).unwrap()
+    }));
+}
+
+fn criterion_bench_deep_stack_switch(c: &mut Criterion) {
+    let code = ton_labs_assembler::compile_code("
+        NULL
+        PUSHINT 10000
+        PUSHCONT {
+            BLKPUSH 15, 0
+        }
+        REPEAT
+        ZERO
+        ONLYX
+    ").unwrap().into_cell();
+
+    let mut ctrls = SaveList::default();
+    let params = vec!(
+        int!(0x76ef1ea),
+        int!(0),
+        int!(0),
+        int!(0),
+        int!(0),
+        int!(0),
+        int!(0),
+        StackItem::tuple(vec!(
+            int!(1000000000),
+            StackItem::None
+        )),
+        StackItem::default(),
+        StackItem::None,
+        StackItem::None,
+        int!(0),
+    );
+    ctrls.put(7, &mut StackItem::tuple(vec!(StackItem::tuple(params)))).unwrap();
+
+    let mut stack = Stack::new();
+    stack.push(int!(1000000000));
+    stack.push(int!(0));
+    stack.push(int!(0));
+    stack.push(int!(-2));
+
+    c.bench_function("deep-cell-switch", |b| b.iter(|| {
+        let mut engine = Engine::with_capabilities(DEFAULT_CAPABILITIES).setup_with_libraries(
+            SliceData::from(code.clone()),
+            Some(ctrls.clone()),
+            None,
+            None,
+            vec!());
+        engine.execute().unwrap();
+        assert_eq!(engine.gas_used(), 310129);
+    }));
+}
+
 criterion_group!(benches,
+    criterion_bench_num_bigint,
+//    criterion_bench_rug_bigint,
+    criterion_bench_load_boc,
     criterion_bench_elector_algo_1000_vtors,
     criterion_bench_tiny_loop_200000_iters,
+    criterion_bench_deep_stack_switch,
 );
 criterion_main!(benches);

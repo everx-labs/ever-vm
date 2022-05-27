@@ -14,10 +14,10 @@
 use crate::{
     error::{tvm_exception_full, TvmError},
     executor::{
-        continuation::switch, engine::{handlers::Handlers, storage::{swap, copy_to_var}},
-        gas::gas_state::Gas, math::DivMode, microcode::{VAR, SAVELIST, CC, CTRL},
+        continuation::{switch, switch_to_c0}, engine::handlers::Handlers,
+        gas::gas_state::Gas, math::DivMode, microcode::{VAR, CTRL},
         types::{
-            Instruction, InstructionOptions, InstructionParameter, RegisterPair,
+            InstructionExt, Instruction, InstructionOptions, InstructionParameter, RegisterPair,
             RegisterTrio, LengthAndIndex, WhereToGetParams,
         }
     },
@@ -28,7 +28,7 @@ use crate::{
     smart_contract_info::SmartContractInfo,
     types::{Exception, ResultMut, ResultRef, Status}
 };
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, sync::Arc, ops::Range};
 use ton_types::{
     BuilderData, Cell, CellType, error, GasConsumer, Result, SliceData, HashmapE,
     types::{ExceptionCode, UInt256}
@@ -36,9 +36,38 @@ use ton_types::{
 
 pub(super) type ExecuteHandler = fn(&mut Engine) -> Status;
 
+pub struct SliceProto {
+    data_window: Range<usize>,
+    references_window: Range<usize>,
+}
+
+impl Default for SliceProto {
+    fn default() -> Self {
+        Self {
+            data_window: 0..0,
+            references_window: 0..0,
+        }
+    }
+}
+
+impl SliceProto {
+    fn pos(&self) -> usize {
+        self.data_window.start
+    }
+}
+
+impl From<&SliceData> for SliceProto {
+    fn from(slice: &SliceData) -> Self {
+        Self {
+            data_window: slice.pos()..slice.pos() + slice.remaining_bits(),
+            references_window: slice.get_references(),
+        }
+    }
+}
+
 pub struct Engine {
     pub(in crate::executor) cc: ContinuationData,
-    pub(in crate::executor) cmd: Instruction,
+    pub(in crate::executor) cmd: InstructionExt,
     pub(in crate::executor) ctrls: SaveList,
     pub(in crate::executor) libraries: Vec<HashmapE>, // 256 bit dictionaries
     visited_cells: HashSet<UInt256>,
@@ -49,7 +78,8 @@ pub struct Engine {
     debug_on: isize, // status of debug can be recursively incremented
     step: u32, // number of executable command
     debug_buffer: String,
-    cmd_code: SliceData, // start of current cmd
+    cmd_code: SliceProto, // start of current cmd
+    last_cmd: u8,
     trace: u8,
     trace_callback: Option<Box<dyn Fn(&Engine, &EngineTraceInfo)>>,
     log_string: Option<&'static str>,
@@ -173,11 +203,11 @@ impl Engine {
         } else if cfg!(feature="fift_check") {
             Some(Box::new(Self::fift_trace_callback))
         } else {
-            Some(Box::new(Self::defaul_trace_callback))
+            Some(Box::new(Self::default_trace_callback))
         };
         Engine {
             cc: ContinuationData::new_empty(),
-            cmd: Instruction::new("NOP"),
+            cmd: InstructionExt::new("NOP"),
             ctrls: SaveList::new(),
             libraries: Vec::new(),
             visited_cells: HashSet::new(),
@@ -188,7 +218,8 @@ impl Engine {
             debug_on: 1,
             step: 0,
             debug_buffer: String::new(),
-            cmd_code: SliceData::default(),
+            cmd_code: SliceProto::default(),
+            last_cmd: 0,
             trace,
             trace_callback,
             log_string: None,
@@ -268,12 +299,19 @@ impl Engine {
         self.step
     }
 
+    fn is_trace_enabled(&self) -> bool {
+        self.trace_callback.is_some()
+    }
+
     fn trace_info(&self, info_type: EngineTraceInfoType, gas: i64, log_string: Option<String>) {
-        if let Some(callback) = &self.trace_callback {
+        if self.is_trace_enabled() {
+            let default = Box::new(Self::default_trace_callback) as Box<dyn Fn(&Engine, &EngineTraceInfo)>;
+            let callback = self.trace_callback.as_ref()
+                .unwrap_or(&default);
             // bigint param has been withdrawn during execution, so take it from the stack
-            let cmd_str = if self.cmd.ictx.biginteger().is_some() {
-                format!("{}{} {}", self.cmd.name_prefix.unwrap_or(""),
-                    self.cmd.name, self.cc.stack.get(0).as_integer().unwrap())
+            let cmd_str = if self.cmd.biginteger_raw().is_some() {
+                format!("{}{} {}", self.cmd.proto.name_prefix.unwrap_or(""),
+                    self.cmd.proto.name, self.cc.stack.get(0).as_integer().unwrap_or(&IntegerData::default()))
             } else {
                 log_string.or_else(|| self.cmd.dump_with_params()).unwrap_or_default()
             };
@@ -281,7 +319,7 @@ impl Engine {
                 info_type,
                 step: self.step,
                 cmd_str,
-                cmd_code: self.cmd_code.clone(),
+                cmd_code: self.cmd_code(),
                 stack: &self.cc.stack,
                 gas_used: self.gas_used(),
                 gas_cmd: self.gas_used() - gas,
@@ -290,14 +328,14 @@ impl Engine {
         }
     }
 
-    fn defaul_trace_callback(&self, info: &EngineTraceInfo) {
+    fn default_trace_callback(&self, info: &EngineTraceInfo) {
         if self.trace_bit(Engine::TRACE_CODE) && info.has_cmd() {
             log::trace!(
                 target: "tvm",
                 "{}: {}\n{:x}\n",
                 info.step,
                 info.cmd_str,
-                info.cmd_code,
+                self.cmd_code(),
             );
         }
         if self.trace_bit(Engine::TRACE_GAS) {
@@ -366,19 +404,12 @@ impl Engine {
         self.trace_info(EngineTraceInfoType::Start, 0, None);
         let result = loop {
             if let Some(result) = self.seek_next_cmd()? {
-                // if self.gas.get_gas_credit() != 0 && self.gas.get_gas_remaining() < self.gas.get_gas_credit() {
-                //     return err!(ExceptionCode::OutOfGas)
-                // }
                 break result
             }
             let gas = self.gas_used();
-            self.cmd_code = self.cc.code().clone();
-            self.cmd = Instruction::new("");
-            let execution_result = match HANDLERS_CP0.get_handler(&mut self.cc) {
+            self.cmd_code = SliceProto::from(self.cc.code());
+            let execution_result = match HANDLERS_CP0.get_handler(self) {
                 Err(err) => {
-                    // it is simple value and doesn't correspond to Durov's code
-                    // but it is difficult in our engine to calc sharp
-                    // hope it will not be a problem
                     self.basic_use_gas(8);
                     Some(err)
                 }
@@ -390,8 +421,10 @@ impl Engine {
                 }
             };
             self.trace_info(EngineTraceInfoType::Normal, gas, None);
-            self.cmd.ictx.clear();
-            self.raise_exception(execution_result, true)?;
+            self.cmd.clear();
+            if let Some(err) = execution_result {
+                self.raise_exception(err)?;
+            }
         };
         self.trace_info(EngineTraceInfoType::Finish, self.gas_used(), Some("NORMAL TERMINATION".to_string()));
         self.commit();
@@ -413,7 +446,7 @@ impl Engine {
         if self.ctrls.get(0).is_none() {
             return Ok(Some(0))
         }
-        switch(self, ctrl!(0))?;
+        switch_to_c0(self)?;
         Ok(None)
     }
     fn step_pushint(&mut self, code: i32) -> Result<Option<i32>> {
@@ -435,16 +468,11 @@ impl Engine {
         match self.check_while_loop_condition() {
             Ok(true) => {
                 self.log_string = Some("NEXT WHILE ITERATION");
-                let n = self.cmd.var_count();
-                let body = ContinuationData::with_code(body);
-                let cond = ContinuationData::with_code(cond);
-                self.cmd.push_var(StackItem::Continuation(Arc::new(body)));
-                self.cmd.push_var(StackItem::Continuation(Arc::new(cond)));
-                copy_to_var(self, CC)?;
-                swap(self, savelist!(var!(n + 2), 0), ctrl!(0))?;     // ec_while.savelist[0] = c[0]
-                swap(self, savelist!(var!(n + 1), 0), var!(n + 2))?;  // cond.savelist[0] = ec_while
-                swap(self, savelist!(var!(n), 0), var!(n + 1))?;      // body.savelist[0] = cond
-                switch(self, var!(n))?;
+                let mut cond = ContinuationData::with_code(cond);
+                let mut while_ = ContinuationData::move_without_stack(&mut self.cc, body);
+                while_.savelist.put_opt(0, self.ctrl_mut(0)?)?;
+                cond.savelist.put_opt(0, &mut StackItem::Continuation(Arc::new(while_)))?;
+                self.ctrls.put_opt(0, &mut StackItem::Continuation(Arc::new(cond)))?;
             }
             Ok(false) => {
                 self.log_string = Some("RET FROM WHILE");
@@ -459,14 +487,9 @@ impl Engine {
             if *counter > 1 {
                 *counter -= 1;
                 self.log_string = Some("NEXT REPEAT ITERATION");
-                let n = self.cmd.var_count();
-                let body = ContinuationData::with_code(body);
-                self.cmd.push_var(StackItem::Continuation(Arc::new(body)));
-                copy_to_var(self, CC)?;
-                swap(self, savelist!(var!(n + 1), 0), ctrl!(0))?; // ec_repeat.savelist[0] = cc
-                swap(self, savelist!(var!(n), 0), var!(n + 1))?; // body.savelist[0] = ec_repeat
-                switch(self, var!(n))?;
-                self.cmd.vars.truncate(n);
+                let mut repeat = ContinuationData::move_without_stack(&mut self.cc, body);
+                repeat.savelist.put_opt(0, self.ctrl_mut(0)?)?;
+                self.ctrls.put_opt(0, &mut StackItem::Continuation(Arc::new(repeat)))?;
             } else {
                 self.log_string = Some("RET FROM REPEAT");
                 switch(self, ctrl!(0))?;
@@ -478,13 +501,9 @@ impl Engine {
         match self.check_until_loop_condition() {
             Ok(true) => {
                 self.log_string = Some("NEXT UNTIL ITERATION");
-                let n = self.cmd.var_count();
-                let body = ContinuationData::with_code(body);
-                self.cmd.push_var(StackItem::Continuation(Arc::new(body)));
-                copy_to_var(self, CC)?;
-                swap(self, savelist!(var!(n + 1), 0), ctrl!(0))?;     // until.savelist[0] = c[0]
-                swap(self, savelist!(var!(n), 0), var!(n + 1))?;      // body.savelist[0] = until
-                switch(self, var!(n))?;
+                let mut until = ContinuationData::move_without_stack(&mut self.cc, body);
+                until.savelist.put_opt(0, self.ctrl_mut(0)?)?;
+                self.ctrls.put_opt(0, &mut StackItem::Continuation(Arc::new(until)))?;
             }
             Ok(false) => {
                 self.log_string = Some("RET FROM UNTIL");
@@ -496,13 +515,8 @@ impl Engine {
     }
     fn step_again_loop(&mut self, body: SliceData) -> Result<Option<i32>> {
         self.log_string = Some("NEXT AGAIN ITERATION");
-        let n = self.cmd.var_count();
-        let body = ContinuationData::with_code(body);
-        self.cmd.push_var(StackItem::Continuation(Arc::new(body)));
-        copy_to_var(self, CC)?;
-        swap(self, savelist!(var!(n), 0), var!(n + 1))?;  // body.savelist[0] = ec_again
-        switch(self, var!(n))?;
-        self.cmd.vars.truncate(n);
+        let again = ContinuationData::move_without_stack(&mut self.cc, body);
+        self.ctrls.put_opt(0, &mut StackItem::Continuation(Arc::new(again)))?;
         Ok(None)
     }
 
@@ -525,13 +539,15 @@ impl Engine {
                     ContinuationType::AgainLoopBody(slice) => self.step_again_loop(slice),
                 }
             };
-            if let Some(log_string) = self.log_string {
-                self.trace_info(EngineTraceInfoType::Implicit, gas, Some(log_string.to_string()));
+            if self.is_trace_enabled() {
+                if let Some(log_string) = self.log_string {
+                    self.trace_info(EngineTraceInfoType::Implicit, gas, Some(log_string.to_string()));
+                }
             }
             match self.gas.check_gas_remaining().and(result) {
                 Ok(None) => (),
                 Ok(Some(exit_code)) => return Ok(Some(exit_code)),
-                Err(err) => self.raise_exception(Some(err), false)?
+                Err(err) => self.raise_exception(err)?
             }
         }
         Ok(None)
@@ -600,12 +616,12 @@ impl Engine {
     }
 
     pub fn dump_ctrls(&self, short: bool) -> String {
-        Self::dump_msg("Control registers", (0..16)
-            .filter_map(|i| self.ctrls.get(i).map(|item| if !short {
+        Self::dump_msg("Control registers", SaveList::REGS.iter()
+            .filter_map(|i| self.ctrls.get(*i).map(|item| if !short {
                 format!("{}: {}", i, item)
-            } else if i == 3 {
+            } else if *i == 3 {
                 "3: copy of CC".to_string()
-            } else if i == 7 {
+            } else if *i == 7 {
                 "7: SmartContractInfo".to_string()
             } else if let StackItem::Continuation(x) = item {
                 format!("{}: {:?}", i, x.type_of)
@@ -656,7 +672,7 @@ impl Engine {
         libraries: Vec<HashmapE>
     ) -> Self {
         *self.cc.code_mut() = code.clone();
-        self.cmd_code = code.clone();
+        self.cmd_code = SliceProto::from(self.cc.code());
         if let Some(stack) = stack {
             self.cc.stack = stack;
         }
@@ -670,21 +686,13 @@ impl Engine {
         self.ctrls.put(5, &mut StackItem::cell(Cell::default())).unwrap();
         self.ctrls.put(7, &mut SmartContractInfo::default().into_temp_data()).unwrap();
         if let Some(ref mut ctrls) = ctrls {
-            self.apply_savelist(ctrls).unwrap();
+            self.ctrls.apply(ctrls);
         }
         self.libraries = libraries;
         self
     }
 
     // Internal API ***********************************************************
-
-    pub(in crate::executor) fn apply_savelist(&mut self, savelist: &mut SaveList) -> Status {
-        for (k, v) in savelist.iter_mut() {
-            self.ctrls.put(*k, v)?;
-        }
-        savelist.clear();
-        Ok(())
-    }
 
     #[allow(dead_code)]
     pub(in crate::executor) fn local_time(&mut self) -> u64 {
@@ -694,16 +702,12 @@ impl Engine {
 
     // Implementation *********************************************************
 
-    pub(in crate::executor) fn load_instruction(&mut self, cmd: Instruction) -> Status {
-        self.cmd = cmd;
+    pub(in crate::executor) fn load_instruction(&mut self, proto: Instruction) -> Status {
+        self.cmd.proto = proto;
+        self.cmd.params.clear();
+        self.cmd.vars.clear();
         self.step += 1;
         self.extract_instruction()
-        // let result = self.extract_instruction()?;
-        // old formula for command with refs and data bits
-        // let refs = self.cmd_code.remaining_references() - self.cc.code().remaining_references();
-        // let bits = self.cmd_code.remaining_bits() - self.cc.code().remaining_bits();
-        // self.use_gas(Gas::basic_gas_price(bits, refs));
-        // Ok(())
     }
 
     pub(in crate::executor) fn switch_debug(&mut self, on_off: bool) {
@@ -755,7 +759,7 @@ impl Engine {
     }
 
     fn extract_slice(&mut self, offset: usize, r: usize, x: usize, mut refs: usize, mut bytes: usize) -> Result<SliceData> {
-        let mut code = self.cmd_code.clone();
+        let mut code = self.cmd_code();
         let mut slice = code.clone();
         if offset >= slice.remaining_bits() {
             return err!(ExceptionCode::InvalidOpcode)
@@ -784,20 +788,19 @@ impl Engine {
     }
 
     fn basic_use_gas(&mut self, mut bits: usize) -> i64 {
-        debug_assert_eq!(self.cmd_code.cell().repr_hash(), self.cmd_code.cell().repr_hash());
         bits += self.cc.code().pos().saturating_sub(self.cmd_code.pos());
         self.use_gas(Gas::basic_gas_price(bits, 0))
     }
 
     fn extract_instruction(&mut self) -> Status {
-        match self.cmd.opts {
+        match self.cmd.proto.opts {
             Some(InstructionOptions::ArgumentConstraints) => {
-                let param = self.cc.next_cmd()?;
+                let param = self.next_cmd()?;
                 self.basic_use_gas(0);
-                self.cmd.ictx.params.push(
+                self.cmd.params.push(
                     InstructionParameter::Pargs(((param >> 4) & 0x0F) as usize)
                 );
-                self.cmd.ictx.params.push(
+                self.cmd.params.push(
                     InstructionParameter::Nargs(
                         if (param & 0x0F) == 15 {
                             -1
@@ -808,104 +811,103 @@ impl Engine {
                 )
             },
             Some(InstructionOptions::ArgumentAndReturnConstraints) => {
-                let param = self.cc.next_cmd()?;
+                let param = self.next_cmd()?;
                 self.basic_use_gas(0);
-                self.cmd.ictx.params.push(
+                self.cmd.params.push(
                     InstructionParameter::Pargs(((param >> 4) & 0x0F) as usize)
                 );
-                self.cmd.ictx.params.push(
+                self.cmd.params.push(
                     InstructionParameter::Rargs((param & 0x0F) as usize)
                 )
             },
             Some(InstructionOptions::BigInteger) => {
                 self.basic_use_gas(5);
 
-                let bigint = IntegerData::from_big_endian_octet_stream(|| self.cc.next_cmd())?;
-                self.cmd.ictx.params.push(InstructionParameter::BigInteger(bigint))
+                let bigint = IntegerData::from_big_endian_octet_stream(|| self.next_cmd())?;
+                self.cmd.params.push(InstructionParameter::BigInteger(bigint))
             }
             Some(InstructionOptions::ControlRegister) => {
                 self.basic_use_gas(0);
-                self.cmd.ictx.params.push(
-                    InstructionParameter::ControlRegister((self.cc.last_cmd() & 0x0F) as usize)
+                self.cmd.params.push(
+                    InstructionParameter::ControlRegister((self.last_cmd() & 0x0F) as usize)
                 )
             },
             Some(InstructionOptions::DivisionMode) => {
-                let mode = DivMode::with_flags(self.cc.next_cmd()?);
+                let mode = DivMode::with_flags(self.next_cmd()?);
                 if mode.shift_parameter() {
-                    self.cmd.ictx.params.push(
-                        InstructionParameter::Length(self.cc.next_cmd()? as usize + 1)
-                    )
+                    let len = self.next_cmd()? as usize + 1;
+                    self.cmd.params.push(InstructionParameter::Length(len))
                 }
                 self.basic_use_gas(0);
-                self.cmd.name = mode.command_name()?;
-                self.cmd.ictx.params.push(InstructionParameter::DivisionMode(mode));
+                self.cmd.proto.name = mode.command_name()?;
+                self.cmd.params.push(InstructionParameter::DivisionMode(mode));
             },
             Some(InstructionOptions::Integer(ref range)) => {
                 let number = if *range == (-32768..32768) {
                     self.basic_use_gas(16);
-                    (((self.cc.next_cmd()? as i16) << 8) | (self.cc.next_cmd()? as i16)) as isize
+                    (((self.next_cmd()? as i16) << 8) | (self.next_cmd()? as i16)) as isize
                 } else if *range == (-128..128) {
                     self.basic_use_gas(8);
-                    (self.cc.next_cmd()? as i8) as isize
+                    (self.next_cmd()? as i8) as isize
                 } else if *range == (-5..11) {
                     self.basic_use_gas(0);
-                    match self.cc.last_cmd() & 0x0F {
+                    match self.last_cmd() & 0x0F {
                         value @ 0..=10 => value as isize,
                         value => value as isize - 16
                     }
                 } else if *range == (0..32) {
                     self.basic_use_gas(0);
-                    (self.cc.last_cmd() & 0x1F) as isize
+                    (self.last_cmd() & 0x1F) as isize
                 } else if *range == (0..64) {
                     self.basic_use_gas(0);
-                    (self.cc.last_cmd() % 64) as isize
+                    (self.last_cmd() % 64) as isize
                 } else if *range == (0..2048) {
                     self.basic_use_gas(8);
-                    let hi = (self.cc.last_cmd() as i16) & 0x07;
-                    let lo = self.cc.next_cmd()? as i16;
+                    let hi = (self.last_cmd() as i16) & 0x07;
+                    let lo = self.next_cmd()? as i16;
                     (hi * 256 + lo) as isize
                 } else if *range == (0..16384) {
                     self.basic_use_gas(8);
-                    let hi = (self.cc.last_cmd() as i16) & 0x3F;
-                    let lo = self.cc.next_cmd()? as i16;
+                    let hi = (self.last_cmd() as i16) & 0x3F;
+                    let lo = self.next_cmd()? as i16;
                     (hi * 256 + lo) as isize
                 } else if *range == (0..256) {
                     self.basic_use_gas(8);
-                    self.cc.next_cmd()? as isize
+                    self.next_cmd()? as isize
                 } else if *range == (0..15) {
                     self.basic_use_gas(0);
-                    match self.cc.last_cmd() & 0x0F {
+                    match self.last_cmd() & 0x0F {
                         15 => return err!(ExceptionCode::RangeCheckError),
                         value => value as isize
                     }
                 } else if *range == (1..15) {
                     self.basic_use_gas(0);
-                    match self.cc.last_cmd() & 0x0F {
+                    match self.last_cmd() & 0x0F {
                         0 | 15 => return err!(ExceptionCode::RangeCheckError),
                         value => value as isize
                     }
                 } else if *range == (-15..240) {
                     self.basic_use_gas(0);
-                    match self.cc.last_cmd() {
+                    match self.last_cmd() {
                         value @ 0..=240 => value as isize,
                         value @ 0xF1..=0xFF => value as isize - 256,
                     }
                 } else {
                     return err!(ExceptionCode::RangeCheckError)
                 };
-                self.cmd.ictx.params.push(InstructionParameter::Integer(number))
+                self.cmd.params.push(InstructionParameter::Integer(number))
             },
             Some(InstructionOptions::Length(ref range)) => {
                 if *range == (0..16) {
-                    self.cmd.ictx.params.push(
-                        InstructionParameter::Length((self.cc.last_cmd() & 0x0F) as usize)
+                    self.cmd.params.push(
+                        InstructionParameter::Length((self.last_cmd() & 0x0F) as usize)
                     )
                 } else if *range == (0..4) {
-                    let length = self.cc.last_cmd() & 3;
-                    self.cmd.ictx.params.push(InstructionParameter::Length(length as usize))
+                    let length = self.last_cmd() & 3;
+                    self.cmd.params.push(InstructionParameter::Length(length as usize))
                 } else if *range == (1..32) {
-                    let length = self.cc.last_cmd() & 0x1F;
-                    self.cmd.ictx.params.push(InstructionParameter::Length(length as usize))
+                    let length = self.last_cmd() & 0x1F;
+                    self.cmd.params.push(InstructionParameter::Length(length as usize))
                 }
                 else {
                     return err!(ExceptionCode::RangeCheckError)
@@ -916,9 +918,9 @@ impl Engine {
                 self.basic_use_gas(0);
                 // This is currently needed only for special-case BLKPUSH command and works the same way
                 // as InstructionOptions::StackRegisterPair(WhereToGetParams::GetFromLastByte)
-                let params = self.cc.last_cmd();
+                let params = self.last_cmd();
                 let (length, index) = (params >> 4, params & 0x0F);
-                self.cmd.ictx.params.push(
+                self.cmd.params.push(
                     InstructionParameter::LengthAndIndex(
                         LengthAndIndex {
                             length: length as usize,
@@ -928,24 +930,23 @@ impl Engine {
                 )
             },
             Some(InstructionOptions::LengthMinusOne(ref range)) => {
-                self.cmd.ictx.params.push(
-                    InstructionParameter::Length(
-                        1 + if *range == (0..8) {
-                            self.cc.last_cmd() & 0x07
-                        } else if *range == (0..256) {
-                            self.cc.next_cmd()?
-                        } else {
-                            return err!(ExceptionCode::RangeCheckError)
-                        } as usize
-                    )
+                let len = if *range == (0..8) {
+                    self.last_cmd() & 0x07
+                } else if *range == (0..256) {
+                    self.next_cmd()?
+                } else {
+                    return err!(ExceptionCode::RangeCheckError)
+                } as usize + 1;
+                self.cmd.params.push(
+                    InstructionParameter::Length(len)
                 );
                 self.basic_use_gas(0);
             },
             Some(InstructionOptions::LengthMinusOneAndIndexMinusOne) => {
-                let params = self.cc.next_cmd()?;
+                let params = self.next_cmd()?;
                 self.basic_use_gas(0);
                 let (l_minus_1, i_minus_1) = (params >> 4, params & 0x0F);
-                self.cmd.ictx.params.push(
+                self.cmd.params.push(
                     InstructionParameter::LengthAndIndex(
                         LengthAndIndex {
                             length: (l_minus_1 + 1) as usize,
@@ -955,10 +956,10 @@ impl Engine {
                 )
             },
             Some(InstructionOptions::LengthMinusTwoAndIndex) => {
-                let params = self.cc.next_cmd()?;
+                let params = self.next_cmd()?;
                 self.basic_use_gas(0);
                 let (l_minus_2, i) = (params >> 4, params & 0x0F);
-                self.cmd.ictx.params.push(
+                self.cmd.params.push(
                     InstructionParameter::LengthAndIndex(
                         LengthAndIndex {
                             length: (l_minus_2 + 2) as usize,
@@ -969,8 +970,8 @@ impl Engine {
             },
             Some(InstructionOptions::Pargs(ref range)) => {
                 if *range == (0..16) {
-                    self.cmd.ictx.params.push(
-                        InstructionParameter::Pargs((self.cc.last_cmd() & 0x0F) as usize)
+                    self.cmd.params.push(
+                        InstructionParameter::Pargs((self.last_cmd() & 0x0F) as usize)
                     )
                 } else {
                     return err!(ExceptionCode::RangeCheckError)
@@ -979,8 +980,8 @@ impl Engine {
             },
             Some(InstructionOptions::Rargs(ref range)) => {
                 if *range == (0..16) {
-                    self.cmd.ictx.params.push(
-                        InstructionParameter::Rargs((self.cc.last_cmd() & 0x0F) as usize)
+                    self.cmd.params.push(
+                        InstructionParameter::Rargs((self.last_cmd() & 0x0F) as usize)
                     )
                 } else {
                     return err!(ExceptionCode::RangeCheckError)
@@ -989,12 +990,13 @@ impl Engine {
             },
             Some(InstructionOptions::StackRegister(ref range)) => {
                 if *range == (0..16) {
-                    self.cmd.ictx.params.push(
-                        InstructionParameter::StackRegister((self.cc.last_cmd() & 0x0F) as usize)
+                    self.cmd.params.push(
+                        InstructionParameter::StackRegister((self.last_cmd() & 0x0F) as usize)
                     )
                 } else if *range == (0..256) {
-                    self.cmd.ictx.params.push(
-                        InstructionParameter::StackRegister(self.cc.next_cmd()? as usize)
+                    let reg = self.next_cmd()? as usize;
+                    self.cmd.params.push(
+                        InstructionParameter::StackRegister(reg)
                     )
                 } else {
                     return err!(ExceptionCode::RangeCheckError)
@@ -1004,25 +1006,25 @@ impl Engine {
             Some(InstructionOptions::StackRegisterPair(ref place)) => {
                 let (ra, rb) = match place {
                     WhereToGetParams::GetFromLastByte2Bits => {
-                        let opcode_ra_rb = self.cc.last_cmd();
+                        let opcode_ra_rb = self.last_cmd();
                         ((opcode_ra_rb >> 2) & 0x03, opcode_ra_rb & 0x03)
                     }
                     WhereToGetParams::GetFromLastByte => {
-                        let opcode_ra_rb = self.cc.last_cmd();
+                        let opcode_ra_rb = self.last_cmd();
                         ((opcode_ra_rb & 0xF0) >> 4, opcode_ra_rb & 0x0F)
                     }
                     WhereToGetParams::GetFromNextByte => {
-                        let ra_rb = self.cc.next_cmd()?;
+                        let ra_rb = self.next_cmd()?;
                         ((ra_rb & 0xF0) >> 4, ra_rb & 0x0F)
                     }
                     WhereToGetParams::GetFromNextByteLong => {
-                        let rb = self.cc.next_cmd()?;
+                        let rb = self.next_cmd()?;
                         (0,rb)
                     }
                     _ => (0, 0)
                 };
                 self.basic_use_gas(0);
-                self.cmd.ictx.params.push(
+                self.cmd.params.push(
                     InstructionParameter::StackRegisterPair(
                         RegisterPair {
                             ra: ra as usize,
@@ -1032,7 +1034,7 @@ impl Engine {
                 )
             },
             Some(InstructionOptions::StackRegisterTrio(ref place)) => {
-                let last = self.cc.last_cmd();
+                let last = self.last_cmd();
                 let (ra, rb, rc) = match place {
                     WhereToGetParams::GetFromLastByte2Bits => {
                         // INDEX3 2 bits per index
@@ -1043,12 +1045,12 @@ impl Engine {
                         // And 54[0-7]ijk long-form XCHG3 - PUSH3
                         // We assume that in the second case 0x54 byte is already consumed,
                         // and we have to deal with *ijk layout for arguments
-                        let rb_rc = self.cc.next_cmd()?;
+                        let rb_rc = self.next_cmd()?;
                         (last & 0x0F, rb_rc >> 4, rb_rc & 0x0F)
                     }
                 };
                 self.basic_use_gas(0);
-                self.cmd.ictx.params.push(
+                self.cmd.params.push(
                     InstructionParameter::StackRegisterTrio(
                         RegisterTrio {
                             ra: ra as usize,
@@ -1060,14 +1062,14 @@ impl Engine {
             }
             Some(InstructionOptions::Dictionary(offset, bits)) => {
                 self.use_gas(Gas::basic_gas_price(offset + 1 + bits, 0));
-                let mut code = self.cmd_code.clone();
+                let mut code = self.cmd_code();
                 code.shrink_data(offset..);
                 // TODO: need to check this failure case
                 let slice = code.get_dictionary_opt().unwrap_or_else(SliceData::default);
-                self.cmd.ictx.params.push(InstructionParameter::Slice(slice));
+                self.cmd.params.push(InstructionParameter::Slice(slice));
                 let length = code.get_next_int(bits)? as usize;
                 *self.cc.code_mut() = code;
-                self.cmd.ictx.params.push(InstructionParameter::Length(length))
+                self.cmd.params.push(InstructionParameter::Length(length))
             }
             Some(InstructionOptions::Bytestring(offset, r, x, bytes)) => {
                 self.use_gas(Gas::basic_gas_price(offset + r + x, 0));
@@ -1075,13 +1077,13 @@ impl Engine {
                 if slice.remaining_bits() % 8 != 0 {
                     return err!(ExceptionCode::InvalidOpcode)
                 }
-                self.cmd.ictx.params.push(InstructionParameter::Slice(slice))
+                self.cmd.params.push(InstructionParameter::Slice(slice))
             }
             Some(InstructionOptions::Bitstring(offset, r, x, refs)) => {
                 self.use_gas(Gas::basic_gas_price(offset + r + x, 0));
                 let mut slice = self.extract_slice(offset, r, x, refs, 0)?;
                 slice.trim_right();
-                self.cmd.ictx.params.push(InstructionParameter::Slice(slice));
+                self.cmd.params.push(InstructionParameter::Slice(slice));
             }
             None => { self.basic_use_gas(0); }
         }
@@ -1090,22 +1092,19 @@ impl Engine {
 
     // raises the exception and tries to dispatch it via c(2).
     // If c(2) is not set, returns that exception, otherwise, returns None
-    fn raise_exception(&mut self, err_opt: Option<failure::Error>, _undo: bool) -> Status {
-        let (err, exception) = if let Some(err) = err_opt {
+    fn raise_exception(&mut self, err: failure::Error) -> Status {
+        let (err, exception) =
             if let Some(exception) = tvm_exception_full(&err) {
                 (err, exception)
             } else {
-                log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code);
+                log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code());
                 return Err(err)
-            }
-        } else {
-            return Ok(())
-        };
+            };
         if exception.exception_code().is_some() {
             self.step += 1;
         }
         if exception.exception_code() == Some(ExceptionCode::OutOfGas) {
-            log::trace!(target: "tvm", "OUT OF GAS CODE: {}\n", self.cmd_code);
+            log::trace!(target: "tvm", "OUT OF GAS CODE: {}\n", self.cmd_code());
             return Err(err)
         }
         if let Err(err) = self.gas.try_use_gas(Gas::exception_price()) {
@@ -1127,10 +1126,42 @@ impl Engine {
             switch(self, var!(n))?;
         } else {
             self.trace_info(EngineTraceInfoType::Exception, self.gas_used(), Some(format!("UNHANDLED EXCEPTION: {}", err)));
-            log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code);
+            log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code());
             return Err(err)
         }
         Ok(())
+    }
+
+    pub(in crate::executor) fn last_cmd(&self) -> u8 {
+        self.last_cmd
+    }
+
+    pub(in crate::executor) fn next_cmd(&mut self) -> Result<u8> {
+        match self.cc.code_mut().get_next_byte() {
+            Ok(cmd) => {
+                self.last_cmd = cmd;
+                Ok(cmd)
+            }
+            Err(_) => {
+                // TODO: combine error! and err!
+                // panic!("n >= 8 is expected, actual value: {}", self.code.remaining_bits());
+                log::error!(
+                    target: "tvm",
+                    "remaining bits expected >= 8, but actual value is: {}\n",
+                    self.cc.code().remaining_bits()
+                );
+                err!(ExceptionCode::InvalidOpcode)
+            }
+        }
+    }
+
+    fn cmd_code(&self) -> SliceData {
+        let mut code = SliceData::from(self.cc.code().cell());
+        let data = &self.cmd_code.data_window;
+        code.shrink_data(data.start..data.end);
+        let refs = &self.cmd_code.references_window;
+        code.shrink_references(refs.start..refs.end);
+        code
     }
 
     /// Set code page for interpret bytecode. now only code page 0 is supported

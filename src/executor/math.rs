@@ -32,6 +32,7 @@ use ton_types::{error, Result, types::{Bitmask, ExceptionCode}};
 // Common definitions *********************************************************
 
 type Binary = fn(&IntegerData, &IntegerData) -> Result<IntegerData>;
+type BinaryAssign = fn(&IntegerData, &mut IntegerData) -> Status;
 type BinaryConst = fn(isize, &IntegerData) -> Result<IntegerData>;
 type Unary = fn(&IntegerData) -> Result<IntegerData>;
 type UnaryWithLen = fn(&IntegerData, usize) -> Result<IntegerData>;
@@ -45,12 +46,30 @@ where
     engine.load_instruction(
         Instruction::new(name).set_name_prefix(T::name_prefix())
     )?;
-    fetch_stack(engine, 2)?;
-    let result = handler(
-        engine.cmd.var(0).as_integer()?,
-        engine.cmd.var(1).as_integer()?
+    if engine.cc.stack.depth() < 2 {
+        return err!(ExceptionCode::StackUnderflow)
+    }
+    let v0 = engine.cc.stack.get_mut(0).withdraw();
+    let v1 = engine.cc.stack.get_mut(1).as_integer_mut()?;
+    *v1 = handler(v0.as_integer()?, v1)?;
+    engine.cc.stack.drop(0)?;
+    Ok(())
+}
+
+fn binary_assign<T>(engine: &mut Engine, name: &'static str, handler: BinaryAssign) -> Status
+where
+    T: OperationBehavior
+{
+    engine.load_instruction(
+        Instruction::new(name).set_name_prefix(T::name_prefix())
     )?;
-    engine.cc.stack.push(StackItem::Integer(Arc::new(result)));
+    if engine.cc.stack.depth() < 2 {
+        return err!(ExceptionCode::StackUnderflow)
+    }
+    let v0 = engine.cc.stack.get_mut(0).withdraw();
+    let v1 = engine.cc.stack.get_mut(1).as_integer_mut()?;
+    handler(v0.as_integer()?, v1)?;
+    engine.cc.stack.drop(0)?;
     Ok(())
 }
 
@@ -65,10 +84,12 @@ where
             .set_name_prefix(T::name_prefix())
             .set_opts(InstructionOptions::Integer(-128..128))
     )?;
-    fetch_stack(engine, 1)?;
-    let y = engine.cmd.integer();
-    let result = handler(y, engine.cmd.var(0).as_integer()?)?;
-    engine.cc.stack.push(StackItem::Integer(Arc::new(result)));
+    if engine.cc.stack.depth() < 1 {
+        return err!(ExceptionCode::StackUnderflow)
+    }
+    let v0 = engine.cmd.integer();
+    let v1 = engine.cc.stack.get_mut(0).as_integer_mut()?;
+    *v1 = handler(v0, v1)?;
     Ok(())
 }
 
@@ -132,9 +153,11 @@ where
     engine.load_instruction(
         Instruction::new(name).set_name_prefix(T::name_prefix())
     )?;
-    fetch_stack(engine, 1)?;
-    let x = handler(engine.cmd.var(0).as_integer()?)?;
-    engine.cc.stack.push(StackItem::Integer(Arc::new(x)));
+    if engine.cc.stack.depth() < 1 {
+        return err!(ExceptionCode::StackUnderflow)
+    }
+    let v0 = engine.cc.stack.get_mut(0).as_integer_mut()?;
+    *v0 = handler(v0)?;
     Ok(())
 }
 
@@ -149,12 +172,11 @@ where
             .set_name_prefix(T::name_prefix())
             .set_opts(InstructionOptions::LengthMinusOne(0..256))
     )?;
-    fetch_stack(engine, 1)?;
-    let result = handler(
-        engine.cmd.var(0).as_integer()?,
-        engine.cmd.length()
-    )?;
-    engine.cc.stack.push(StackItem::Integer(Arc::new(result)));
+    if engine.cc.stack.depth() < 1 {
+        return err!(ExceptionCode::StackUnderflow)
+    }
+    let v0 = engine.cc.stack.get_mut(0).as_integer_mut()?;
+    *v0 = handler(v0, engine.cmd.length())?;
     Ok(())
 }
 
@@ -362,7 +384,7 @@ pub(super) fn execute_add<T>(engine: &mut Engine) -> Status
 where
     T: OperationBehavior
 {
-    binary::<T>(engine, "ADD", |y, x| x.add::<T>(y))
+    binary_assign::<T>(engine, "ADD", |y, x| x.add_assign::<T>(y))
 }
 
 // (x - x+y)
@@ -428,9 +450,11 @@ where
     engine.load_instruction(
         Instruction::new("DEC").set_name_prefix(T::name_prefix())
     )?;
-    fetch_stack(engine, 1)?;
-    let x = engine.cmd.var(0).as_integer()?.sub_i8::<T>(&1)?;
-    engine.cc.stack.push(StackItem::Integer(Arc::new(x)));
+    if engine.cc.stack.depth() < 1 {
+        return err!(ExceptionCode::StackUnderflow)
+    }
+    let v0 = engine.cc.stack.get_mut(0).as_integer_mut()?;
+    *v0 = v0.sub_i8::<T>(&1)?;
     Ok(())
 }
 
@@ -622,9 +646,11 @@ where
     engine.load_instruction(
         Instruction::new("INC").set_name_prefix(T::name_prefix())
     )?;
-    fetch_stack(engine, 1)?;
-    let x = engine.cmd.var(0).as_integer()?.add_i8::<T>(&1)?;
-    engine.cc.stack.push(StackItem::Integer(Arc::new(x)));
+    if engine.cc.stack.depth() < 1 {
+        return err!(ExceptionCode::StackUnderflow)
+    }
+    let v0 = engine.cc.stack.get_mut(0).as_integer_mut()?;
+    *v0 = v0.add_i8::<T>(&1)?;
     Ok(())
 }
 
@@ -668,7 +694,7 @@ pub(super) fn execute_lshift<T>(engine: &mut Engine) -> Status
 where
     T: OperationBehavior
 {
-    if engine.cc.last_cmd() == 0xAC {
+    if engine.last_cmd() == 0xAC {
         binary::<T>(engine, "LSHIFT", |y, x| x.shl::<T>(y.into(0..=1023)?))
     } else {
         unary_with_len::<T>(engine, "LSHIFT", |x, y| x.shl::<T>(y))
@@ -781,7 +807,7 @@ pub(super) fn execute_rshift<T>(engine: &mut Engine) -> Status
 where
     T: OperationBehavior
 {
-    if engine.cc.last_cmd() == 0xAD {
+    if engine.last_cmd() == 0xAD {
         binary::<T>(engine, "RSHIFT", |y, x| x.shr::<T>(y.into(0..=1023)?))
     } else {
         unary_with_len::<T>(engine, "RSHIFT", |x, y| x.shr::<T>(y))

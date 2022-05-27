@@ -38,8 +38,8 @@ const STACK_ENTRY_GAS_PRICE: i64 = 1;
 // const MAX_DATA_DEPTH: usize = 512;
 
 impl Gas {
-    /// Instanse for constructors. Empty fields
-    pub fn empty() -> Gas {
+    /// Instance for constructors. Empty fields
+    pub const fn empty() -> Gas {
         Gas {
             gas_limit_max: 0,
             gas_limit: 0,
@@ -49,7 +49,7 @@ impl Gas {
             gas_base: 0,
         }
     }
-    /// Instanse for debug and test. Cheat fields
+    /// Instance for debug and test. Cheat fields
     pub const fn test() -> Gas {
         Gas {
             gas_price: 10,
@@ -60,18 +60,18 @@ impl Gas {
             gas_base: 1000000000,
         }
     }
-    /// Instanse for release.
+    /// Instance for release
     pub fn test_with_limit(gas_limit: i64) -> Gas {
         let mut gas = Gas::test();
         gas.new_gas_limit(gas_limit);
         gas
     }
-    /// Instanse for release.
+    /// Instance for release
     pub fn test_with_credit(gas_credit: i64) -> Gas {
         Gas::new(0, gas_credit, 1000000000, 10)
     }
-    /// Instanse for release.
-    pub fn new(gas_limit: i64, gas_credit: i64, gas_limit_max: i64, gas_price: i64) -> Gas {
+    /// Instance for release
+    pub const fn new(gas_limit: i64, gas_credit: i64, gas_limit_max: i64, gas_price: i64) -> Gas {
         let remaining = gas_limit + gas_credit;
         Gas {
             gas_price,
@@ -83,7 +83,7 @@ impl Gas {
         }
     }
     /// Compute instruction cost
-    pub fn basic_gas_price(instruction_length: usize, _instruction_references_count: usize) -> i64 {
+    pub const fn basic_gas_price(instruction_length: usize, _instruction_references_count: usize) -> i64 {
         // old formula from spec: (10 + instruction_length + 5 * instruction_references_count) as i64
         (10 + instruction_length) as i64
     }
@@ -93,7 +93,7 @@ impl Gas {
     }
 
     /// Compute exception cost
-    pub fn exception_price() -> i64 {
+    pub const fn exception_price() -> i64 {
         EXCEPTION_GAS_PRICE
     }
     pub fn consume_exception(&mut self) -> i64 {
@@ -101,7 +101,7 @@ impl Gas {
     }
 
     /// Compute exception cost
-    pub fn finalize_price() -> i64 {
+    pub const fn finalize_price() -> i64 {
         CELL_CREATE_GAS_PRICE
     }
     pub fn consume_finalize(&mut self) -> i64 {
@@ -109,7 +109,7 @@ impl Gas {
     }
 
     /// Implicit JMP cost
-    pub fn implicit_jmp_price() -> i64 {
+    pub const fn implicit_jmp_price() -> i64 {
         IMPLICIT_JMPREF_GAS_PRICE
     }
     pub fn consume_implicit_jmp(&mut self) -> i64 {
@@ -117,7 +117,7 @@ impl Gas {
     }
 
     /// Implicit RET cost
-    pub fn implicit_ret_price() -> i64 {
+    pub const fn implicit_ret_price() -> i64 {
         IMPLICIT_RET_GAS_PRICE
     }
     pub fn consume_implicit_ret(&mut self) -> i64 {
@@ -125,7 +125,7 @@ impl Gas {
     }
 
     /// Compute exception cost
-    pub fn load_cell_price(first: bool) -> i64 {
+    pub const fn load_cell_price(first: bool) -> i64 {
         if first {CELL_LOAD_GAS_PRICE} else {CELL_RELOAD_GAS_PRICE}
     }
     pub fn consume_load_cell(&mut self, first: bool) -> i64 {
@@ -133,15 +133,20 @@ impl Gas {
     }
 
     /// Stack cost
-    pub fn stack_price(stack_depth: usize) -> i64 {
-        STACK_ENTRY_GAS_PRICE * (max(stack_depth, FREE_STACK_DEPTH) - FREE_STACK_DEPTH) as i64
+    pub const fn stack_price(stack_depth: usize) -> i64 {
+        let depth = if stack_depth > FREE_STACK_DEPTH {
+            stack_depth
+        } else {
+            FREE_STACK_DEPTH
+        };
+        STACK_ENTRY_GAS_PRICE * (depth - FREE_STACK_DEPTH) as i64
     }
     pub fn consume_stack(&mut self, stack_depth: usize) -> i64 {
         self.use_gas(STACK_ENTRY_GAS_PRICE * (max(stack_depth, FREE_STACK_DEPTH) - FREE_STACK_DEPTH) as i64)
     }
 
-    /// Compute tuple using cost
-    pub fn tuple_gas_price(tuple_length: usize) -> i64 {
+    /// Compute tuple usage cost
+    pub const fn tuple_gas_price(tuple_length: usize) -> i64 {
         TUPLE_ENTRY_GAS_PRICE * tuple_length as i64
     }
     pub fn consume_tuple_gas(&mut self, tuple_length: usize) -> i64 {
@@ -155,12 +160,12 @@ impl Gas {
         self.gas_remaining += self.gas_limit - self.gas_base;
         self.gas_base = self.gas_limit;
     }
-    /// Update remaining gas limit.
+    /// Update remaining gas limit
     pub fn use_gas(&mut self, gas: i64) -> i64 {
         self.gas_remaining -= gas;
         self.gas_remaining
     }
-    /// Try to consume gas then raise exception out of gas if need
+    /// Try to consume gas then raise exception out of gas if needed
     pub fn try_use_gas(&mut self, gas: i64) -> Result<Option<i32>> {
         self.gas_remaining -= gas;
         self.check_gas_remaining()
@@ -174,31 +179,31 @@ impl Gas {
         }
     }
     // *** Getters ***
-    pub fn get_gas_price(&self) -> i64 {
+    pub const fn get_gas_price(&self) -> i64 {
         self.gas_price
     }
 
-    pub fn get_gas_limit(&self) -> i64 {
+    pub const fn get_gas_limit(&self) -> i64 {
         self.gas_limit
     }
 
-    pub fn get_gas_limit_max(&self) -> i64 {
+    pub const fn get_gas_limit_max(&self) -> i64 {
         self.gas_limit_max
     }
 
-    pub fn get_gas_remaining(&self) -> i64 {
+    pub const fn get_gas_remaining(&self) -> i64 {
         self.gas_remaining
     }
 
-    pub fn get_gas_credit(&self) -> i64 {
+    pub const fn get_gas_credit(&self) -> i64 {
         self.gas_credit
     }
 
-    pub fn get_gas_used_full(&self) -> i64 {
+    pub const fn get_gas_used_full(&self) -> i64 {
         self.gas_base - self.gas_remaining
     }
 
-    pub fn get_gas_used(&self) -> i64 {
+    pub const fn get_gas_used(&self) -> i64 {
         if self.gas_remaining > 0 {
             self.gas_base - self.gas_remaining
         } else {

@@ -11,6 +11,8 @@
 * limitations under the License.
 */
 
+use std::ops::AddAssign;
+
 use crate::stack::integer::{
     IntegerData, IntegerValue, behavior::OperationBehavior,
     utils::{
@@ -19,7 +21,7 @@ use crate::stack::integer::{
     }
 };
 use num_traits::Zero;
-use ton_types::Result;
+use ton_types::{Result, Status};
 
 // [x / y] -> (q, r)  :  q*y + r = x  :  |r| < |y|
 #[derive(Copy, Clone, PartialEq)]
@@ -49,6 +51,31 @@ impl IntegerData {
             construct_single_nan,
             process_single_result::<T, _>
         )
+    }
+
+    pub fn add_assign<T: OperationBehavior>(&mut self, other: &IntegerData) -> Status {
+        let lhs = match self.value {
+            IntegerValue::NaN => {
+                on_nan_parameter!(T)?;
+                *self = construct_single_nan();
+                return Ok(())
+            },
+            IntegerValue::Value(ref mut v) => v,
+        };
+        let rhs = match other.value {
+            IntegerValue::NaN => {
+                on_nan_parameter!(T)?;
+                *self = construct_single_nan();
+                return Ok(())
+            },
+            IntegerValue::Value(ref v) => v,
+        };
+        lhs.add_assign(rhs);
+        if !super::utils::check_overflow(lhs) {
+            on_integer_overflow!(T)?;
+            *self = construct_single_nan();
+        }
+        Ok(())
     }
 
     pub fn add_i8<T: OperationBehavior>(&self, other: &i8) -> Result<IntegerData> {
