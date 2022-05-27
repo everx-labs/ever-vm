@@ -204,24 +204,10 @@ impl StackItem {
         }
     }
 
-    /// Returns continuation for modify in place
     pub fn as_continuation_mut(&mut self) -> ResultMut<ContinuationData> {
-        let unref = if let StackItem::Continuation(ref mut r) = self {
-            if Arc::strong_count(r) + Arc::weak_count(r) > 1 {
-                StackItem::Continuation(Arc::new(Arc::as_ref(r).clone()))
-            } else {
-                StackItem::None
-            }
-        } else {
-            return err!(ExceptionCode::TypeCheckError)
-        };
-        if unref != StackItem::None {
-            *self = unref;
-        }
-        if let StackItem::Continuation(ref mut r) = self {
-            Ok(Arc::get_mut(r).ok_or(ExceptionCode::FatalError)?)
-        } else {
-            err!(ExceptionCode::TypeCheckError)
+        match self {
+            StackItem::Continuation(ref mut data) => Ok(Arc::make_mut(data)),
+            _ => err!(ExceptionCode::TypeCheckError)
         }
     }
 
@@ -245,11 +231,10 @@ impl StackItem {
         self.as_integer()?.into(0..=255)
     }
 
-    pub fn as_integer_mut(&mut self) -> Result<IntegerData> {
-        self.as_integer()?;
-        match self.withdraw() {
-            StackItem::Integer(ref mut data) => Ok(mem::take(Arc::make_mut(data))),
-            _ => unreachable!("already checked")
+    pub fn as_integer_mut(&mut self) -> ResultMut<IntegerData> {
+        match self {
+            StackItem::Integer(ref mut data) => Ok(Arc::make_mut(data)),
+            _ => err!(ExceptionCode::TypeCheckError)
         }
     }
 
@@ -500,7 +485,7 @@ impl fmt::Display for StackItem {
 
 #[derive(Clone, Debug)]
 pub struct Stack {
-    storage: Vec<StackItem>,
+    pub storage: Vec<StackItem>,
 }
 
 impl Stack {
@@ -556,12 +541,36 @@ impl Stack {
     }
 
     pub fn drop_range(&mut self, range: Range<usize>) -> ResultVec<StackItem> {
+        if range.is_empty() {
+            return Ok(vec!())
+        }
         let depth = self.depth();
         if range.end > depth {
             err!(ExceptionCode::StackUnderflow, "drop_range: {}..{}, depth: {}", range.start, range.end, depth)
         } else {
             Ok(self.storage.drain(depth - range.end..depth - range.start).rev().collect())
         }
+    }
+
+    pub fn drop_range_straight(&mut self, range: Range<usize>) -> ResultVec<StackItem> {
+        if range.is_empty() {
+            return Ok(vec!())
+        }
+        let depth = self.depth();
+        if range.end > depth {
+            err!(ExceptionCode::StackUnderflow, "drop_range: {}..{}, depth: {}", range.start, range.end, depth)
+        } else if range.end == depth {
+            let mut rem = Vec::from(&self.storage[depth - range.start..]);
+            self.storage.truncate(depth - range.start);
+            std::mem::swap(&mut rem, &mut self.storage);
+            Ok(rem)
+        } else {
+            Ok(self.storage.drain(depth - range.end..depth - range.start).collect())
+        }
+    }
+
+    pub fn append(&mut self, other: &mut Vec<StackItem>) {
+        self.storage.append(other)
     }
 
     pub fn get(&self, i: usize) -> &StackItem {

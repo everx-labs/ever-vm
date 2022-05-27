@@ -15,9 +15,9 @@ use crate::{
     executor::{engine::{Engine, storage::fetch_stack}, types::{InstructionOptions, Instruction}},
     stack::{StackItem, integer::IntegerData}, types::Status
 };
-use std::sync::Arc;
 use ton_block::GlobalCapabilities;
 use ton_types::{BuilderData, HashmapE, IBitstring, types::ExceptionCode};
+use std::sync::Arc;
 
 fn execute_config_param(engine: &mut Engine, name: &'static str, opt: bool) -> Status {
     engine.load_instruction(Instruction::new(name))?;

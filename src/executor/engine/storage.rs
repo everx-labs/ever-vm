@@ -18,7 +18,7 @@ use crate::{
         microcode::{VAR, STACK, CC, CC_SAVELIST, CTRL, CTRL_SAVELIST, VAR_SAVELIST}
     },
     stack::{StackItem, continuation::ContinuationData, savelist::SaveList},
-    types::{Exception, ResultMut, ResultRef, ResultVec, Status}
+    types::{Exception, ResultMut, ResultRef, Status}
 };
 use std::{mem, ops::Range, sync::Arc};
 use ton_types::{error, fail, Result, types::ExceptionCode};
@@ -51,40 +51,36 @@ macro_rules! continuation_mut_by_address {
     };
 }
 
-fn move_stack(
+fn move_stack_from_cc(
     engine: &mut Engine,
     dst: u16,
-    src: u16,
     drop: Range<usize>,
-) -> ResultVec<StackItem> {
+) -> Status {
     let save = drop.len();
-    let from_cc = address_tag!(src) == CC;
-    let address = if from_cc { dst } else { src };
-    let peer = continuation_mut_by_address!(engine, address)?;
-    let mut popped = if from_cc {
-        if peer.nargs >= 0 {
-            if save > peer.nargs as usize {
-                return err!(ExceptionCode::StackOverflow)
-            } else {
-                peer.nargs -= save as isize
-            }
-        }
-        engine.cc.stack.drop_range(drop)?
-    } else {
-        peer.stack.drop_range(drop)?
-    };
-    let mut ret = Vec::new();
-    while popped.len() > save {
-        ret.push(popped.pop().ok_or_else(|| error!("move_stack gone wrong {} > {}", popped.len(), save))?)
-    }
-    while let Some(x) = popped.pop() {
-        if from_cc {
-            peer.stack.push(x);
+    let peer = continuation_mut_by_address!(engine, dst)?;
+    if peer.nargs >= 0 {
+        if save > peer.nargs as usize {
+            return err!(ExceptionCode::StackOverflow)
         } else {
-            engine.cc.stack.push(x);
+            peer.nargs -= save as isize
         }
     }
-    Ok(ret)
+    if drop.start == 0 {
+        let src_len = engine.cc.stack.depth();
+        if src_len < drop.end {
+            return err!(ExceptionCode::StackUnderflow, "drop_range: {}..{}, depth: {}", drop.start, drop.end, src_len)
+        }
+        if peer.stack.is_empty() && drop.end == src_len {
+            mem::swap(&mut peer.stack, &mut engine.cc.stack);
+        } else {
+            let drain = engine.cc.stack.storage.drain(src_len - drop.end..);
+            peer.stack.storage.extend(drain);
+        }
+    } else {
+        let mut popped = engine.cc.stack.drop_range_straight(drop)?;
+        peer.stack.append(&mut popped);
+    }
+    Ok(())
 }
 
 // Swapping *******************************************************************
@@ -139,12 +135,14 @@ fn put_to_list(engine: &mut Engine, x: &mut Info, y: &mut StackItem) -> Result<O
 
 fn put_to_list_from_item(engine: &mut Engine, x: &mut Info, y: &Info) -> Result<Option<StackItem>> {
     if !SaveList::can_put(x.index, y.item(engine)?) {
-        let value = x.list(engine)?.get(x.index).cloned().unwrap_or_else(StackItem::default);
-        log::error!(
-            target: "tvm",
-            "Cannot set: {} to list with index: {} and value: {}",
-            y.item(engine)?.clone(), x.index, value
-        );
+        if log::log_enabled!(log::Level::Error) {
+            let value = x.list(engine)?.get(x.index).cloned().unwrap_or_else(StackItem::default);
+            log::error!(
+                target: "tvm",
+                "Cannot set: {} to list with index: {} and value: {}",
+                y.item(engine)?.clone(), x.index, value
+            );
+        }
         err!(ExceptionCode::TypeCheckError)
     } else {
         let mut y = y.item(engine)?.withdraw();
@@ -161,13 +159,15 @@ fn put_to_list_from_list(engine: &mut Engine, x: &mut Info, y: &mut Info) -> Res
             }
         }
     }
-    let old = x.list(engine)?.get(x.index).cloned().unwrap_or_else(StackItem::default);
-    let new = y.list(engine)?.get(y.index).cloned().unwrap_or_else(StackItem::default);
-    log::error!(
-        target: "tvm",
-        "Cannot set: {} to list with index: {} and value: {}",
-        new, x.index, old
-    );
+    if log::log_enabled!(log::Level::Error) {
+        let old = x.list(engine)?.get(x.index).cloned().unwrap_or_else(StackItem::default);
+        let new = y.list(engine)?.get(y.index).cloned().unwrap_or_else(StackItem::default);
+        log::error!(
+            target: "tvm",
+            "Cannot set: {} to list with index: {} and value: {}",
+            new, x.index, old
+        );
+    }
     err!(ExceptionCode::TypeCheckError)
 }
 
@@ -192,7 +192,9 @@ fn swap_between_lists(engine: &mut Engine, mut x: Info, mut y: Info) -> Status {
     Ok(())
 }
 
-fn swap_any(engine: &mut Engine, mut x: u16, mut y: u16) -> Status {
+// x <-> y
+// x and y addressing is described in executor/microcode.rs
+pub(in crate::executor) fn swap(engine: &mut Engine, mut x: u16, mut y: u16) -> Status {
     if address_tag!(x) > address_tag!(y) {
         mem::swap(&mut x, &mut y);
     }
@@ -244,23 +246,15 @@ fn swap_any(engine: &mut Engine, mut x: u16, mut y: u16) -> Status {
 // Microfunctions *************************************************************
 
 // c[*] = CC.savelist[*], excluding given indexes
-pub(in crate::executor) fn apply_savelist(engine: &mut Engine, exclude: Range<usize>) -> Status {
-    let mut prev = SaveList::new();
-    for (k, v) in engine.cc.savelist.iter_mut() {
-        if (*k >= exclude.start) && (*k < exclude.end) {
-            continue
-        }
-        match engine.ctrls.put(*k, v) {
-            Err(e) => {
-                return Err(e)
-            },
-            Ok(Some(mut x)) => {
-                prev.put(*k, &mut x)?;
-            },
-            _ => ()
-        }
-    }
-    engine.cc.savelist.clear();
+pub(in crate::executor) fn apply_savelist_excluding_c0_c1(engine: &mut Engine) -> Status {
+    engine.cc.savelist.remove(0);
+    engine.cc.savelist.remove(1);
+    engine.ctrls.apply(&mut engine.cc.savelist);
+    Ok(())
+}
+
+pub(in crate::executor) fn apply_savelist(engine: &mut Engine) -> Status {
+    engine.ctrls.apply(&mut engine.cc.savelist);
     Ok(())
 }
 
@@ -309,7 +303,7 @@ pub(in crate::executor) fn fetch_stack(engine: &mut Engine, depth: usize) -> Sta
 pub(in crate::executor) fn pop_all(engine: &mut Engine, dst: u16) -> Status {
     let nargs = continuation_by_address(engine, dst)?.nargs;
     let depth = engine.cc.stack.depth();
-    let pargs = engine.cmd.ictx.pargs();
+    let pargs = engine.cmd.pargs_raw();
     let drop = if nargs < 0 {
         pargs.unwrap_or(depth)
     } else if let Some(pargs) = pargs {
@@ -320,7 +314,11 @@ pub(in crate::executor) fn pop_all(engine: &mut Engine, dst: u16) -> Status {
     } else {
         nargs as usize
     };
-    pop_range(engine, 0..drop, dst)
+    if drop > 0 {
+        pop_range(engine, 0..drop, dst)
+    } else {
+        Ok(())
+    }
 }
 
 // dst.stack.push(CC.stack[range])
@@ -336,13 +334,6 @@ pub(in crate::executor) fn pop_range(engine: &mut Engine, drop: Range<usize>, ds
     if depth != 0 && save != 0 {
         engine.try_use_gas(Gas::stack_price(save + depth))?;
     }
-    move_stack(engine, dst, CC, drop)?;
-    Ok(())
-}
-
-// x <-> y
-// x and y addressing is described in executor/microcode.rs
-pub(in crate::executor) fn swap(engine: &mut Engine, x: u16, y: u16) -> Status {
-    swap_any(engine, x, y)?;
+    move_stack_from_cc(engine, dst, drop)?;
     Ok(())
 }

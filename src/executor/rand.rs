@@ -76,7 +76,7 @@ pub(crate) fn execute_randu256(engine: &mut Engine) -> Status {
 pub(crate) fn execute_setrand(engine: &mut Engine) -> Status {
     engine.load_instruction(Instruction::new("SETRAND"))?;
     fetch_stack(engine, 1)?;
-    let rand = engine.cmd.var_mut(0).as_integer_mut()?;
+    let rand = engine.cmd.var(0).as_integer()?.clone();
     engine.set_rand(rand)?;
     Ok(())
 }

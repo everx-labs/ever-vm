@@ -18,14 +18,10 @@ use crate::{
 use std::{fmt, ops::Range};
 use ton_types::{error, Result, SliceData};
 
-#[derive(Debug)]
-pub(super) struct Context {
-    pub(super) params: Vec<InstructionParameter>
-}
-
 macro_rules! param {
     ($self:ident, $id:ident) => {{
-         for p in &$self.params {
+        debug_assert!($self.params.len() < 3);
+        for p in &$self.params {
             if let InstructionParameter::$id(x) = p {
                 return Some(*x)
             }
@@ -36,7 +32,8 @@ macro_rules! param {
 
 macro_rules! param_ref {
     ($self:ident, $id:ident) => {{
-         for p in &$self.params {
+        debug_assert!($self.params.len() < 3);
+        for p in &$self.params {
             if let InstructionParameter::$id(ref x) = p {
                 return Some(x)
             }
@@ -47,62 +44,14 @@ macro_rules! param_ref {
 
 macro_rules! param_ref_mut {
     ($self:ident, $id:ident) => {{
-         for p in &mut $self.params {
+        debug_assert!($self.params.len() < 3);
+        for p in &mut $self.params {
             if let InstructionParameter::$id(ref mut x) = p {
                 return Some(x)
             }
         }
         None
     }};
-}
-
-impl Context {
-    pub(super) fn creg(&self) -> Option<usize> {
-        param!(self, ControlRegister)
-    }
-    pub(super) fn division_mode(&self) -> Option<&DivMode> {
-        param_ref!(self, DivisionMode)
-    }
-    pub(super) fn integer(&self) -> Option<isize> {
-        param!(self, Integer)
-    }
-    #[allow(dead_code)]
-    pub(super) fn biginteger(&self) -> Option<&IntegerData> {
-        param_ref!(self, BigInteger)
-    }
-    pub(super) fn biginteger_mut(&mut self) -> Option<&mut IntegerData> {
-        param_ref_mut!(self, BigInteger)
-    }
-    pub(super) fn length(&self) -> Option<usize> {
-        param!(self, Length)
-    }
-    pub(super) fn nargs(&self) -> Option<isize> {
-        param!(self, Nargs)
-    }
-    pub(super) fn pargs(&self) -> Option<usize> {
-        param!(self, Pargs)
-    }
-    pub(super) fn rargs(&self) -> Option<usize> {
-        param!(self, Rargs)
-    }
-    pub(super) fn slice(&self) -> Option<&SliceData> {
-        param_ref!(self, Slice)
-    }
-    pub(super) fn sreg(&self) -> Option<usize> {
-        param!(self, StackRegister)
-    }
-    pub(super) fn sregs(&self) -> Option<&RegisterPair> {
-        param_ref!(self, StackRegisterPair)
-    }
-    pub(super) fn sregs3(&self) -> Option<&RegisterTrio> {
-        param_ref!(self, StackRegisterTrio)
-    }
-    pub(super) fn length_and_index(&self) -> Option<&LengthAndIndex> {
-        param_ref!(self, LengthAndIndex)
-    }
-    pub(super) fn clear(&mut self) {
-        self.params.clear()
-    }
 }
 
 pub(super) enum InstructionOptions {              // What will be set:
@@ -180,82 +129,143 @@ pub(super) struct Instruction {
     pub(super) name_prefix: Option<&'static str>,
     /// Options
     pub(super) opts: Option<InstructionOptions>,
-    /// Instruction context
-    pub(super) ictx: Context,
+}
+
+impl Instruction {
+    pub(super) fn new(name: &'static str) -> Self {
+        Self {
+            name,
+            name_prefix: None,
+            opts: None,
+        }
+    }
+    pub(super) fn set_name_prefix(mut self, prefix: Option<&'static str>) -> Self {
+        self.name_prefix = prefix;
+        self
+    }
+    pub(super) fn set_opts(mut self, opts: InstructionOptions) -> Self {
+        self.opts = Some(opts);
+        self
+    }
+}
+
+pub(super) struct InstructionExt {
+    pub(super) proto: Instruction,
+    /// Instruction parameters extracted from code slice using proto.opts
+    pub(super) params: Vec<InstructionParameter>,
     /// Variables
     pub(super) vars: Vec<StackItem>,
 }
 
-impl Instruction {
-    pub(super) fn new(name: &'static str) -> Instruction {
-        Instruction {
-            name,
-            name_prefix: None,
-            opts: None,
-            ictx: Context {
-                params: Vec::new()
+impl InstructionExt {
+    pub(super) fn new(name: &'static str) -> Self {
+        Self {
+            proto: Instruction {
+                name,
+                name_prefix: None,
+                opts: None,
             },
+            params: Vec::new(),
             vars: Vec::new(),
         }
     }
     fn name(&self) -> String {
-        match self.name_prefix {
-            Some(prefix) => prefix.to_string() + self.name,
-            None => self.name.to_string()
+        match self.proto.name_prefix {
+            Some(prefix) => prefix.to_string() + self.proto.name,
+            None => self.proto.name.to_string()
         }
     }
-    pub(super) fn set_name_prefix(mut self, prefix: Option<&'static str>) -> Instruction {
-        self.name_prefix = prefix;
-        self
+
+    pub(super) fn creg_raw(&self) -> Option<usize> {
+        param!(self, ControlRegister)
     }
-    pub(super) fn set_opts(mut self, opts: InstructionOptions) -> Instruction {
-        self.opts = Some(opts);
-        self
+    pub(super) fn division_mode_raw(&self) -> Option<&DivMode> {
+        param_ref!(self, DivisionMode)
     }
+    pub(super) fn integer_raw(&self) -> Option<isize> {
+        param!(self, Integer)
+    }
+    pub(super) fn biginteger_raw(&self) -> Option<&IntegerData> {
+        param_ref!(self, BigInteger)
+    }
+    pub(super) fn biginteger_mut_raw(&mut self) -> Option<&mut IntegerData> {
+        param_ref_mut!(self, BigInteger)
+    }
+    pub(super) fn length_raw(&self) -> Option<usize> {
+        param!(self, Length)
+    }
+    pub(super) fn nargs_raw(&self) -> Option<isize> {
+        param!(self, Nargs)
+    }
+    pub(super) fn pargs_raw(&self) -> Option<usize> {
+        param!(self, Pargs)
+    }
+    pub(super) fn rargs_raw(&self) -> Option<usize> {
+        param!(self, Rargs)
+    }
+    pub(super) fn slice_raw(&self) -> Option<&SliceData> {
+        param_ref!(self, Slice)
+    }
+    pub(super) fn sreg_raw(&self) -> Option<usize> {
+        param!(self, StackRegister)
+    }
+    pub(super) fn sregs_raw(&self) -> Option<&RegisterPair> {
+        param_ref!(self, StackRegisterPair)
+    }
+    pub(super) fn sregs3_raw(&self) -> Option<&RegisterTrio> {
+        param_ref!(self, StackRegisterTrio)
+    }
+    pub(super) fn length_and_index_raw(&self) -> Option<&LengthAndIndex> {
+        param_ref!(self, LengthAndIndex)
+    }
+    pub(super) fn clear(&mut self) {
+        self.params.clear()
+    }
+
     pub(super) fn creg(&self) -> usize {
-        self.ictx.creg().unwrap()
+        self.creg_raw().unwrap()
     }
     pub(super) fn biginteger_mut(&mut self) -> &mut IntegerData {
-         self.ictx.biginteger_mut().unwrap()
+        self.biginteger_mut_raw().unwrap()
     }
     pub(super) fn division_mode(&self) -> &DivMode {
-        self.ictx.division_mode().unwrap()
+        self.division_mode_raw().unwrap()
     }
     pub(super) fn has_length(&self) -> bool {
-        self.ictx.length().is_some()
+        self.length_raw().is_some()
     }
     pub(super) fn integer(&self) -> isize {
-        self.ictx.integer().unwrap()
+        self.integer_raw().unwrap()
     }
     pub(super) fn length(&self) -> usize {
-        self.ictx.length().unwrap()
+        self.length_raw().unwrap()
     }
     pub(super) fn nargs(&self) -> isize {
-        self.ictx.nargs().unwrap_or(-1)
+        self.nargs_raw().unwrap_or(-1)
     }
     pub(super) fn pargs(&self) -> usize {
-        self.ictx.pargs().unwrap_or(0)
+        self.pargs_raw().unwrap_or(0)
     }
     pub(super) fn push_var(&mut self, var: StackItem) {
         self.vars.push(var)
     }
     pub(super) fn rargs(&self) -> usize {
-        self.ictx.rargs().unwrap_or(0)
+        self.rargs_raw().unwrap_or(0)
     }
     pub(super) fn slice(&self) -> &SliceData {
-        self.ictx.slice().unwrap()
+        self.slice_raw().unwrap()
     }
     pub(super) fn sreg(&self) -> usize {
-        self.ictx.sreg().unwrap()
+        self.sreg_raw().unwrap()
     }
     pub(super) fn sregs(&self) -> &RegisterPair {
-        self.ictx.sregs().unwrap()
+        self.sregs_raw().unwrap()
     }
     pub(super) fn sregs3(&self) -> &RegisterTrio {
-        self.ictx.sregs3().unwrap()
+        self.sregs3_raw().unwrap()
     }
     pub(super) fn length_and_index(&self) -> &LengthAndIndex {
-        self.ictx.length_and_index().unwrap()
+        self.length_and_index_raw().unwrap()
     }
     pub(super) fn var(&self, index: usize) -> &StackItem {
         self.vars.get(index).unwrap()
@@ -272,28 +282,27 @@ impl Instruction {
     pub(super) fn pop_var(&mut self) -> Result<StackItem> {
         self.vars.pop().ok_or_else(|| error!("no vars for {}", self.name()))
     }
-    #[allow(dead_code)]
     pub(super) fn dump_with_params(&self) -> Option<String> {
         let mut trace = String::new();
-        if let Some(prefix) = self.name_prefix {
+        if let Some(prefix) = self.proto.name_prefix {
             trace += prefix;
         }
-        trace += self.name;
-        trace += &match self.opts {
+        trace += self.proto.name;
+        trace += &match self.proto.opts {
             Some(InstructionOptions::ArgumentAndReturnConstraints) =>
                 format!(" {}, {}",
-                    self.ictx.pargs()?,
-                    self.ictx.rargs()?
+                    self.pargs_raw()?,
+                    self.rargs_raw()?
                 ),
             Some(InstructionOptions::ArgumentConstraints) =>
                 format!(" {}, {}",
-                    self.ictx.pargs()?,
-                    self.ictx.nargs()?
+                    self.pargs_raw()?,
+                    self.nargs_raw()?
                 ),
             Some(InstructionOptions::BigInteger) =>
-                format!(" {}", self.ictx.biginteger()?), // TODO: it is zero because execution withdraws it
+                format!(" {}", self.biginteger_raw()?), // TODO: it is zero because execution withdraws it
             Some(InstructionOptions::ControlRegister) =>
-                format!(" c{}", self.ictx.creg()?),
+                format!(" c{}", self.creg_raw()?),
             Some(InstructionOptions::DivisionMode) => {
                 let mode = self.division_mode();
                 if mode.shift_parameter() {
@@ -303,70 +312,84 @@ impl Instruction {
                 }
             },
             Some(InstructionOptions::Integer(_)) =>
-                format!(" {}", self.ictx.integer()?),
+                format!(" {}", self.integer_raw()?),
             Some(InstructionOptions::Length(_)) |
             Some(InstructionOptions::LengthMinusOne(_)) =>
-                format!(" {}", self.ictx.length()?),
+                format!(" {}", self.length_raw()?),
             Some(InstructionOptions::LengthAndIndex) |
             Some(InstructionOptions::LengthMinusOneAndIndexMinusOne) |
             Some(InstructionOptions::LengthMinusTwoAndIndex) => {
-                let length_and_index = self.ictx.length_and_index()?;
+                let length_and_index = self.length_and_index_raw()?;
                 format!(" {}, {}", length_and_index.length, length_and_index.index)
             },
             Some(InstructionOptions::Pargs(_)) =>
-                format!(" {}", self.ictx.pargs()?),
+                format!(" {}", self.pargs_raw()?),
             Some(InstructionOptions::Rargs(_)) =>
-                format!(" {}", self.ictx.rargs()?),
+                format!(" {}", self.rargs_raw()?),
             Some(InstructionOptions::StackRegister(_)) =>
-                format!(" s{}", self.ictx.sreg()?),
+                format!(" s{}", self.sreg_raw()?),
             Some(InstructionOptions::StackRegisterPair(WhereToGetParams::GetFromNextByteMinusOne)) =>
                 format!(" s{},s{}",
-                    self.ictx.sregs()?.ra,
-                    self.ictx.sregs()?.rb as isize - 1
+                    self.sregs_raw()?.ra,
+                    self.sregs_raw()?.rb as isize - 1
                 ),
             Some(InstructionOptions::StackRegisterPair(_)) =>
                 format!(" s{},s{}",
-                    self.ictx.sregs()?.ra,
-                    self.ictx.sregs()?.rb
+                    self.sregs_raw()?.ra,
+                    self.sregs_raw()?.rb
                 ),
             Some(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByteMinusOne)) =>
                 format!(" s{},s{},s{}",
-                    self.ictx.sregs3()?.ra,
-                    self.ictx.sregs3()?.rb,
-                    self.ictx.sregs3()?.rc as isize - 1,
+                    self.sregs3_raw()?.ra,
+                    self.sregs3_raw()?.rb,
+                    self.sregs3_raw()?.rc as isize - 1,
                 ),
             Some(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByteMinusOneMinusOne)) =>
                 format!(" s{},s{},s{}",
-                    self.ictx.sregs3()?.ra,
-                    self.ictx.sregs3()?.rb as isize - 1,
-                    self.ictx.sregs3()?.rc as isize - 1,
+                    self.sregs3_raw()?.ra,
+                    self.sregs3_raw()?.rb as isize - 1,
+                    self.sregs3_raw()?.rc as isize - 1,
                 ),
             Some(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromNextByteMinusOneMinusTwo)) =>
                 format!(" s{},s{},s{}",
-                    self.ictx.sregs3()?.ra,
-                    self.ictx.sregs3()?.rb as isize - 1,
-                    self.ictx.sregs3()?.rc as isize - 2,
+                    self.sregs3_raw()?.ra,
+                    self.sregs3_raw()?.rb as isize - 1,
+                    self.sregs3_raw()?.rc as isize - 2,
                 ),
             Some(InstructionOptions::StackRegisterTrio(_)) =>
                 format!(" s{},s{},s{}",
-                    self.ictx.sregs3()?.ra,
-                    self.ictx.sregs3()?.rb,
-                    self.ictx.sregs3()?.rc,
+                    self.sregs3_raw()?.ra,
+                    self.sregs3_raw()?.rb,
+                    self.sregs3_raw()?.rc,
                 ),
             Some(InstructionOptions::Bitstring(_, _, _, _)) =>
-                format!(" x{:X}", self.ictx.slice()?),
+                format!(" x{:X}", self.slice_raw()?),
             Some(InstructionOptions::Bytestring(_, _, _, _)) =>
-                format!(" x{:X}", self.ictx.slice()?),
+                format!(" x{:X}", self.slice_raw()?),
             Some(InstructionOptions::Dictionary(_, _)) =>
-                format!(" {}", self.ictx.length()?),
+                format!(" {}", self.length_raw()?),
             None => String::new()
         };
         Some(trace)
     }
 }
 
-impl fmt::Debug for Instruction {
+impl From<Instruction> for InstructionExt {
+    fn from(proto: Instruction) -> Self {
+        Self {
+            proto: Instruction {
+                name: proto.name,
+                name_prefix: proto.name_prefix,
+                opts: proto.opts,
+            },
+            params: Vec::new(),
+            vars: Vec::new()
+        }
+    }
+}
+
+impl fmt::Debug for InstructionExt {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.name)
+        write!(f, "{}", self.proto.name)
     }
 }

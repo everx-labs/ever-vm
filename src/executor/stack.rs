@@ -217,7 +217,7 @@ pub(super) fn execute_pick(engine: &mut Engine) -> Status {
 
 // (x ... y - y ...)
 pub(super) fn execute_pop(engine: &mut Engine) -> Status {
-    let cmd = engine.cc.last_cmd();
+    let cmd = engine.last_cmd();
     let range = if (cmd & 0xF0) == 0x30 {
         0..16
     } else if cmd == 0x57 {
@@ -288,7 +288,7 @@ pub(super) fn execute_pu2xc(engine: &mut Engine) -> Status {
 
 // (x ... - x ... x)
 pub(super) fn execute_push(engine: &mut Engine) -> Status {
-    let cmd = engine.cc.last_cmd();
+    let cmd = engine.last_cmd();
     let range = if (cmd & 0xF0) == 0x20 {
         0..16
     } else if cmd == 0x56 {
@@ -389,7 +389,7 @@ pub(super) fn execute_pushctrx(engine: &mut Engine) -> Status {
 
 // ( - int)
 pub(super) fn execute_pushint(engine: &mut Engine) -> Status {
-    let cmd = engine.cc.last_cmd();
+    let cmd = engine.last_cmd();
     let range = if (cmd & 0xF0) == 0x70 {
         -5..11
     } else if cmd == 0x80 {
@@ -444,7 +444,7 @@ pub(super) fn execute_pushnegpow2(engine: &mut Engine) -> Status {
 
 // ( - 2^(x+1))
 pub(super) fn execute_pushpow2(engine: &mut Engine) -> Status {
-    let power = engine.cc.last_cmd();
+    let power = engine.last_cmd();
     engine.load_instruction(
         Instruction::new("PUSHPOW2")
     )?;

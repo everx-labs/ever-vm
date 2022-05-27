@@ -33,10 +33,15 @@ pub enum ContinuationType {
     WhileLoopCondition(SliceData, SliceData),
 }
 
+impl Default for ContinuationType {
+    fn default() -> Self {
+        Self::Ordinary
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ContinuationData {
     code: SliceData,
-    last_cmd: u8,
     pub nargs: isize,
     pub savelist: SaveList,
     pub stack: Stack,
@@ -45,9 +50,8 @@ pub struct ContinuationData {
 
 impl ContinuationData {
     pub fn new_empty() -> Self {
-        ContinuationData {
+        Self {
             code: SliceData::default(),
-            last_cmd: 0,
             nargs: -1,
             savelist: SaveList::new(),
             stack: Stack::new(),
@@ -55,10 +59,22 @@ impl ContinuationData {
         }
     }
 
+    pub fn move_without_stack(cont: &mut ContinuationData, body: SliceData) -> Self {
+        debug_assert!(cont.code.is_empty());
+        debug_assert!(cont.nargs < 0);
+        debug_assert!(cont.savelist.is_empty());
+        Self {
+            code: mem::replace(&mut cont.code, body),
+            nargs: -1,
+            savelist: Default::default(),
+            stack: Stack::new(),
+            type_of: mem::take(&mut cont.type_of)
+        }
+    }
+
     pub fn copy_without_stack(&self) -> Self {
-        ContinuationData {
+        Self {
             code: self.code.clone(),
-            last_cmd: self.last_cmd,
             nargs: self.nargs,
             savelist: self.savelist.clone(),
             stack: Stack::new(),
@@ -78,29 +94,6 @@ impl ContinuationData {
         self.savelist.get(i).is_none()
     }
 
-    pub fn last_cmd(&self) -> u8 {
-        self.last_cmd
-    }
-
-    pub fn next_cmd(&mut self) -> Result<u8> {
-        match self.code.get_next_byte() {
-            Ok(cmd) => {
-                self.last_cmd = cmd;
-                Ok(cmd)
-            }
-            Err(_) => {
-                // TODO: combine error! and err!
-                // panic!("n >= 8 is expected, actual value: {}", self.code.remaining_bits());
-                log::error!(
-                    target: "tvm",
-                    "remaining bits expected >= 8, but actual value is: {}\n",
-                    self.code.remaining_bits()
-                );
-                err!(ExceptionCode::InvalidOpcode)
-            }
-        }
-    }
-
     pub fn move_to_end(&mut self) {
         self.code = SliceData::default()
     }
@@ -114,15 +107,23 @@ impl ContinuationData {
     }
 
     pub fn with_code(code: SliceData) -> Self {
-        let mut cont = ContinuationData::new_empty();
-        cont.code = code;
-        cont
+        ContinuationData {
+           code,
+           nargs: -1,
+           savelist: SaveList::new(),
+           stack: Stack::new(),
+           type_of: ContinuationType::Ordinary,
+        }
     }
 
     pub fn with_type(type_of: ContinuationType) -> Self {
-        let mut cont = ContinuationData::new_empty();
-        cont.type_of = type_of;
-        cont
+        ContinuationData {
+           code: SliceData::default(),
+           nargs: -1,
+           savelist: SaveList::new(),
+           stack: Stack::new(),
+           type_of,
+        }
     }
 
     pub fn withdraw(&mut self) -> Self {
@@ -288,7 +289,6 @@ impl ContinuationData {
         gas += Gas::load_cell_price(true);
         Ok((ContinuationData {
             code,
-            last_cmd: 0,
             nargs,
             savelist: save,
             stack: Stack {
@@ -301,15 +301,43 @@ impl ContinuationData {
 
 impl fmt::Display for ContinuationData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{{\n    {}\n    nargs: {}\n    stack: ", self.code, self.nargs)?;
+        write!(f, "{{\n    type: {}\n    code: {}    nargs: {}\n    stack: ", self.type_of, self.code, self.nargs)?;
         if self.stack.depth() == 0 {
             writeln!(f, "empty")?;
         } else {
+            writeln!(f)?;
             for x in self.stack.storage.iter() {
-                writeln!(f)?;
                 write!(f, "        {}", x)?;
+                writeln!(f)?;
+            }
+        }
+        write!(f, "    savelist: ")?;
+        if self.savelist.is_empty() {
+            writeln!(f, "empty")?;
+        } else {
+            writeln!(f, "")?;
+            for i in SaveList::REGS {
+                if let Some(item) = self.savelist.get(i) {
+                    writeln!(f, "        {}: {}", i, item)?
+                }
             }
         }
         write!(f, "}}")
+    }
+}
+
+impl fmt::Display for ContinuationType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let name = match self {
+            ContinuationType::AgainLoopBody(_) => "again",
+            ContinuationType::TryCatch => "try-catch",
+            ContinuationType::Ordinary => "ordinary",
+            ContinuationType::PushInt(_) => "pushint",
+            ContinuationType::Quit(_) => "quit",
+            ContinuationType::RepeatLoopBody(_, _) => "repeat",
+            ContinuationType::UntilLoopCondition(_) => "until",
+            ContinuationType::WhileLoopCondition(_, _) => "while",
+        };
+        write!(f, "{}", name)
     }
 }

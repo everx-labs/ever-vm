@@ -17,8 +17,8 @@ use crate::{
     stack::{StackItem, integer::{IntegerData, conversion::FromInt, behavior::Quiet, math::Round}},
     types::{Exception, Status}
 };
-use std::sync::Arc;
 use ton_types::{error, types::ExceptionCode, Result};
+use std::sync::Arc;
 
 pub mod gas_state;
 

@@ -18,7 +18,7 @@ use crate::{
         engine::{
             Engine, data::convert,
             storage::{
-                apply_savelist, copy_to_var, fetch_reference, fetch_stack,
+                apply_savelist, apply_savelist_excluding_c0_c1, copy_to_var, fetch_reference, fetch_stack,
                 pop_range, pop_all, swap
             }
         },
@@ -71,10 +71,10 @@ fn callcc(engine: &mut Engine, callee: usize) -> Status {
     }
     pop_all(engine, var!(callee))?;
     swap(engine, var!(callee), CC)?;
-    apply_savelist(engine, 0..0)?;
+    apply_savelist(engine)?;
     let mut old_cc =
         engine.cmd.var_mut(callee).as_continuation_mut()?.withdraw();
-    if let Some(nargs) = engine.cmd.ictx.nargs() {
+    if let Some(nargs) = engine.cmd.nargs_raw() {
         old_cc.nargs = nargs
     }
     engine.cc.stack.push_cont(old_cc);
@@ -128,10 +128,10 @@ pub(super) fn callx(engine: &mut Engine, callee: usize, need_convert: bool) -> S
         swap(engine, var!(callee), CC)?;
         swap(engine, var!(callee), ctrl!(0))?;
     }
-    apply_savelist(engine, 0..0)?;
-    if let Some(nargs) = engine.cmd.ictx.nargs() {
+    apply_savelist(engine)?;
+    if let Some(nargs) = engine.cmd.nargs_raw() {
         continuation_mut_by_address!(engine, ctrl!(0))?.nargs = nargs
-    } else if let Some(rargs) = engine.cmd.ictx.rargs() {
+    } else if let Some(rargs) = engine.cmd.rargs_raw() {
         continuation_mut_by_address!(engine, ctrl!(0))?.nargs = rargs as isize
     } else {
         continuation_mut_by_address!(engine, ctrl!(0))?.nargs = -1;
@@ -144,14 +144,14 @@ type PRange = RangeInclusive<isize>;
 
 fn fetch_nargs(engine: &mut Engine, idx: usize, nrange: NRange) -> Status {
     let nargs = engine.cmd.var(idx).as_integer()?.into(nrange)?;
-    engine.cmd.ictx.params.push(InstructionParameter::Nargs(nargs));
+    engine.cmd.params.push(InstructionParameter::Nargs(nargs));
     Ok(())
 }
 
 fn fetch_pargs(engine: &mut Engine, idx: usize, prange: PRange) -> Status {
     let pargs = engine.cmd.var(idx).as_integer()?.into(prange)?;
     if pargs >= 0 {
-        engine.cmd.ictx.params.push(InstructionParameter::Pargs(pargs as usize));
+        engine.cmd.params.push(InstructionParameter::Pargs(pargs as usize));
     }
     Ok(())
 }
@@ -175,7 +175,7 @@ fn fetch_nargs_pargs(engine: &mut Engine, nrange: NRange, prange: PRange) -> Sta
 fn jmpxdata(engine: &mut Engine) -> Status {
     pop_all(engine, var!(0))?;
     swap(engine, var!(0), CC)?;
-    apply_savelist(engine, 0..0)?;
+    apply_savelist(engine)?;
     let slice = engine.cmd.var(0).as_continuation()?.code().clone();
     engine.cc.stack.push(StackItem::Slice(slice));
     Ok(())
@@ -247,7 +247,7 @@ fn jmpx(engine: &mut Engine, need_convert: bool) -> Status {
     }
     pop_all(engine, var!(0))?;
     swap(engine, var!(0), CC)?;
-    apply_savelist(engine, 0..2)
+    apply_savelist_excluding_c0_c1(engine)
 }
 
 // (continuation - ),
@@ -270,13 +270,26 @@ pub(super) fn switch(engine: &mut Engine, continuation: u16) -> Status {
     swap(engine, continuation, CC)?;
     let drop_c0 = (continuation == ctrl!(0)) && engine.cc.savelist.get(0).is_none();
     let drop_c1 = (continuation == ctrl!(1)) && engine.cc.savelist.get(1).is_none();
-    apply_savelist(engine, 0..0)?;
+    apply_savelist(engine)?;
     if drop_c0 {
         engine.ctrls.remove(0);
     }
     if drop_c1 {
         let cont = ContinuationData::with_type(ContinuationType::Quit(1));
         engine.ctrls.put(1, &mut StackItem::continuation(cont))?;
+    }
+    Ok(())
+}
+
+pub(super) fn switch_to_c0(engine: &mut Engine) -> Status {
+    pop_all(engine, ctrl!(0))?;
+    let c0 = engine.ctrls.get_mut(0)
+        .ok_or(ExceptionCode::FatalError)?.as_continuation_mut()?;
+    mem::swap(&mut engine.cc, c0);
+    let drop_c0 = engine.cc.savelist.get(0).is_none();
+    engine.ctrls.apply(&mut engine.cc.savelist);
+    if drop_c0 {
+        engine.ctrls.remove(0);
     }
     Ok(())
 }
@@ -513,7 +526,7 @@ pub(super) fn execute_callx(engine: &mut Engine) -> Status {
 
 // (continuation - ), callx pattern
 pub(super) fn execute_callxargs(engine: &mut Engine) -> Status {
-    let cmd = engine.cc.last_cmd();
+    let cmd = engine.last_cmd();
     engine.load_instruction(
         Instruction::new("CALLXARGS").set_opts(
             if cmd == 0xDA {

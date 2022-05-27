@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Version: 1.8.35
+## Version: 1.8.37
 
 ### New
  - Add mycode capability (#152)
@@ -87,6 +87,51 @@ All notable changes to this project will be documented in this file.
  - Co-authored-by: Tonjen &lt;jenkins@tonlabs.io&gt;
  - Co-authored-by: ViacheslavB &lt;bvscd@mail.ru&gt;
  - Update Cargo.toml
+ - Hot spot optimizations (#145)
+ - Some micro optimizations for hot spots
+ - Make SaveList a vector instead of hashmap
+ - Simplify StackItem::as_continuation_mut
+ - Eliminate cloning of cmd_code&#x27;s cell
+ - Put log-related computations under an if
+ - Improve perf of ContinuationData ctors
+ - Do arith operations in-place
+ - Get rid of swaps in step_while_loop()
+ - Optimize transplanting of the topmost range of a stack
+ - Optimize switching of loop iterations
+ - Simplify SaveList::apply()
+ - Improve move_stack_from_cc(): add a special case, remove unsafe code
+ - Add a script tuning a linux machine for finer benchmarking
+ - Add bigint benchmarks
+ - Turn off pointless benchmarking of tests; improve profiling
+ - Put tracing under a check to save a bunch of cycles
+ - Specialize switch() for the case of switching to c0
+ - Disable rug-bigint benchmark since CI can&#x27;t build gmp-mpfr-sys
+ - Make StackItem variants hold Rc instead of Arc
+ - Streamline integer manipulations
+ - Add load-boc benchmark
+ - Make SaveList&#x27;s storage an array
+ - Remove unnecessary engine.cmd reset
+ - Split Instruction struct
+ - Remove Context struct
+ - Revert Rc instead of Arc change due to the crate interface breakage
+ - Move cc parts into loop cont instead of cloning
+ - Move last_cmd field out of ContinuationData into Engine
+ - Minor improvements, NFC
+ - Minor optimization
+ - Add SaveList::put_opt() an unchecked version of put()
+ - Improve ContinuationData printing
+ - Remove unused c6 from SaveList
+ - Do addition in-place
+ - Simplify raise_exception()
+ - Add assertions
+ - Add handlers printer
+ - Add a script for estimating the tests coverage
+ - Address feedback
+ - Fix after rebase
+ - Add deep stack switch test
+ - Auto update patch version
+ - Add a benchmark for deep stack switch
+ - Co-authored-by: Tonjen &lt;jenkins@tonlabs.io&gt;
  - Co-authored-by: Suvorov Ivan &lt;sv_91@inbox.ru&gt;
  - Co-authored-by: ViacheslavB &lt;bvscd@mail.ru&gt;
  - Co-authored-by: SergeyY &lt;43989533+yaroslavser@users.noreply.github.com&gt;

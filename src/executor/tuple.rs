@@ -20,8 +20,8 @@ use crate::{
     stack::{StackItem, integer::IntegerData},
     types::{Exception, Status}
 };
-use std::sync::Arc;
 use ton_block::GlobalCapabilities;
+use std::sync::Arc;
 use ton_types::{error, types::ExceptionCode};
 
 fn tuple(engine: &mut Engine, name: &'static str, how: u8) -> Status {
