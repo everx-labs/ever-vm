@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Version: 1.8.37
+## Version: 1.8.38
 
 ### New
  - Add mycode capability (#152)
@@ -132,12 +132,14 @@ All notable changes to this project will be documented in this file.
  - Auto update patch version
  - Add a benchmark for deep stack switch
  - Co-authored-by: Tonjen &lt;jenkins@tonlabs.io&gt;
+ - accounts primitives (#285)
+ - TRYELECT,  SEQNO
  - Co-authored-by: Suvorov Ivan &lt;sv_91@inbox.ru&gt;
- - Co-authored-by: ViacheslavB &lt;bvscd@mail.ru&gt;
  - Co-authored-by: SergeyY &lt;43989533+yaroslavser@users.noreply.github.com&gt;
  - Co-authored-by: Ivan Suvorov &lt;ivan.s@tonlabs.io&gt;
  - Co-authored-by: Tonjen &lt;jenkins@tonlabs.io&gt;
  - Co-authored-by: Slava &lt;slava@qey.ai&gt;
+ - Co-authored-by: Alexey Danilevich &lt;alexvd@inbox.ru&gt;
  - Co-authored-by: Mike &lt;mikhael.skvortsov@gmail.com&gt;
  - Co-authored-by: Kirill &lt;43584399+Sumrachek@users.noreply.github.com&gt;
 

@@ -15,30 +15,25 @@ use crate::{
     executor::{engine::{Engine, storage::fetch_stack}, types::{InstructionOptions, Instruction}},
     stack::{StackItem, integer::IntegerData}, types::Status
 };
-use ton_block::GlobalCapabilities;
-use ton_types::{BuilderData, HashmapE, IBitstring, types::ExceptionCode};
 use std::sync::Arc;
+use ton_block::GlobalCapabilities;
 
 fn execute_config_param(engine: &mut Engine, name: &'static str, opt: bool) -> Status {
     engine.load_instruction(Instruction::new(name))?;
     fetch_stack(engine, 1)?;
     let index: i32 = engine.cmd.var(0).as_integer()?.into(std::i32::MIN..=std::i32::MAX)?;
-    let params = HashmapE::with_hashmap(32, engine.config_param(9)?.as_dict()?.cloned());
-    let mut key = BuilderData::new();
-    key.append_i32(index)?;
-    if let Some(value) = params.get_with_gas(key.into_cell()?.into(), engine)? {
-        if let Some(value) = value.reference_opt(0) {
-            engine.cc.stack.push(StackItem::Cell(value));
-            if !opt {
-                engine.cc.stack.push(boolean!(true));
-            }
-            return Ok(())
+    if let Some(value) = engine.get_config_param(index)? {
+        engine.cc.stack.push(StackItem::Cell(value));
+        if !opt {
+            engine.cc.stack.push(boolean!(true));
         }
+    } else {
+        let value = match opt {
+            true => StackItem::None,
+            false => boolean!(false)
+        };
+        engine.cc.stack.push(value);
     }
-    let _ = match opt {
-        true => engine.cc.stack.push(StackItem::None),
-        false => engine.cc.stack.push(boolean!(false))
-    };
     Ok(())
 }
 
@@ -50,7 +45,7 @@ pub(super) fn execute_balance(engine: &mut Engine) -> Status {
 // ( - D 32)
 pub(super) fn execute_config_dict(engine: &mut Engine) -> Status {
     engine.load_instruction(Instruction::new("CONFIGDICT"))?;
-    let dict = engine.config_param(9)?.clone();
+    let dict = engine.smci_param(9)?.clone();
     engine.cc.stack.push(dict);
     engine.cc.stack.push(int!(32));
     Ok(())
@@ -70,7 +65,7 @@ fn extract_config(engine: &mut Engine, name: &'static str) -> Status {
     engine.load_instruction(
         Instruction::new(name).set_opts(InstructionOptions::Length(0..16))
     )?;
-    let value = engine.config_param(engine.cmd.length())?.clone();
+    let value = engine.smci_param(engine.cmd.length())?.clone();
     engine.cc.stack.push(value);
     Ok(())
 }
@@ -107,11 +102,8 @@ pub(super) fn execute_my_addr(engine: &mut Engine) -> Status {
 
 // - cell
 pub(super) fn execute_my_code(engine: &mut Engine) -> Status {
-    if !engine.check_capabilities(GlobalCapabilities::CapMycode as u64) {
-        Status::Err(ExceptionCode::InvalidOpcode.into())
-    } else {
-        extract_config(engine, "MYCODE")
-    }
+    engine.check_capability(GlobalCapabilities::CapMycode)?;
+    extract_config(engine, "MYCODE")
 }
 
 // - x
@@ -121,18 +113,18 @@ pub(super) fn execute_randseed(engine: &mut Engine) -> Status {
 
 // - integer | none
 pub(super) fn execute_init_code_hash(engine: &mut Engine) -> Status {
-    if !engine.check_capabilities(GlobalCapabilities::CapInitCodeHash as u64) {
-        Status::Err(ExceptionCode::InvalidOpcode.into())
-    } else {
-        extract_config(engine, "INITCODEHASH")
-    }
+    engine.check_capability(GlobalCapabilities::CapInitCodeHash)?;
+    extract_config(engine, "INITCODEHASH")
+}
+
+// - integer
+pub(super) fn execute_seq_no(engine: &mut Engine) -> Status {
+    engine.check_capability(GlobalCapabilities::CapDelections)?;
+    extract_config(engine, "SEQNO")
 }
 
 // - integer
 pub(super) fn execute_storage_fees_collected(engine: &mut Engine) -> Status {
-    if !engine.check_capabilities(GlobalCapabilities::CapStorageFeeToTvm as u64) {
-        Status::Err(ExceptionCode::InvalidOpcode.into())
-    } else {
-        extract_config(engine, "STORAGEFEE")
-    }
+    engine.check_capability(GlobalCapabilities::CapStorageFeeToTvm)?;
+    extract_config(engine, "STORAGEFEE")
 }

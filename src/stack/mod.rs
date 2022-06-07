@@ -17,7 +17,7 @@ use crate::{
     stack::{continuation::ContinuationData, integer::IntegerData},
     types::{Exception, ResultMut, ResultOpt, ResultRef, ResultVec, Status}
 };
-use std::{fmt, mem, ops::Range, slice::Iter, sync::Arc};
+use std::{fmt, mem, ops::Range, slice::Iter, sync::Arc, cmp::Ordering};
 use integer::serialization::{Encoding, SignedIntegerBigEndianEncoding};
 use serialization::Deserializer;
 use ton_types::{BuilderData, Cell, CellType, ExceptionCode, HashmapType, IBitstring, MAX_DATA_BITS, MAX_REFERENCES_COUNT, Result, SliceData, error};
@@ -223,7 +223,7 @@ impl StackItem {
     pub fn as_integer(&self) -> ResultRef<IntegerData> {
         match self {
             StackItem::Integer(ref data) => Ok(data),
-            _ => err!(ExceptionCode::TypeCheckError)
+            _ => err!(ExceptionCode::TypeCheckError, "item is not an integer")
         }
     }
 
@@ -248,7 +248,7 @@ impl StackItem {
     pub fn as_tuple(&self) -> ResultRef<Vec<StackItem>> {
         match self {
             StackItem::Tuple(ref data) => Ok(data),
-            _ => err!(ExceptionCode::TypeCheckError)
+            _ => err!(ExceptionCode::TypeCheckError, "item is not a tuple")
         }
     }
 
@@ -557,15 +557,19 @@ impl Stack {
             return Ok(vec!())
         }
         let depth = self.depth();
-        if range.end > depth {
-            err!(ExceptionCode::StackUnderflow, "drop_range: {}..{}, depth: {}", range.start, range.end, depth)
-        } else if range.end == depth {
-            let mut rem = Vec::from(&self.storage[depth - range.start..]);
-            self.storage.truncate(depth - range.start);
-            std::mem::swap(&mut rem, &mut self.storage);
-            Ok(rem)
-        } else {
-            Ok(self.storage.drain(depth - range.end..depth - range.start).collect())
+        match range.end.cmp(&depth) {
+            Ordering::Greater => {
+                err!(ExceptionCode::StackUnderflow, "drop_range: {}..{}, depth: {}", range.start, range.end, depth)
+            }
+            Ordering::Equal => {
+                let mut rem = Vec::from(&self.storage[depth - range.start..]);
+                self.storage.truncate(depth - range.start);
+                std::mem::swap(&mut rem, &mut self.storage);
+                Ok(rem)
+            }
+            Ordering::Less => {
+                Ok(self.storage.drain(depth - range.end..depth - range.start).collect())
+            }
         }
     }
 

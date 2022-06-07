@@ -17,5 +17,5 @@ mod handlers;
 #[macro_use]
 pub(in crate::executor) mod storage;
 
-pub use self::core::{Engine, EngineTraceInfo, EngineTraceInfoType};
+pub use self::core::{Engine, EngineTraceInfo, EngineTraceInfoType, IndexProvider};
 

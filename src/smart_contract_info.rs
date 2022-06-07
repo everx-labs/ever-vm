@@ -16,8 +16,8 @@ use crate::stack::{
     integer::IntegerData,
 };
 use sha2::{Sha256, Digest};
-use ton_block::GlobalCapabilities;
 use std::sync::Arc;
+use ton_block::{GlobalCapabilities, CurrencyCollection};
 use ton_types::{Cell, HashmapE, HashmapType, SliceData, types::UInt256};
 
 
@@ -31,62 +31,59 @@ unixtime:uint32 block_lt:uint64 trans_lt:uint64
 rand_seed:uint256 balance_remaining:CurrencyCollection
 myself:MsgAddress = SmartContractInfo;
 */
-#[derive(Clone,Debug,PartialEq)]
-pub struct SmartContractInfo{
-    actions: u16,
-    msgs_sent: u16,
-    unix_time: u32,
-    block_lt: u64,
-    trans_lt: u64,
-    rand_seed: IntegerData,
-    balance_remaining_grams: u128,
-    balance_remaining_other: HashmapE,
-    myself: SliceData,
-    config_params: Option<Cell>, // config params from masterchain
-    mycode: Cell,
-    init_code_hash: UInt256,
-    storage_fee_collected: u128,
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SmartContractInfo {
+    pub actions: u16,
+    pub msgs_sent: u16,
+    pub unix_time: u32,
+    pub block_lt: u64,
+    pub trans_lt: u64,
+    pub seq_no: u32,
+    pub rand_seed: IntegerData,
+    pub balance: CurrencyCollection,
+    pub balance_remaining_grams: u128,
+    pub balance_remaining_other: HashmapE,
+    pub myself: SliceData,
+    pub config_params: Option<Cell>, // config params from masterchain
+    pub mycode: Cell,
+    pub init_code_hash: UInt256,
+    pub storage_fee_collected: u128,
+    pub capabilities: u64,
 }
 
 impl SmartContractInfo{
-
-    pub fn default() -> Self {
-        SmartContractInfo {
-            actions: 0,
-            msgs_sent: 0,
-            unix_time: 0,
-            block_lt: 0,
-            trans_lt: 0,
-            rand_seed: IntegerData::zero(),
-            balance_remaining_grams: 0,
-            balance_remaining_other: HashmapE::with_bit_len(32),
-            myself: SliceData::default(),
-            config_params: None,
-            mycode: Cell::default(),
-            init_code_hash: UInt256::default(),
-            storage_fee_collected: 0
-        }
-    }
-
-    pub fn with_myself(address: SliceData) -> Self {
+    pub fn with_myself(myself: SliceData) -> Self {
         Self {
-            myself: address,
+            myself,
             ..Self::default()
         }
     }
 
+    // for compatibility with old 
+    pub fn old_default(mycode: Cell) -> Self {
+        Self {
+            capabilities: GlobalCapabilities::CapInitCodeHash as u64 | GlobalCapabilities::CapMycode as u64,
+            mycode,
+            ..Default::default()
+        }
+    }
+
+    #[deprecated]
     pub fn set_actions(&mut self, actions: u16) {
         self.actions = actions;
     }
 
+    #[deprecated]
     pub fn set_msgs_sent(&mut self, msgs_sent: u16) {
         self.msgs_sent = msgs_sent;
     }
 
+    #[deprecated]
     pub fn block_lt(&self) -> u64 {
         self.block_lt
     }
 
+    #[deprecated]
     pub fn block_lt_mut(&mut self) -> &mut u64 {
         &mut self.block_lt
     }
@@ -95,18 +92,22 @@ impl SmartContractInfo{
         self.unix_time
     }
 
+    #[deprecated]
     pub fn unix_time_mut(&mut self) -> &mut u32 {
         &mut self.unix_time
     }
 
+    #[deprecated]
     pub fn trans_lt(&self) -> u64 {
         self.trans_lt
     }
 
+    #[deprecated]
     pub fn trans_lt_mut(&mut self) -> &mut u64 {
         &mut self.trans_lt
     }
 
+    #[deprecated]
     pub fn set_config_params(&mut self, params: Cell) {
         self.config_params = Some(params);
     }
@@ -115,45 +116,34 @@ impl SmartContractInfo{
         self.mycode = code;
     }
 
-
     /*
             The rand_seed field here is initialized deterministically starting from the
         rand_seed of the block, and the account address.
     */
     pub fn calc_rand_seed(&mut self, rand_seed_block: UInt256, account_address_anycast: &[u8]) {
         // combine all parameters to vec and calculate hash of them
-        if !rand_seed_block.is_zero() {
+        self.rand_seed = if !rand_seed_block.is_zero() {
             let mut hasher = Sha256::new();
             hasher.update(&rand_seed_block);
             hasher.update(&account_address_anycast);
 
             let sha256 = hasher.finalize();
-            self.rand_seed = IntegerData::from_unsigned_bytes_be(&sha256);
+            IntegerData::from_unsigned_bytes_be(&sha256)
         } else {
             // if the user forgot to set the rand_seed_block value, then this 0 will be clearly visible on tests
             log::warn!(target: "tvm", "Not set rand_seed_block");
-            self.rand_seed = 0.into();
-        }
+            IntegerData::zero()
+        };
     }
 
-    pub fn balance_remaining_grams(&self) -> &u128 {
-        &self.balance_remaining_grams
-    }
-
+    #[deprecated]
     pub fn balance_remaining_grams_mut(&mut self) -> &mut u128 {
         &mut self.balance_remaining_grams
     }
 
-    pub fn balance_remaining_other(&self) -> &HashmapE {
-        &self.balance_remaining_other
-    }
-
+    #[deprecated]
     pub fn balance_remaining_other_mut(&mut self) -> &mut HashmapE {
         &mut self.balance_remaining_other
-    }
-
-    pub fn myself_mut(&mut self) -> &mut SliceData {
-        &mut self.myself
     }
 
     pub fn set_init_code_hash(&mut self, init_code_hash: UInt256) {
@@ -164,14 +154,15 @@ impl SmartContractInfo{
         self.storage_fee_collected = storage_fee;
     }
 
-    fn has_capability(capabilities: u64, capability: GlobalCapabilities) -> bool {
-        (capabilities & (capability as u64)) != 0
-    }
+    pub fn into_temp_data_item(self) -> StackItem {
+        debug_assert_ne!(self.capabilities, 0, "set member capabilities");
+        debug_assert_eq!(self.balance_remaining_grams, 0, "use balance instead old");
+        debug_assert!(self.balance_remaining_other.data().is_none(), "use balance instead old");
 
-    pub fn into_temp_data_with_capabilities(self, capabilities: u64) -> StackItem {
-        let is_init_code_hash = Self::has_capability(capabilities, GlobalCapabilities::CapInitCodeHash);
-        let with_mycode = Self::has_capability(capabilities, GlobalCapabilities::CapMycode);
-        let with_storage_fee = Self::has_capability(capabilities, GlobalCapabilities::CapStorageFeeToTvm);
+        let balance = std::cmp::max(self.balance_remaining_grams, self.balance.grams.as_u128());
+        let balance_other = self.balance_remaining_other.data().cloned()
+            .or_else(|| self.balance.other_as_hashmap().data().cloned());
+
         let mut params = vec![
             int!(0x076ef1ea),      // magic - should be changed because of structure change
             int!(self.actions),    // actions
@@ -179,50 +170,51 @@ impl SmartContractInfo{
             int!(self.unix_time),  // unix time
             int!(self.block_lt),   // logical time
             int!(self.trans_lt),   // transaction time
-            StackItem::int(self.rand_seed.clone()),
+            StackItem::int(self.rand_seed),
             StackItem::tuple(vec![
-                int!(self.balance_remaining_grams),
-                self.balance_remaining_other.data()
-                    .map(|dict| StackItem::Cell(dict.clone()))
-                    .unwrap_or_else(StackItem::default)
+                int!(balance),
+                balance_other.map_or(StackItem::None, StackItem::Cell)
             ]),
-            StackItem::Slice(self.myself.clone()),
-            self.config_params.as_ref()
-                .map(|params| StackItem::Cell(params.clone()))
-                .unwrap_or_else(StackItem::default),
+            StackItem::Slice(self.myself),
+            self.config_params.map_or(StackItem::None, StackItem::Cell),
         ];
-        if with_mycode {
-            params.push(StackItem::cell(self.mycode.clone()));
-        }
-        if is_init_code_hash {
-            if !with_mycode {
-                params.push(StackItem::default());
-            }
-            params.push(StackItem::int(IntegerData::from_unsigned_bytes_be(self.init_code_hash.as_slice())));
-        }
-        if with_storage_fee {
-            if !is_init_code_hash {
-                params.push(StackItem::default());
-                if !with_mycode {
-                    params.push(StackItem::default());
+        let mut additional_params = vec![
+            (GlobalCapabilities::CapMycode, StackItem::cell(self.mycode.clone())),
+            (GlobalCapabilities::CapInitCodeHash, StackItem::int(IntegerData::from_unsigned_bytes_be(self.init_code_hash.as_slice()))),
+            (GlobalCapabilities::CapStorageFeeToTvm, StackItem::int(self.storage_fee_collected)),
+            (GlobalCapabilities::CapDelections, StackItem::int(self.seq_no)),
+        ];
+        let add_params = &mut Vec::new();
+        for (i, (caps, f)) in additional_params.drain(..).enumerate() {
+            if (self.capabilities & caps as u64) != 0 {
+                for _ in add_params.len()..i {
+                    add_params.push(StackItem::default());
                 }
+                add_params.push(f);
             }
-            params.push(StackItem::int(self.storage_fee_collected));
         }
+        params.append(add_params);
+        debug_assert!(params.len() <= 14, "{:?} caps: {:X}", params, self.capabilities);
         StackItem::tuple(vec![StackItem::tuple(params)])
     }
 
     #[deprecated]
-    pub fn into_temp_data_with_init_code_hash(self, is_init_code_hash: bool, with_mycode: bool) -> StackItem {
-        let capabilities =
-            if is_init_code_hash { GlobalCapabilities::CapInitCodeHash as u64 } else {0} |
-            if with_mycode { GlobalCapabilities::CapMycode as u64 } else {0};
-
-        self.into_temp_data_with_capabilities(capabilities)
+    pub fn into_temp_data_with_init_code_hash(mut self, is_init_code_hash: bool, with_mycode: bool) -> StackItem {
+        if is_init_code_hash { self.capabilities |= GlobalCapabilities::CapInitCodeHash as u64 }
+        if with_mycode { self.capabilities |= GlobalCapabilities::CapMycode as u64 }
+        self.into_temp_data_item()
     }
 
-    pub fn into_temp_data(self) -> StackItem {
-        let capabilities = GlobalCapabilities::CapInitCodeHash as u64 | GlobalCapabilities::CapMycode as u64;
-        self.into_temp_data_with_capabilities(capabilities)
+    #[deprecated]
+    pub fn into_temp_data(mut self) -> StackItem {
+        self.capabilities |= GlobalCapabilities::CapInitCodeHash as u64 | GlobalCapabilities::CapMycode as u64;
+        self.into_temp_data_item()
+    }
+
+    #[deprecated]
+    pub fn into_temp_data_with_capabilities(mut self, capabilities: u64) -> StackItem {
+        self.capabilities = capabilities;
+        self.into_temp_data_item()
+
     }
 }

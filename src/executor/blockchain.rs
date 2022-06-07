@@ -66,9 +66,7 @@ fn add_action(engine: &mut Engine, action_id: u32, cell: Option<Cell>, suffix: B
 
 /// CHANGELIB (h x - )
 pub(super) fn execute_changelib(engine: &mut Engine) -> Status {
-    if !engine.check_capabilities(GlobalCapabilities::CapSetLibCode as u64) {
-        return Status::Err(ExceptionCode::InvalidOpcode.into());
-    }
+    engine.check_capability(GlobalCapabilities::CapSetLibCode)?;
     engine.load_instruction(Instruction::new("CHANGELIB"))?;
     fetch_stack(engine, 2)?;
     let x = engine.cmd.var(0).as_integer()?.into(0..=2)? as u8;
@@ -99,9 +97,7 @@ pub(super) fn execute_setcode(engine: &mut Engine) -> Status {
 
 /// SETLIBCODE (c x - )
 pub(super) fn execute_setlibcode(engine: &mut Engine) -> Status {
-    if !engine.check_capabilities(GlobalCapabilities::CapSetLibCode as u64) {
-        return Status::Err(ExceptionCode::InvalidOpcode.into());
-    }
+    engine.check_capability(GlobalCapabilities::CapSetLibCode)?;
     engine.load_instruction(Instruction::new("SETLIBCODE"))?;
     fetch_stack(engine, 2)?;
     let x = engine.cmd.var(0).as_integer()?.into(0..=2)? as u8;
@@ -111,19 +107,14 @@ pub(super) fn execute_setlibcode(engine: &mut Engine) -> Status {
 
 /// COPYLEFT (s n - )
 pub(super) fn execute_copyleft(engine: &mut Engine) -> Status {
-    if !engine.check_capabilities(GlobalCapabilities::CapCopyleft as u64) {
-        return Status::Err(ExceptionCode::InvalidOpcode.into());
-    }
+    engine.check_capability(GlobalCapabilities::CapCopyleft)?;
     if engine.check_or_set_flags(Engine::FLAG_COPYLEFTED) {
         return Status::Err(ExceptionCode::IllegalInstruction.into());
     }
     engine.load_instruction(Instruction::new("COPYLEFT"))?;
 
-    let mut myaddr_slice = engine.config_param(8)?.clone();
-    let myaddr = match &mut myaddr_slice {
-        StackItem::Slice(data) => MsgAddressInt::construct_from(data)?,
-        _ => return Status::Err(ExceptionCode::TypeCheckError.into())
-    };
+    let mut myaddr_slice = engine.smci_param(8)?.as_slice()?.clone();
+    let myaddr = MsgAddressInt::construct_from(&mut myaddr_slice)?;
     fetch_stack(engine, 2)?;
     if !myaddr.is_masterchain() {
         let num = [engine.cmd.var(0).as_integer()?.into(0..=255)? as u8];
@@ -287,16 +278,18 @@ fn parse_address(cell: &mut SliceData) -> Result<Vec<StackItem>> {
             tuple.push(StackItem::Slice(cell.get_next_slice(len as usize)?));
         }
         0b10 => {
-            tuple.push(read_rewrite_pfx(cell)?
-                .map(StackItem::Slice)
-                .unwrap_or(StackItem::None));
+            tuple.push(match read_rewrite_pfx(cell)? {
+                Some(slice) => StackItem::Slice(slice),
+                None => StackItem::None
+            });
             tuple.push(int!(cell.get_next_byte()? as i8));
             tuple.push(StackItem::Slice(cell.get_next_slice(256)?));
         }
         0b11 => {
-            tuple.push(read_rewrite_pfx(cell)?
-                .map(StackItem::Slice)
-                .unwrap_or(StackItem::None));
+            tuple.push(match read_rewrite_pfx(cell)? {
+                Some(slice) => StackItem::Slice(slice),
+                None => StackItem::None
+            });
             let len = cell.get_next_int(9)?;
             tuple.push(int!(cell.get_next_i32()?));
             tuple.push(StackItem::Slice(cell.get_next_slice(len as usize)?));

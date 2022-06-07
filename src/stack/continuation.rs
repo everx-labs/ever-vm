@@ -315,7 +315,7 @@ impl fmt::Display for ContinuationData {
         if self.savelist.is_empty() {
             writeln!(f, "empty")?;
         } else {
-            writeln!(f, "")?;
+            writeln!(f)?;
             for i in SaveList::REGS {
                 if let Some(item) = self.savelist.get(i) {
                     writeln!(f, "        {}: {}", i, item)?

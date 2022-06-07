@@ -26,15 +26,22 @@ use crate::{
         integer::IntegerData, savelist::SaveList
     },
     smart_contract_info::SmartContractInfo,
-    types::{Exception, ResultMut, ResultRef, Status}
+    types::{Exception, ResultMut, ResultOpt, ResultRef, Status}
 };
-use std::{collections::HashSet, sync::Arc, ops::Range};
+use std::{collections::HashSet, sync::{Arc, Mutex}, ops::Range};
 use ton_types::{
     BuilderData, Cell, CellType, error, GasConsumer, Result, SliceData, HashmapE,
-    types::{ExceptionCode, UInt256}
+    types::{ExceptionCode, UInt256}, IBitstring,
 };
+use ton_block::{ShardAccount, Deserializable, GlobalCapabilities};
 
 pub(super) type ExecuteHandler = fn(&mut Engine) -> Status;
+
+pub trait IndexProvider: Send + Sync {
+    fn get_accounts_by_init_code_hash(&self, hash: &UInt256) -> Result<Vec<ShardAccount>>;
+    fn get_accounts_by_code_hash(&self, hash: &UInt256) -> Result<Vec<ShardAccount>>;
+    fn get_accounts_by_data_hash(&self, hash: &UInt256) -> Result<Vec<ShardAccount>>;
+}
 
 pub struct SliceProto {
     data_window: Range<usize>,
@@ -70,6 +77,7 @@ pub struct Engine {
     pub(in crate::executor) cmd: InstructionExt,
     pub(in crate::executor) ctrls: SaveList,
     pub(in crate::executor) libraries: Vec<HashmapE>, // 256 bit dictionaries
+    pub(in crate::executor) index_provider: Option<Arc<dyn IndexProvider>>,
     visited_cells: HashSet<UInt256>,
     cstate: CommittedState,
     time: u64,
@@ -202,14 +210,17 @@ impl Engine {
             None
         } else if cfg!(feature="fift_check") {
             Some(Box::new(Self::fift_trace_callback))
-        } else {
+        } else if cfg!(feature="verbose") {
             Some(Box::new(Self::default_trace_callback))
+        } else {
+            Some(Box::new(Self::simple_trace_callback))
         };
         Engine {
             cc: ContinuationData::new_empty(),
             cmd: InstructionExt::new("NOP"),
             ctrls: SaveList::new(),
             libraries: Vec::new(),
+            index_provider: None,
             visited_cells: HashSet::new(),
             cstate: CommittedState::new_empty(),
             time: 0,
@@ -243,6 +254,14 @@ impl Engine {
 
     pub fn check_capabilities(&self, capabilities: u64) -> bool {
         (self.capabilities & capabilities) == capabilities
+    }
+
+    pub fn check_capability(&self, capability: GlobalCapabilities) -> Status {
+        if (self.capabilities & capability as u64) == 0 {
+            err!(ExceptionCode::InvalidOpcode, "{:?} is absent", capability)
+        } else {
+            Ok(())
+        }
     }
 
     pub fn check_or_set_flags(&mut self, flags: u64) -> bool {
@@ -395,6 +414,98 @@ impl Engine {
                 log::trace!(target: "tvm", "{}", self.dump_ctrls(true));
             }
             if self.trace_bit(Engine::TRACE_GAS) {
+                log::info!(target: "tvm", "gas - {}\n", info.gas_used);
+            }
+        }
+    }
+
+    #[allow(dead_code)]
+    fn dump_stack_result(stack: &Stack) -> String {
+        lazy_static::lazy_static!(
+            static ref PREV_STACK: Mutex<Stack> = Mutex::new(Stack::new());
+        );
+        let mut prev_stack = PREV_STACK.lock().unwrap();
+        let mut result = String::new();
+        let mut iter = prev_stack.iter();
+        let mut same = false;
+        for item in stack.iter() {
+            if let Some(prev) = iter.next() {
+                if prev == item {
+                    same = true;
+                    continue;
+                }
+                while iter.next().is_some() {}
+            }
+            if same {
+                same = false;
+                result = "--\"-- ".to_string();
+            }
+            let string = match item {
+                StackItem::None => "N".to_string(),
+                StackItem::Integer(data) => match data.bitsize() {
+                    0..=230 => data.to_string(),
+                    bitsize => format!("I{}", bitsize),
+                },
+                StackItem::Cell(data) => {
+                    format!("C{}-{}", data.bit_length(), data.references_count())
+                }
+                StackItem::Continuation(data) => format!("T{}", data.code().remaining_bits() / 8),
+                StackItem::Builder(data) => {
+                    format!("B{}-{}", data.length_in_bits(), data.references().len())
+                }
+                StackItem::Slice(data) => {
+                    format!("S{}-{}", data.remaining_bits(), data.remaining_references())
+                }
+                StackItem::Tuple(data) => match data.len() {
+                    0 => "[]".to_string(),
+                    len => format!("[@{}]", len),
+                },
+            };
+            result += &string;
+            result += " ";
+        }
+        *prev_stack = stack.clone();
+        result
+    }
+
+    #[allow(dead_code)]
+    pub fn simple_trace_callback(enine: &Engine, info: &EngineTraceInfo) {
+        if info.info_type == EngineTraceInfoType::Dump {
+            log::info!(target: "tvm", "{}", info.cmd_str);
+        } else if info.info_type == EngineTraceInfoType::Start {
+            if enine.trace_bit(Engine::TRACE_CTRLS) {
+                log::trace!(target: "tvm", "{}", enine.dump_ctrls(true));
+            }
+            if enine.trace_bit(Engine::TRACE_STACK) {
+                log::info!(target: "tvm", " [ {} ] \n", Self::dump_stack_result(info.stack));
+            }
+            if enine.trace_bit(Engine::TRACE_GAS) {
+                log::info!(target: "tvm", "gas - {}\n", info.gas_used);
+            }
+        } else if info.info_type == EngineTraceInfoType::Exception {
+            if enine.trace_bit(Engine::TRACE_CODE) {
+                log::info!(target: "tvm", "{} ({}) {}\n", info.step, info.gas_cmd, info.cmd_str);
+            }
+            if enine.trace_bit(Engine::TRACE_STACK) {
+                log::info!(target: "tvm", " [ {} ] \n", Self::dump_stack_result(info.stack));
+            }
+            if enine.trace_bit(Engine::TRACE_CTRLS) {
+                log::trace!(target: "tvm", "{}", enine.dump_ctrls(true));
+            }
+            if enine.trace_bit(Engine::TRACE_GAS) {
+                log::info!(target: "tvm", "gas - {}\n", info.gas_used);
+            }
+        } else if info.has_cmd() {
+            if enine.trace_bit(Engine::TRACE_CODE) {
+                log::info!(target: "tvm", "{}\n", info.cmd_str);
+            }
+            if enine.trace_bit(Engine::TRACE_STACK) {
+                log::info!(target: "tvm", " [ {} ] \n", Self::dump_stack_result(info.stack));
+            }
+            if enine.trace_bit(Engine::TRACE_CTRLS) {
+                log::trace!(target: "tvm", "{}", enine.dump_ctrls(true));
+            }
+            if enine.trace_bit(Engine::TRACE_GAS) {
                 log::info!(target: "tvm", "gas - {}\n", info.gas_used);
             }
         }
@@ -655,8 +766,12 @@ impl Engine {
         self.trace_callback = Some(Box::new(callback));
     }
 
-    fn trace_bit(&self, trace_mask: u8) -> bool {
+    pub fn trace_bit(&self, trace_mask: u8) -> bool {
         (self.trace & trace_mask) == trace_mask
+    }
+
+    pub fn set_index_provider(&mut self, index_provider: Arc<dyn IndexProvider>) {
+        self.index_provider = Some(index_provider)
     }
 
     pub fn setup(self, code: SliceData, ctrls: Option<SaveList>, stack: Option<Stack>, gas: Option<Gas>) -> Self {
@@ -681,10 +796,10 @@ impl Engine {
         self.ctrls.put(0, &mut StackItem::continuation(ContinuationData::with_type(cont))).unwrap();
         let cont = ContinuationType::Quit(ExceptionCode::AlternativeTermination as i32);
         self.ctrls.put(1, &mut StackItem::continuation(ContinuationData::with_type(cont))).unwrap();
-        self.ctrls.put(3, &mut StackItem::continuation(ContinuationData::with_code(code))).unwrap();
+        self.ctrls.put(3, &mut StackItem::continuation(ContinuationData::with_code(code.clone()))).unwrap();
         self.ctrls.put(4, &mut StackItem::cell(Cell::default())).unwrap();
         self.ctrls.put(5, &mut StackItem::cell(Cell::default())).unwrap();
-        self.ctrls.put(7, &mut SmartContractInfo::default().into_temp_data()).unwrap();
+        self.ctrls.put(7, &mut SmartContractInfo::old_default(code.into_cell()).into_temp_data_item()).unwrap();
         if let Some(ref mut ctrls) = ctrls {
             self.ctrls.apply(ctrls);
         }
@@ -1169,14 +1284,18 @@ impl Engine {
         &mut self.code_page
     }
 
-    pub(in crate::executor) fn config_param(&self, index: usize) -> ResultRef<StackItem> {
+    /// get smartcontract info param from ctrl(7) tuple index 0
+    pub(in crate::executor) fn smci_param(&self, index: usize) -> ResultRef<StackItem> {
         let tuple = self.ctrl(7)?.as_tuple()?;
-        let tuple = tuple.first().ok_or(ExceptionCode::RangeCheckError)?.as_tuple()?;
-        Ok(tuple.get(index).ok_or(ExceptionCode::RangeCheckError)?)
+        let tuple = tuple.first()
+            .ok_or_else(|| exception!(ExceptionCode::RangeCheckError, "tuple has no items"))?
+            .as_tuple()?;
+        tuple.get(index)
+            .ok_or_else(|| exception!(ExceptionCode::RangeCheckError, "tuple has {} items, but want {}", tuple.len(), index))
     }
 
     pub(in crate::executor) fn rand(&self) -> ResultRef<IntegerData> {
-        self.config_param(6)?.as_integer()
+        self.smci_param(6)?.as_integer()
     }
 
     pub(in crate::executor) fn set_rand(&mut self, rand: IntegerData) -> Status {
@@ -1190,4 +1309,22 @@ impl Engine {
         Ok(())
     }
 
+    pub(crate) fn get_config_param(&mut self, index: i32) -> ResultOpt<Cell> {
+        if let StackItem::Cell(data) = self.smci_param(9)? {
+            let params = HashmapE::with_hashmap(32, Some(data.clone()));
+            let mut key = BuilderData::new();
+            key.append_i32(index)?;
+            if let Some(value) = params.get_with_gas(key.into_cell()?.into(), self)? {
+                return Ok(value.reference_opt(0))
+            }
+        }
+        Ok(None)
+    }
+
+    pub(crate) fn read_config_param<T: Deserializable>(&mut self, index: i32) -> Result<T> {
+        match self.get_config_param(index)? {
+            Some(cell) => T::construct_from_cell(cell),
+            None => err!("Cannot get config param {}", index)
+        }
+    }
 }
