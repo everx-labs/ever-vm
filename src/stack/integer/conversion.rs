@@ -145,13 +145,14 @@ impl IntegerData {
     {
         match self.value {
             IntegerValue::NaN => err!(ExceptionCode::RangeCheckError),
-            IntegerValue::Value(ref value) => T::from_int(value)
-                .and_then(|ret| {
+            IntegerValue::Value(ref value) => {
+                T::from_int(value).and_then(|ret| {
                     if *range.start() > ret || *range.end() < ret {
-                        return err!(ExceptionCode::RangeCheckError);
+                        return err!(ExceptionCode::RangeCheckError, "{} is not in the range {}..={}", ret, range.start(), range.end());
                     }
                     Ok(ret)
                 })
+            }
         }
     }
 
@@ -273,11 +274,12 @@ macro_rules! auto_from_int {
         $(
             impl FromInt for $to {
                 fn from_int(value: &Int) -> Result<$to> {
-                    if let Some(x) = <dyn num::ToPrimitive>::$f(value) {
-                        Ok(x)
-                    } else {
-                        err!(ExceptionCode::RangeCheckError)
-                    }
+                    <dyn num::ToPrimitive>::$f(value).ok_or_else(|| {
+                        exception!(
+                            ExceptionCode::RangeCheckError,
+                            "{} cannot be converted to {}", value, std::any::type_name::<$to>()
+                        )
+                    })
                 }
             }
         )*

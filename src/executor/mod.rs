@@ -15,6 +15,7 @@
 mod microcode;
 #[macro_use]
 mod engine;
+mod accounts;
 mod blockchain;
 mod serialization;
 mod deserialization;
@@ -35,7 +36,7 @@ mod null;
 mod config;
 mod rand;
 
-pub use engine::{Engine, EngineTraceInfo, EngineTraceInfoType};
+pub use engine::{Engine, EngineTraceInfo, EngineTraceInfoType, IndexProvider};
 use ton_types::{BuilderData, Cell, IBitstring, Result};
 
 

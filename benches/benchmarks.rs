@@ -13,10 +13,10 @@
 
 use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 use ton_types::SliceData;
-use ton_vm::{executor::Engine, stack::{savelist::SaveList, Stack, StackItem, integer::IntegerData}, int};
+use ton_vm::{executor::Engine, stack::{savelist::SaveList, Stack, StackItem}};
 use std::{sync::Arc, time::Duration};
 
-static DEFAULT_CAPABILITIES: u64 = 0x172e;
+static DEFAULT_CAPABILITIES: u64 = 0x572e;
 
 fn read_boc(filename: &str) -> std::io::Cursor<Vec<u8>> {
     let mut bytes = Vec::new();
@@ -41,29 +41,29 @@ fn criterion_bench_elector_algo_1000_vtors(c: &mut Criterion) {
     let mut ctrls = SaveList::default();
     ctrls.put(4, &mut StackItem::Cell(elector_data)).unwrap();
     let params = vec!(
-        int!(0x76ef1ea),
-        int!(0),
-        int!(0),
-        int!(1633458077),
-        int!(0),
-        int!(0),
-        int!(0),
+        StackItem::int(0x76ef1ea),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(1633458077),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(0),
         StackItem::tuple(vec!(
-            int!(1000000000),
+            StackItem::int(1000000000),
             StackItem::None
         )),
         StackItem::slice(SliceData::from_string("9fe0000000000000000000000000000000000000000000000000000000000000001_").unwrap()),
         StackItem::cell(config_data.reference(0).unwrap()),
         StackItem::None,
-        int!(0),
+        StackItem::int(0),
     );
     ctrls.put(7, &mut StackItem::tuple(vec!(StackItem::tuple(params)))).unwrap();
 
     let mut stack = Stack::new();
-    stack.push(int!(1000000000));
-    stack.push(int!(0));
-    stack.push(int!(0));
-    stack.push(int!(-2));
+    stack.push(StackItem::int(1000000000));
+    stack.push(StackItem::int(0));
+    stack.push(StackItem::int(0));
+    stack.push(StackItem::int(-2));
 
     let mut group = c.benchmark_group("flat-sampling");
     group.measurement_time(Duration::from_secs(10));
@@ -87,6 +87,74 @@ fn criterion_bench_elector_algo_1000_vtors(c: &mut Criterion) {
     group.finish();
 }
 
+use ton_vm::executor::IndexProvider;
+#[path = "../src/tests/common.rs"]
+mod common;
+
+fn criterion_bench_try_elect_new_1000_vtors(c: &mut Criterion) {
+    // common::logger_init();
+    let elector_code = common::NEW_ELECTOR_CODE.clone();
+    let elector_data = load_boc("benches/elector-data.boc");
+    let config_data = load_boc("benches/config-data-try-elect.boc");
+
+    let index_provider = Arc::new(common::FakeIndexProvider::new(elector_data.clone(), true).unwrap());
+
+    let elector_data_output = load_boc("benches/try-elect-data-output.boc");
+    let elector_actions = load_boc("benches/try-elect-actions.boc");
+
+    let mut ctrls = SaveList::default();
+    ctrls.put(4, &mut StackItem::Cell(elector_data)).unwrap();
+    let params = vec!(
+        StackItem::int(0x76ef1ea),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(1633458077),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::tuple(vec!(
+            StackItem::int(1000000000),
+            StackItem::None
+        )),
+        StackItem::slice(SliceData::from_string("9fe6666666666666666666666666666666666666666666666666666666666666667_").unwrap()),
+        StackItem::cell(config_data.reference(0).unwrap()),
+        StackItem::None,
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(1000),
+    );
+    ctrls.put(7, &mut StackItem::tuple(vec!(StackItem::tuple(params)))).unwrap();
+
+    let mut stack = Stack::new();
+    stack.push(StackItem::int(1000000000));
+    stack.push(StackItem::int(0));
+    stack.push(StackItem::int(0));
+    stack.push(StackItem::int(-2));
+
+    let mut group = c.benchmark_group("flat-sampling");
+    group.measurement_time(Duration::from_secs(10));
+    group.noise_threshold(0.03);
+    group.sample_size(10);
+    group.sampling_mode(SamplingMode::Flat);
+    group.bench_function("try-elect-algo-1000-vtors", |b| b.iter(|| {
+        let mut engine = Engine::with_capabilities(DEFAULT_CAPABILITIES).setup_with_libraries(
+            SliceData::from(elector_code.clone()),
+            Some(ctrls.clone()),
+            Some(stack.clone()),
+            None,
+            vec!());
+        engine.set_index_provider(index_provider.clone());
+        engine.execute().unwrap();
+        assert_eq!(engine.gas_used(), 17015317);
+
+        let output = engine.ctrl(4).unwrap().as_cell().unwrap();
+        assert_eq!(output, &elector_data_output);
+        let actions = engine.ctrl(5).unwrap().as_cell().unwrap();
+        assert_eq!(actions, &elector_actions);
+    }));
+    group.finish();
+}
+
 fn criterion_bench_tiny_loop_200000_iters(c: &mut Criterion) {
     let tiny_code = load_boc("benches/tiny-code.boc");
     let tiny_data = load_boc("benches/tiny-data.boc");
@@ -94,29 +162,29 @@ fn criterion_bench_tiny_loop_200000_iters(c: &mut Criterion) {
     let mut ctrls = SaveList::default();
     ctrls.put(4, &mut StackItem::Cell(tiny_data)).unwrap();
     let params = vec!(
-        int!(0x76ef1ea),
-        int!(0),
-        int!(0),
-        int!(0),
-        int!(0),
-        int!(0),
-        int!(0),
+        StackItem::int(0x76ef1ea),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(0),
         StackItem::tuple(vec!(
-            int!(1000000000),
+            StackItem::int(1000000000),
             StackItem::None
         )),
         StackItem::default(),
         StackItem::None,
         StackItem::None,
-        int!(0),
+        StackItem::int(0),
     );
     ctrls.put(7, &mut StackItem::tuple(vec!(StackItem::tuple(params)))).unwrap();
 
     let mut stack = Stack::new();
-    stack.push(int!(1000000000));
-    stack.push(int!(0));
-    stack.push(int!(0));
-    stack.push(int!(-2));
+    stack.push(StackItem::int(1000000000));
+    stack.push(StackItem::int(0));
+    stack.push(StackItem::int(0));
+    stack.push(StackItem::int(-2));
 
     let mut group = c.benchmark_group("flat-sampling");
     group.measurement_time(Duration::from_secs(10));
@@ -191,29 +259,29 @@ fn criterion_bench_deep_stack_switch(c: &mut Criterion) {
 
     let mut ctrls = SaveList::default();
     let params = vec!(
-        int!(0x76ef1ea),
-        int!(0),
-        int!(0),
-        int!(0),
-        int!(0),
-        int!(0),
-        int!(0),
+        StackItem::int(0x76ef1ea),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(0),
         StackItem::tuple(vec!(
-            int!(1000000000),
+            StackItem::int(1000000000),
             StackItem::None
         )),
         StackItem::default(),
         StackItem::None,
         StackItem::None,
-        int!(0),
+        StackItem::int(0),
     );
     ctrls.put(7, &mut StackItem::tuple(vec!(StackItem::tuple(params)))).unwrap();
 
     let mut stack = Stack::new();
-    stack.push(int!(1000000000));
-    stack.push(int!(0));
-    stack.push(int!(0));
-    stack.push(int!(-2));
+    stack.push(StackItem::int(1000000000));
+    stack.push(StackItem::int(0));
+    stack.push(StackItem::int(0));
+    stack.push(StackItem::int(-2));
 
     c.bench_function("deep-cell-switch", |b| b.iter(|| {
         let mut engine = Engine::with_capabilities(DEFAULT_CAPABILITIES).setup_with_libraries(
@@ -232,6 +300,7 @@ criterion_group!(benches,
 //    criterion_bench_rug_bigint,
     criterion_bench_load_boc,
     criterion_bench_elector_algo_1000_vtors,
+    criterion_bench_try_elect_new_1000_vtors,
     criterion_bench_tiny_loop_200000_iters,
     criterion_bench_deep_stack_switch,
 );
