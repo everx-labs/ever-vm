@@ -12,7 +12,7 @@
 \usepackage{multirow}
 %\usepackage{chngcntr}
 %\CompileMatrices
-\usepackage[bookmarks=false,pdfauthor={Nikolai Durov},pdftitle={Telegram Open Network Virtual Machine}]{hyperref}
+\usepackage[bookmarksnumbered,pdfauthor={EverX},pdftitle={Telegram Open Network Virtual Machine}]{hyperref}
 \usepackage{fancyhdr}
 \usepackage{caption}
 %
@@ -96,7 +96,7 @@
 \hfuzz=0.8pt
 
 \title{Telegram Open Network Virtual Machine}
-\author{Nikolai Durov}
+\author{Nikolai Durov, Everscale Team}
 \begin{document}
 
 %\pagestyle{myheadings}
@@ -2233,7 +2233,7 @@ The following primitives read configuration data provided in the {\em Tuple\/} s
 \item {\tt F827} --- {\tt BALANCE} ( -- $t$), returns the remaining balance of the smart contract as a {\em Tuple\/} consisting of an {\em Integer} (the remaining Gram balance in nanograms) and a {\em Maybe Cell} (a dictionary with 32-bit keys representing the balance of ``extra currencies''). Equivalent to {\tt GETPARAM 7}. Note that {\tt RAW} primitives such as {\tt SENDRAWMSG} do not update this field. 
 \item {\tt F828} --- {\tt MYADDR} ( -- $s$), returns the internal address of the current smart contract as a {\em Slice\/} with a {\tt MsgAddressInt}. If necessary, it can be parsed further using primitives such as {\tt PARSESTDADDR} or {\tt REWRITESTDADDR}. Equivalent to {\tt GETPARAM 8}.
 \item {\tt F829} --- {\tt CONFIGROOT} ( -- $D$), returns the {\em Maybe Cell\/}~$D$ with the current global configuration dictionary. Equivalent to {\tt GETPARAM 9}.
-\item {\tt F82A} --- {\tt MYCODE} ( -- $C$), returns the {\emCell\/}~$C$ with the inital code of the smartcontract. Equivalent to {\tt GETPARAM 10}.
+\item {\tt F82A} --- {\tt MYCODE} ( -- $C$), returns the {\em Cell\/}~$c$ with the inital code of the smartcontract. Equivalent to {\tt GETPARAM 10}.
 \item {\tt F82B} --- {\tt INITCODEHASH} ( -- $x$), returns the {\em Integerl\/}~$x$ returns the integer represented 256 bit hash of code cell with contract was deployed. Equivalent to {\tt GETPARAM 11}.
 \item {\tt F82C} --- {\tt STORAGEFEE} ( -- $x$), returns the {\em Integer\/}~$x$ with collected storage fee from account in this transaction. Equivalent to {\tt GETPARAM 12}.
 \item {\tt F82D} --- {\tt SEQNO} ( -- $x$), returns the {\em Integer\/}~$x$ with current sequence number of collating block. Equivalent to {\tt GETPARAM 13}.
