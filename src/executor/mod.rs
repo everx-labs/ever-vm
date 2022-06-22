@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -36,7 +36,7 @@ mod null;
 mod config;
 mod rand;
 
-pub use engine::{Engine, EngineTraceInfo, EngineTraceInfoType, IndexProvider};
+pub use engine::{BehaviorModifiers, Engine, EngineTraceInfo, EngineTraceInfoType, IndexProvider};
 use ton_types::{BuilderData, Cell, IBitstring, Result};
 
 

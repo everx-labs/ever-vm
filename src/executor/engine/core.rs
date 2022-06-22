@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -78,6 +78,7 @@ pub struct Engine {
     pub(in crate::executor) ctrls: SaveList,
     pub(in crate::executor) libraries: Vec<HashmapE>, // 256 bit dictionaries
     pub(in crate::executor) index_provider: Option<Arc<dyn IndexProvider>>,
+    pub(in crate::executor) modifiers: BehaviorModifiers,
     visited_cells: HashSet<UInt256>,
     cstate: CommittedState,
     time: u64,
@@ -93,6 +94,11 @@ pub struct Engine {
     log_string: Option<&'static str>,
     flags: u64,
     capabilities: u64
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct BehaviorModifiers {
+    pub chksig_always_succeed: bool
 }
 
 #[derive(Eq, Debug, PartialEq)]
@@ -221,6 +227,7 @@ impl Engine {
             ctrls: SaveList::new(),
             libraries: Vec::new(),
             index_provider: None,
+            modifiers: BehaviorModifiers::default(),
             visited_cells: HashSet::new(),
             cstate: CommittedState::new_empty(),
             time: 0,
@@ -774,6 +781,14 @@ impl Engine {
         self.index_provider = Some(index_provider)
     }
 
+    pub fn behavior_modifiers(&self) -> &BehaviorModifiers {
+        &self.modifiers
+    }
+
+    pub fn modify_behavior(&mut self, modifiers: BehaviorModifiers) {
+        self.modifiers = modifiers;
+    }
+
     pub fn setup(self, code: SliceData, ctrls: Option<SaveList>, stack: Option<Stack>, gas: Option<Gas>) -> Self {
         self.setup_with_libraries(code, ctrls, stack, gas, vec![])
     }
@@ -1208,13 +1223,13 @@ impl Engine {
     // raises the exception and tries to dispatch it via c(2).
     // If c(2) is not set, returns that exception, otherwise, returns None
     fn raise_exception(&mut self, err: failure::Error) -> Status {
-        let (err, exception) =
-            if let Some(exception) = tvm_exception_full(&err) {
-                (err, exception)
-            } else {
+        let exception = match tvm_exception_full(&err) {
+            Some(exception) => exception,
+            None => {
                 log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code());
                 return Err(err)
-            };
+            }
+        };
         if exception.exception_code().is_some() {
             self.step += 1;
         }
