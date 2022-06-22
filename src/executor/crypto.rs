@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -97,7 +97,7 @@ pub(super) fn execute_chksigns(engine: &mut Engine) -> Status {
     ).map_err(|_| exception!(ExceptionCode::FatalError))?;
 
     let data = engine.cmd.var(2).as_slice()?.get_bytestring(0);
-    let result = pub_key.verify(&data, &signature).is_ok();
+    let result = engine.modifiers.chksig_always_succeed || pub_key.verify(&data, &signature).is_ok();
     engine.cc.stack.push(boolean!(result));
     Ok(())
 }
@@ -119,7 +119,9 @@ pub(super) fn execute_chksignu(engine: &mut Engine) -> Status {
     let signature = engine.cmd.var(1).as_slice()?.get_bytestring(0);
 
     let mut result = false;
-    if let Ok(signature) = ed25519::signature::Signature::from_bytes(&signature[..SIGNATURE_BYTES]) {
+    if engine.modifiers.chksig_always_succeed {
+        result = true;
+    } else if let Ok(signature) = ed25519::signature::Signature::from_bytes(&signature[..SIGNATURE_BYTES]) {
         if let Ok(pub_key) = ed25519_dalek::PublicKey::from_bytes(pub_key.data()) {
             result = pub_key.verify(hash.data(), &signature).is_ok();
         }
