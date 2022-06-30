@@ -35,9 +35,9 @@ use ed25519::signature::{Signature, Verifier};
 use std::sync::Arc;
 use ton_types::{BuilderData, Cell, error, GasConsumer, ExceptionCode, UInt256};
 
-use crusty3_zk::{groth16::{verify_proof, prepare_verifying_key, Parameters, verify_groth16_proof_from_byteblob},
-                 bls::{Bls12, Fr}
-                };
+use crusty3_zk::{groth16::{verify_proof, prepare_verifying_key, Parameters, verify_groth16_proof_from_byteblob, verify_encrypted_input_groth16_proof_from_byteblob},
+                 bls::{Bls12, Fr},
+};
 
 const PUBLIC_KEY_BITS:  usize = PUBLIC_KEY_BYTES * 8;
 const SIGNATURE_BITS:   usize = SIGNATURE_BYTES * 8;
@@ -115,11 +115,16 @@ pub(super) fn execute_vergrth16(engine: &mut Engine) -> Failure {
 
             let cell_proof = ctx.engine.finalize_cell(builder)?;
 
-            let mut cell_proof_data = obtain_cells_data(cell_proof).unwrap();
-
-            if cell_proof_data_length % 8 == 0 {
-
-                let result = verify_groth16_proof_from_byteblob::<Bls12>(&cell_proof_data[..]).unwrap();
+            let mut cell_proof_data = obtain_cells_data(cell_proof).unwrap();if cell_proof_data_length % 8 == 0 {
+        let mut result = false;
+        if cell_proof_data[0] == 0 {
+            result = verify_groth16_proof_from_byteblob::<Bls12>(&cell_proof_data[1..]).unwrap();
+        } else if cell_proof_data[0] == 1 {
+            result = verify_encrypted_input_groth16_proof_from_byteblob::<Bls12>(&cell_proof_data[1..]).unwrap();
+        }
+        else {
+            return err!(ExceptionCode::InvalidOpcode);
+        }
 
                 ctx.engine.cc.stack.push(boolean!(result));
                 Ok(ctx)
