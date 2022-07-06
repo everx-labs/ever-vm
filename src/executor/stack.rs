@@ -23,7 +23,7 @@ use crate::{
     },
     stack::{
         StackItem, continuation::ContinuationData,
-        integer::{IntegerData, behavior::Signaling}
+        integer::{IntegerData, behavior::Signaling}, savelist::SaveList
     },
     types::{Exception, Status}
 };
@@ -251,6 +251,9 @@ pub(super) fn execute_popctrx(engine: &mut Engine) -> Status {
     )?;
     fetch_stack(engine, 2)?;
     let creg = engine.cmd.var(0).as_small_integer()?;
+    if !SaveList::REGS.contains(&creg) {
+        return err!(ExceptionCode::RangeCheckError)
+    }
     swap(engine, var!(0), ctrl!(creg))
 }
 
@@ -382,6 +385,9 @@ pub(super) fn execute_pushctrx(engine: &mut Engine) -> Status {
     )?;
     fetch_stack(engine, 1)?;
     let creg = engine.cmd.var(0).as_small_integer()?;
+    if !SaveList::REGS.contains(&creg) {
+        return err!(ExceptionCode::RangeCheckError)
+    }
     copy_to_var(engine, ctrl!(creg))?;
     engine.cc.stack.push(engine.cmd.pop_var()?);
     Ok(())

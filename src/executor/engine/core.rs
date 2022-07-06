@@ -578,7 +578,7 @@ impl Engine {
         self.step += 1;
         self.log_string = Some("IMPLICIT RET FROM TRY-CATCH");
         self.try_use_gas(Gas::implicit_ret_price())?;
-        self.ctrls.remove(2).unwrap();
+        self.ctrls.remove(2);
         switch(self, ctrl!(0))?;
         Ok(None)
     }
@@ -958,8 +958,12 @@ impl Engine {
             }
             Some(InstructionOptions::ControlRegister) => {
                 self.basic_use_gas(0);
+                let creg = (self.last_cmd() & 0x0F) as usize;
+                if !SaveList::REGS.contains(&creg) {
+                    return err!(ExceptionCode::RangeCheckError)
+                }
                 self.cmd.params.push(
-                    InstructionParameter::ControlRegister((self.last_cmd() & 0x0F) as usize)
+                    InstructionParameter::ControlRegister(creg)
                 )
             },
             Some(InstructionOptions::DivisionMode) => {
