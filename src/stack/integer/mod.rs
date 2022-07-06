@@ -310,7 +310,7 @@ pub mod utils {
     {
         let (r1, r2) = result;
         match IntegerData::from(r1) {
-            Ok(r1) => Ok((r1, IntegerData::from(r2).unwrap())),
+            Ok(r1) => Ok((r1, IntegerData::from(r2)?)),
             Err(_) => {
                 on_integer_overflow!(T)?;
                 Ok(nan_constructor())

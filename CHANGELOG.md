@@ -2,21 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
-## Version: 1.8.39
+## Version: 1.8.40
 
 ### New
- - Implement behavior modifiers
+ - Update
 
 
-## Version: 1.8.38
-
-### New
-
-- Implemented behavior modifier mechanism
-- Implemented behavior modifier for skipping check of signature for offline execution purposes
+## Version: 1.8.40
 
 ### Fixed
-- Fixed tvm.tex and tvm.pdf
+ - Fixed several potential panics
 
 ## Version: 1.8.39
 
@@ -79,4 +74,13 @@ All notable changes to this project will be documented in this file.
  - Fixed empty AGAIN, REPEAT loops
  - Fixed GRAMTOGAS
  - Fixed BUYGAS
- 
+
+## Version: 1.8.38
+
+### New
+
+- Implemented behavior modifier mechanism
+- Implemented behavior modifier for skipping check of signature for offline execution purposes
+
+### Fixed
+- Fixed tvm.tex and tvm.pdf

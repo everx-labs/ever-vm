@@ -122,7 +122,7 @@ impl SaveList {
                     let key = SliceData::from(key.into_cell()?).get_next_int(4)? as usize;
                     let (mut value, gas2) = StackItem::deserialize(&mut value.clone())?;
                     gas += gas2;
-                    savelist.put(key, &mut value).unwrap();
+                    savelist.put(key, &mut value)?;
                 }
                 Ok((savelist, gas))
             }

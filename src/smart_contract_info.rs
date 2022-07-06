@@ -155,7 +155,6 @@ impl SmartContractInfo{
     }
 
     pub fn into_temp_data_item(self) -> StackItem {
-        debug_assert_ne!(self.capabilities, 0, "set member capabilities");
         debug_assert_eq!(self.balance_remaining_grams, 0, "use balance instead old");
         debug_assert!(self.balance_remaining_other.data().is_none(), "use balance instead old");
 
