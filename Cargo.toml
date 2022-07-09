@@ -16,7 +16,7 @@ num-traits = '0.2'
 rand = '0.7'
 sha2 = '0.9'
 ton_types = { git = 'https://github.com/tonlabs/ton-labs-types.git', tag = '1.11.3' }
-ton_block = { git = 'https://github.com/tonlabs/ton-labs-block.git', tag = '1.7.53' }
+ton_block = { git = 'https://github.com/tonlabs/ton-labs-block.git', tag = '1.8.0' }
 
 [features]
 ci_run = [  ]
