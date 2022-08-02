@@ -1645,6 +1645,18 @@ Most of these ``other comparison'' primitives actually compare the data portions
 \item {\tt C713} --- {\tt SDCNTTRAIL1} ($s$ -- $n$), returns the number of trailing ones in $s$.
 \end{itemize}
 
+\nxsubpoint\emb{Diff operations (Only available in GOSH network)}
+\begin{itemize}
+\item {\tt C714} --- {\tt DIFF} ($c$ $c$ -- $c$), calculates diff between first and second parameters and returns it as cell.
+\item {\tt C715} --- {\tt DIFF\_PATCH} ($c$ $c$ -- $c$), takes the first parameter as document, the second parameter as patch, received on DIFF command, applies patch and saves result document to cell.
+\item {\tt C716} --- {\tt ZIP} ($c$ -- $c$), zip string to cell
+\item {\tt C717} --- {\tt UNZIP} ($c$ -- $c$), unzip cell to string
+\item {\tt C718} --- {\tt DIFF\_ZIP} ($c$ $c$ -- $c$), like DIFF but unzip parameters before operation and zip to cell after operation.
+\item {\tt C719} --- {\tt DIFF\_PATCH\_ZIP} ($c$ $c$ -- $c$), like DIFF\_PATCH but unzip parameters before operation and zip to cell after operation.
+\item {\tt C720} --- {\tt DIFF\_PATCHQ} ($c$ $c$ -- $c$), quiet version of DIFF\_PATCH
+\item {\tt C721} --- {\tt DIFF\_PATCH\_ZIPQ} ($c$ $c$ -- $c$), quiet version of DIFF\_PATCH\_ZIP
+\end{itemize}
+
 \mysubsection{Cell primitives}
 
 The cell primitives are mostly either {\em cell serialization primitives}, which work with {\em Builder\/}s, or {\em cell deserialization primitives}, which work with {\em Slice\/}s.

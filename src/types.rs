@@ -24,8 +24,10 @@ enum ExceptionType {
 impl ExceptionType {
     fn is_normal_termination(&self) -> Option<i32> {
         match self {
-            ExceptionType::System(ExceptionCode::NormalTermination) | ExceptionType::Custom(0) => Some(0),
-            ExceptionType::System(ExceptionCode::AlternativeTermination) | ExceptionType::Custom(1) => Some(1),
+            ExceptionType::System(ExceptionCode::NormalTermination) | 
+            ExceptionType::Custom(0) => Some(0),
+            ExceptionType::System(ExceptionCode::AlternativeTermination) | 
+            ExceptionType::Custom(1) => Some(1),
             _ => None
         }
     }
@@ -86,7 +88,12 @@ impl Exception {
     pub fn from_code(code: ExceptionCode, file: &'static str, line: u32) -> Exception {
         Self::from_code_and_value(code, 0, file, line)
     }
-    pub fn from_code_and_value(code: ExceptionCode, value: impl Into<IntegerData>, file: &'static str, line: u32) -> Exception {
+    pub fn from_code_and_value(
+        code: ExceptionCode, 
+        value: impl Into<IntegerData>, 
+        file: &'static str, 
+        line: u32
+    ) -> Exception {
         // panic!("{} {} {}:{}", code, IntegerData::from(value), file, line)
         Exception {
             exception: ExceptionType::System(code),
@@ -95,7 +102,12 @@ impl Exception {
             line,
         }
     }
-    pub fn from_number_and_value(number: usize, value: StackItem, file: &'static str, line: u32) -> Exception {
+    pub fn from_number_and_value(
+        number: usize, 
+        value: StackItem, 
+        file: &'static str, 
+        line: u32
+    ) -> Exception {
         Exception {
             exception: ExceptionType::Custom(number as i32),
             value,
@@ -119,22 +131,52 @@ impl Exception {
 
 macro_rules! exception {
     ($code:expr) => {
-        error!(TvmError::TvmExceptionFull(Exception::from_code($code, file!(), line!()), String::new()))
+        error!(
+            TvmError::TvmExceptionFull(
+                Exception::from_code($code, file!(), line!()), 
+                String::new()
+            )
+        )
     };
     ($code:expr, $msg:literal, $($arg:tt)*) => {
-        error!(TvmError::TvmExceptionFull(Exception::from_code($code, file!(), line!()), format!($msg, $($arg)*)))
+        error!(
+            TvmError::TvmExceptionFull(
+                Exception::from_code($code, file!(), line!()), 
+                format!($msg, $($arg)*)
+            )
+        )
     };
     ($code:expr, $value:expr, $msg:literal, $($arg:tt)*) => {
-        error!(TvmError::TvmExceptionFull(Exception::from_code_and_value($code, $value, file!(), line!()), format!($msg, $($arg)*)))
+        error!(
+            TvmError::TvmExceptionFull(
+                Exception::from_code_and_value($code, $value, file!(), line!()), 
+                format!($msg, $($arg)*)
+            )
+        )
     };
     ($code:expr, $value:expr, $msg:literal) => {
-        error!(TvmError::TvmExceptionFull(Exception::from_code_and_value($code, $value, file!(), line!()), format!($msg)))
+        error!(
+            TvmError::TvmExceptionFull(
+                Exception::from_code_and_value($code, $value, file!(), line!()), 
+                format!($msg)
+            )
+        )
     };
     ($code:expr, $msg:literal) => {
-        error!(TvmError::TvmExceptionFull(Exception::from_code($code, file!(), line!()), format!($msg)))
+        error!(
+            TvmError::TvmExceptionFull(
+                Exception::from_code($code, file!(), line!()), 
+                format!($msg)
+            )
+        )
     };
     ($code:expr, $file:expr, $line:expr) => {
-        error!(TvmError::TvmExceptionFull(Exception::from_code($code, $file, $line), String::new()))
+        error!(
+            TvmError::TvmExceptionFull(
+               Exception::from_code($code, $file, $line), 
+               String::new()
+            )
+        )
     };
 }
 
@@ -158,13 +200,23 @@ macro_rules! err {
 
 macro_rules! custom_err {
     ($code:expr, $msg:literal, $($arg:tt)*) => {
-        return Err(error!(TvmError::TvmExceptionFull(Exception::from_number_and_value($code, Default::default(), file!(), line!()), format!($msg, $($arg)*))))
+        return Err(
+            error!(
+                TvmError::TvmExceptionFull(
+                    Exception::from_number_and_value($code, Default::default(), file!(), line!()),
+                    format!($msg, $($arg)*)
+                )
+            )
+        )
     };
 }
 
 impl fmt::Display for Exception {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}, value: {} {}:{}", self.exception.exception_message(), self.value, self.file, self.line)
+        write!(
+            f, "{}, value: {} {}:{}", 
+            self.exception.exception_message(), self.value, self.file, self.line
+        )
     }
 }
 

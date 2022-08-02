@@ -142,7 +142,9 @@ impl Gas {
         STACK_ENTRY_GAS_PRICE * (depth - FREE_STACK_DEPTH) as i64
     }
     pub fn consume_stack(&mut self, stack_depth: usize) -> i64 {
-        self.use_gas(STACK_ENTRY_GAS_PRICE * (max(stack_depth, FREE_STACK_DEPTH) - FREE_STACK_DEPTH) as i64)
+        self.use_gas(
+            STACK_ENTRY_GAS_PRICE * (max(stack_depth, FREE_STACK_DEPTH) - FREE_STACK_DEPTH) as i64
+        )
     }
 
     /// Compute tuple usage cost
@@ -153,6 +155,12 @@ impl Gas {
         self.use_gas(TUPLE_ENTRY_GAS_PRICE * tuple_length as i64)
     }
 
+
+
+
+
+
+
     /// Set input gas to gas limit
     pub fn new_gas_limit(&mut self, gas_limit: i64) {
         self.gas_limit = max(0, min(gas_limit, self.gas_limit_max));
@@ -160,24 +168,28 @@ impl Gas {
         self.gas_remaining += self.gas_limit - self.gas_base;
         self.gas_base = self.gas_limit;
     }
+
     /// Update remaining gas limit
     pub fn use_gas(&mut self, gas: i64) -> i64 {
         self.gas_remaining -= gas;
         self.gas_remaining
     }
+
     /// Try to consume gas then raise exception out of gas if needed
     pub fn try_use_gas(&mut self, gas: i64) -> Result<Option<i32>> {
         self.gas_remaining -= gas;
         self.check_gas_remaining()
     }
+
     /// Raise out of gas exception
     pub fn check_gas_remaining(&self) -> Result<Option<i32>> {
         if self.gas_remaining >= 0 {
             Ok(None)
         } else {
-            Err(exception!(ExceptionCode::OutOfGas, self.gas_base - self.gas_remaining, ""))
+            err!(ExceptionCode::OutOfGas, self.gas_base - self.gas_remaining, "")
         }
     }
+
     // *** Getters ***
     pub const fn get_gas_price(&self) -> i64 {
         self.gas_price
