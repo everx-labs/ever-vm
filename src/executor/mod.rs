@@ -35,6 +35,8 @@ mod dump;
 mod null;
 mod config;
 mod rand;
+#[cfg(feature = "gosh")]
+mod diff;
 
 pub use engine::{BehaviorModifiers, Engine, EngineTraceInfo, EngineTraceInfoType, IndexProvider};
 use ton_types::{BuilderData, Cell, IBitstring, Result};

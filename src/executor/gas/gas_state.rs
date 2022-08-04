@@ -35,6 +35,20 @@ const IMPLICIT_JMPREF_GAS_PRICE: i64 = 10;
 const IMPLICIT_RET_GAS_PRICE: i64 = 5;
 const FREE_STACK_DEPTH: usize = 32;
 const STACK_ENTRY_GAS_PRICE: i64 = 1;
+#[cfg(feature = "gosh")]
+const DIFF_DURATION_FOR_LINE: i64 = 60;
+#[cfg(feature = "gosh")]
+const DIFF_DURATION_FOR_COUNT_PATCHES: usize = 80;
+#[cfg(feature = "gosh")]
+const DIFF_PATCH_DURATION_FOR_LINE: i64 = 40;
+#[cfg(feature = "gosh")]
+const DIFF_PATCH_DURATION_FOR_COUNT_PATCHES: i64 = 1200;
+#[cfg(feature = "gosh")]
+const DURATION_TO_GAS_COEFFICIENT: i64 = 30;
+#[cfg(feature = "gosh")]
+const ZIP_DURATION_FOR_BYTE: i64 = 4;
+#[cfg(feature = "gosh")]
+const UNZIP_DURATION_FOR_BYTE: i64 = 1;
 // const MAX_DATA_DEPTH: usize = 512;
 
 impl Gas {
@@ -155,11 +169,46 @@ impl Gas {
         self.use_gas(TUPLE_ENTRY_GAS_PRICE * tuple_length as i64)
     }
 
+    #[cfg(feature = "gosh")]
+    /// line cost for diff
+    pub fn diff_fee_for_line(lines_first_file: usize, lines_second_file: usize) -> i64 {
+        let lines = std::cmp::max(lines_first_file, lines_second_file) as i64;
+        let duration = DIFF_DURATION_FOR_LINE * lines;
+        (duration * (duration as f64).log2() as i64) / DURATION_TO_GAS_COEFFICIENT
+    }
 
+    #[cfg(feature = "gosh")]
+    /// patch cost for diff
+    pub fn diff_fee_for_count_patches(count: usize) -> i64 {
+        (
+            (count * count * DIFF_DURATION_FOR_COUNT_PATCHES * DIFF_DURATION_FOR_COUNT_PATCHES) / 
+            (DURATION_TO_GAS_COEFFICIENT as usize)
+        ) as i64
+    }
 
+    #[cfg(feature = "gosh")]
+    /// line cost for diff_patch
+    pub fn diff_patch_fee_for_line(lines: i64) -> i64 {
+        (DIFF_PATCH_DURATION_FOR_LINE * lines) / DURATION_TO_GAS_COEFFICIENT
+    }
 
+    #[cfg(feature = "gosh")]
+    /// patch cost for diff_patch
+    pub fn diff_patch_fee_for_count_patches(count: i64) -> i64 {
+        (DIFF_PATCH_DURATION_FOR_COUNT_PATCHES * count) / DURATION_TO_GAS_COEFFICIENT
+    }
 
+    #[cfg(feature = "gosh")]
+    /// byte cost for zip
+    pub fn zip_fee_for_byte(bytes: i64) -> i64 {
+        (ZIP_DURATION_FOR_BYTE * bytes) / DURATION_TO_GAS_COEFFICIENT
+    }
 
+    #[cfg(feature = "gosh")]
+    /// byte cost for unzip
+    pub fn unzip_fee_for_byte(bytes: i64) -> i64 {
+        (UNZIP_DURATION_FOR_BYTE * bytes) / DURATION_TO_GAS_COEFFICIENT
+    }
 
     /// Set input gas to gas limit
     pub fn new_gas_limit(&mut self, gas_limit: i64) {
