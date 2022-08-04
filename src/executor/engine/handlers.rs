@@ -24,6 +24,8 @@ use crate::{
     stack::integer::behavior::{Signaling, Quiet},
     types::{Exception, Status}
 };
+#[cfg(feature = "gosh")]
+use crate::executor::diff::*;
 use std::{fmt, ops::Range};
 use ton_types::{error, Result, types::ExceptionCode};
 
@@ -349,6 +351,17 @@ impl Handlers {
             .set(0x11, execute_sdcntlead1)
             .set(0x12, execute_sdcnttrail0)
             .set(0x13, execute_sdcnttrail1);
+        #[cfg(feature = "gosh")] {
+            c7_handlers
+                .set(0x14, execute_diff)
+                .set(0x15, execute_patch_not_quiet)
+                .set(0x16, execute_zip)
+                .set(0x17, execute_unzip)
+                .set(0x18, execute_diff_zip)
+                .set(0x19, execute_diff_patch_zip_not_quiet)
+                .set(0x20, execute_patch_quiet)
+                .set(0x21, execute_diff_patch_zip_quiet);
+        }
         self.add_subset(0xC7, &mut c7_handlers)
     }
 

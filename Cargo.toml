@@ -26,6 +26,7 @@ ci_run = [  ]
 fift_check = [  ]
 log_file = [  ]
 verbose = [  ]
+gosh = [ 'ton_block/gosh', 'zstd' ]
 
 [lib]
 bench = false
