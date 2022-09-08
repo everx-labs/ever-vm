@@ -354,13 +354,17 @@ impl Handlers {
         #[cfg(feature = "gosh")] {
             c7_handlers
                 .set(0x14, execute_diff)
-                .set(0x15, execute_patch_not_quiet)
+                .set(0x15, execute_diff_patch_not_quiet)
                 .set(0x16, execute_zip)
                 .set(0x17, execute_unzip)
                 .set(0x18, execute_diff_zip)
                 .set(0x19, execute_diff_patch_zip_not_quiet)
-                .set(0x20, execute_patch_quiet)
-                .set(0x21, execute_diff_patch_zip_quiet);
+                .set(0x20, execute_diff_patch_quiet)
+                .set(0x21, execute_diff_patch_zip_quiet)
+                .set(0x22, execute_diff_patch_binary_not_quiet)
+                .set(0x23, execute_diff_patch_binary_zip_not_quiet)
+                .set(0x24, execute_diff_patch_binary_quiet)
+                .set(0x25, execute_diff_patch_binary_zip_quiet);
         }
         self.add_subset(0xC7, &mut c7_handlers)
     }
