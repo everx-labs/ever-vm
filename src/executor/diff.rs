@@ -28,7 +28,9 @@ use ton_types::{error, ExceptionCode, Result, SliceData};
 use crate::error::tvm_exception_code;
 use crate::executor::Mask;
 
-const ZIP: u8 = 0x01; // unzip before process and zip after process
+const ZIP:          u8 = 0x01; // unzip before process and zip after process
+const BINARY:       u8 = 0x02; // use binary version functions instead of utf8
+const IGNORE_ERROR: u8 = 0x04; // ignore errors
 
 const DIFF_TIMEOUT: Duration = Duration::from_millis(300);
 
@@ -47,10 +49,6 @@ fn ignore_error(engine: &mut Engine, result: Status) -> Status {
 }
 
 fn get_two_slices_from_stack(engine: &mut Engine, name: &'static str) -> Result<(SliceData, SliceData)> {
-    if !engine.check_capabilities(GlobalCapabilities::CapDiff as u64) {
-        return err!(ExceptionCode::InvalidOpcode);
-    }
-
     engine.load_instruction(Instruction::new(name))?;
     fetch_stack(engine, 2)?;
     let s0 = engine.cmd.var(1).as_cell()?.clone().into();
@@ -58,14 +56,13 @@ fn get_two_slices_from_stack(engine: &mut Engine, name: &'static str) -> Result<
     Ok((s0, s1))
 }
 
-fn process_input_slice(s: SliceData, engine: &mut Engine, how: u8) -> Result<String> {
+fn process_input_slice(s: SliceData, engine: &mut Engine, how: u8) -> Result<Vec<u8>> {
     let s = unpack_data_from_cell(s, engine)?;
     let s = if how.bit(ZIP) {
         unzip(engine, &s)?
     } else {
         s
     };
-    let s = bytes_to_string(s)?;
     Ok(s)
 }
 
@@ -154,6 +151,37 @@ fn patch_diffy_lib(engine: &mut Engine, str: &str, patch: &str) -> Result<String
     Ok(result)
 }
 
+fn patch_binary_diffy_lib(engine: &mut Engine, str: &[u8], patch: &[u8]) -> Result<Vec<u8>> {
+    engine.try_use_gas(Gas::diff_bytes_patch_fee_for_byte(str.len() as i64))?;
+
+    let patch = match diffy::Patch::from_bytes(patch) {
+        Ok(patch) => patch,
+        Err(err) => {
+            return Err(exception!(
+                ExceptionCode::TypeCheckError,
+                "Incorrect diff binary patch: {}",
+                err
+            ));
+        }
+    };
+
+    let count_patches = patch.hunks().len() as i64;
+    engine.try_use_gas(Gas::diff_patch_fee_for_count_patches(count_patches))?;
+
+    let result = match diffy::apply_bytes(str, &patch) {
+        Ok(result) => result,
+        Err(err) => {
+            return Err(exception!(
+                ExceptionCode::TypeCheckError,
+                "Cannot apply patch to file with error: {}",
+                err
+            ));
+        }
+    };
+
+    Ok(result)
+}
+
 fn zip(engine: &mut Engine, data: &[u8]) -> Result<Vec<u8>> {
     if data.is_empty() {
         return Ok(vec![]);
@@ -206,20 +234,43 @@ fn unzip(engine: &mut Engine, data: &[u8]) -> Result<Vec<u8>> {
 
 fn execute_diff_with_options(engine: &mut Engine, s0: SliceData, s1: SliceData, how: u8) -> Status {
     let fst = process_input_slice(s0, engine, how)?;
+    let fst = bytes_to_string(fst)?;
     let snd = process_input_slice(s1, engine, how)?;
+    let snd = bytes_to_string(snd)?;
 
     let result = diff_similar_lib(engine, &fst, &snd)?;
 
     process_output_slice(result.as_bytes(), engine, how)
 }
 
-fn execute_patch_with_options(engine: &mut Engine, s0: SliceData, s1: SliceData, how: u8) -> Status {
-    let str = process_input_slice(s0, engine, how)?;
-    let p = process_input_slice(s1, engine, how)?;
+fn execute_patch_with_options(name: &'static str, engine: &mut Engine, how: u8) -> Status {
+    engine.check_capability(GlobalCapabilities::CapDiff)?;
 
-    let result = patch_diffy_lib(engine, &str, &p)?;
+    let (s0, s1) = get_two_slices_from_stack(engine, name)?;
 
-    process_output_slice(result.as_bytes(), engine, how)
+    let result = if how.bit(BINARY) {
+        (|| {
+            let str = process_input_slice(s0, engine, how)?;
+            let p = process_input_slice(s1, engine, how)?;
+            let result = patch_binary_diffy_lib(engine, &str, &p)?;
+            process_output_slice(&result, engine, how)
+        })()
+    } else {
+        (|| {
+            let str = process_input_slice(s0, engine, how)?;
+            let p = process_input_slice(s1, engine, how)?;
+            let str = bytes_to_string(str)?;
+            let p = bytes_to_string(p)?;
+            let result = patch_diffy_lib(engine, &str, &p)?;
+            process_output_slice(result.as_bytes(), engine, how)
+        })()
+    };
+
+    if how.bit(IGNORE_ERROR) {
+        ignore_error(engine, result)
+    } else {
+        result
+    }
 }
 
 /// ZIP (s – c), zip string
@@ -260,38 +311,54 @@ pub(super) fn execute_unzip(engine: &mut Engine) -> Status {
 
 /// DIFF (s s – c), gen diff of two messages.
 pub(super) fn execute_diff(engine: &mut Engine) -> Status {
+    engine.check_capability(GlobalCapabilities::CapDiff)?;
     let (s0, s1) = get_two_slices_from_stack(engine, "DIFF")?;
     execute_diff_with_options(engine, s0, s1, 0)
 }
 
 /// DIFF_ZIP (s s – c), unpack messages, gen diff and pack result.
 pub(super) fn execute_diff_zip(engine: &mut Engine) -> Status {
+    engine.check_capability(GlobalCapabilities::CapDiff)?;
     let (s0, s1) = get_two_slices_from_stack(engine, "DIFF_ZIP")?;
     execute_diff_with_options(engine, s0, s1, ZIP)
 }
 
 /// DIFF_PATCHQ (s s – c), patch message
-pub(super) fn execute_patch_quiet(engine: &mut Engine) -> Status {
-    let (s0, s1) = get_two_slices_from_stack(engine, "DIFF_PATCH_Q")?;
-    let result = execute_patch_with_options(engine, s0, s1, 0);
-    ignore_error(engine, result)
+pub(super) fn execute_diff_patch_quiet(engine: &mut Engine) -> Status {
+    execute_patch_with_options("DIFF_PATCHQ", engine, IGNORE_ERROR)
 }
 
 /// DIFF_PATCH (s s – c), patch message
-pub(super) fn execute_patch_not_quiet(engine: &mut Engine) -> Status {
-    let (s0, s1) = get_two_slices_from_stack(engine, "DIFF_PATCH")?;
-    execute_patch_with_options(engine, s0, s1, 0)
+pub(super) fn execute_diff_patch_not_quiet(engine: &mut Engine) -> Status {
+    execute_patch_with_options("DIFF_PATCH", engine, 0)
 }
 
 /// DIFF_PATCH_ZIPQ (s s – c), unpack message and diff, patch message and pack result
 pub(super) fn execute_diff_patch_zip_quiet(engine: &mut Engine) -> Status {
-    let (s0, s1) = get_two_slices_from_stack(engine, "DIFF_PATCH_ZIPQ")?;
-    let result = execute_patch_with_options(engine, s0, s1, ZIP);
-    ignore_error(engine, result)
+    execute_patch_with_options("DIFF_PATCH_ZIPQ", engine, IGNORE_ERROR + ZIP)
 }
 
 /// DIFF_PATCH_ZIP (s s – c), unpack message and diff, patch message and pack result
 pub(super) fn execute_diff_patch_zip_not_quiet(engine: &mut Engine) -> Status {
-    let (s0, s1) = get_two_slices_from_stack(engine, "DIFF_PATCH_ZIP")?;
-    execute_patch_with_options(engine, s0, s1, ZIP)
+    execute_patch_with_options("DIFF_PATCH_ZIP", engine, ZIP)
+}
+
+/// DIFF_PATCH_BINARYQ (s s – c), patch message
+pub(super) fn execute_diff_patch_binary_quiet(engine: &mut Engine) -> Status {
+    execute_patch_with_options("DIFF_PATCH_BINARYQ", engine, IGNORE_ERROR + BINARY)
+}
+
+/// DIFF_PATCH_BINARY (s s – c), patch message
+pub(super) fn execute_diff_patch_binary_not_quiet(engine: &mut Engine) -> Status {
+    execute_patch_with_options("DIFF_PATCH_BINARY", engine, BINARY)
+}
+
+/// DIFF_PATCH_BINARY_ZIPQ (s s – c), unpack message and diff, patch message and pack result
+pub(super) fn execute_diff_patch_binary_zip_quiet(engine: &mut Engine) -> Status {
+    execute_patch_with_options("DIFF_PATCH_BINARY_ZIPQ", engine, IGNORE_ERROR + BINARY + ZIP)
+}
+
+/// DIFF_PATCH_BINARY_ZIP (s s – c), unpack message and diff, patch message and pack result
+pub(super) fn execute_diff_patch_binary_zip_not_quiet(engine: &mut Engine) -> Status {
+    execute_patch_with_options("DIFF_PATCH_BINARY_ZIP", engine, ZIP + BINARY)
 }

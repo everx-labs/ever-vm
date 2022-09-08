@@ -2,10 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## Version: 1.8.43
+## Version: 1.8.44
 
 ### New
- - Update version
+ - Version 1.8.44
 
 
 ## Version: 1.8.40

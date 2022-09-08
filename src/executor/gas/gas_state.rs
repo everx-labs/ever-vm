@@ -42,6 +42,8 @@ const DIFF_DURATION_FOR_COUNT_PATCHES: usize = 80;
 #[cfg(feature = "gosh")]
 const DIFF_PATCH_DURATION_FOR_LINE: i64 = 40;
 #[cfg(feature = "gosh")]
+const DIFF_PATCH_DURATION_FOR_BYTE: i64 = 1;
+#[cfg(feature = "gosh")]
 const DIFF_PATCH_DURATION_FOR_COUNT_PATCHES: i64 = 1200;
 #[cfg(feature = "gosh")]
 const DURATION_TO_GAS_COEFFICIENT: i64 = 30;
@@ -190,6 +192,12 @@ impl Gas {
     /// line cost for diff_patch
     pub fn diff_patch_fee_for_line(lines: i64) -> i64 {
         (DIFF_PATCH_DURATION_FOR_LINE * lines) / DURATION_TO_GAS_COEFFICIENT
+    }
+
+    #[cfg(feature = "gosh")]
+    /// byte cost for diff_bytes_patch
+    pub fn diff_bytes_patch_fee_for_byte(bytes: i64) -> i64 {
+        (DIFF_PATCH_DURATION_FOR_BYTE * bytes) / DURATION_TO_GAS_COEFFICIENT
     }
 
     #[cfg(feature = "gosh")]
