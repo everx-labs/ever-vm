@@ -27,6 +27,18 @@ const INDEX: u8 = 0x10; // integer 0..15
 const FLUSH: u8 = 0x20; // flush
 
 fn dump_var(item: &StackItem, how: u8) -> String {
+    dump_var_impl(item, how, false)
+}
+
+fn dump_tuple_impl(x: &Vec<StackItem>, how: u8, in_tuple: bool) -> String {
+    if in_tuple {
+        String::from("(<tuple>)")
+    } else {
+        format!("({})", x.iter().map(|v| dump_var_impl(v, how, true)).collect::<Vec<_>>().join(", "))
+    }
+}
+
+fn dump_var_impl(item: &StackItem, how: u8, in_tuple: bool) -> String {
     if how.bit(HEX) {
         match item {
             StackItem::None            => String::new(),
@@ -35,7 +47,7 @@ fn dump_var(item: &StackItem, how: u8) -> String {
             StackItem::Continuation(x) => format!("R<{:X}>", x.code().cell()),
             StackItem::Integer(x)      => format!("{:X}", Arc::as_ref(x)),
             StackItem::Slice(x)        => format!("CS<{:X}>({}..{})", &x.cell(), x.pos(), x.pos() + x.remaining_bits()),
-            StackItem::Tuple(x)        => format!("({})", x.iter().map(|v| dump_var(v, how)).collect::<Vec<_>>().join(", ")),
+            StackItem::Tuple(x)        => dump_tuple_impl(x, how, in_tuple),
         }
     } else if how.bit(BIN) {
         match item {
@@ -45,7 +57,7 @@ fn dump_var(item: &StackItem, how: u8) -> String {
             StackItem::Continuation(x) => format!("R<{:b}>", x.code().cell()),
             StackItem::Integer(x)      => format!("{:b}", Arc::as_ref(x)),
             StackItem::Slice(x)        => format!("CS<{:b}>({}..{})", x.cell(), x.pos(), x.pos() + x.remaining_bits()),
-            StackItem::Tuple(x)        => format!("({})", x.iter().map(|v| dump_var(v, how)).collect::<Vec<_>>().join(", ")),
+            StackItem::Tuple(x)        => dump_tuple_impl(x, how, in_tuple),
         }
     } else if how.bit(STR) {
         let string = match item {
@@ -55,7 +67,7 @@ fn dump_var(item: &StackItem, how: u8) -> String {
             StackItem::Continuation(x) => x.code().get_bytestring(0),
             StackItem::Integer(x)      => return format!("{}", Arc::as_ref(x)),
             StackItem::Slice(x)        => x.get_bytestring(0),
-            StackItem::Tuple(x)        => return format!("({})", x.iter().map(|v| dump_var(v, how)).collect::<Vec<_>>().join(", ")),
+            StackItem::Tuple(x)        => dump_tuple_impl(x, how, in_tuple).as_bytes().to_vec(),
         };
         match str::from_utf8(&string) {
             Ok(result) => result.into(),
@@ -69,7 +81,7 @@ fn dump_var(item: &StackItem, how: u8) -> String {
             StackItem::Continuation(x) => format!("R<{:X}>", x.code().cell()),
             StackItem::Integer(x)      => format!("{}", Arc::as_ref(x)),
             StackItem::Slice(x)        => format!("CS<{:X}>({}..{})", x.cell(), x.pos(), x.pos() + x.remaining_bits()),
-            StackItem::Tuple(x)        => format!("({})", x.iter().map(|v| dump_var(v, how)).collect::<Vec<_>>().join(", ")),
+            StackItem::Tuple(x)        => dump_tuple_impl(x, how, in_tuple),
         }
     }
 }

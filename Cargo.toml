@@ -2,7 +2,7 @@
 build = 'build.rs'
 edition = '2021'
 name = 'ton_vm'
-version = '1.8.44'
+version = '1.8.45'
 
 [dependencies]
 ed25519 = '1.2'
@@ -34,6 +34,7 @@ bench = false
 [profile.bench]
 debug = true
 
+required-features = [ 'gosh' ]
 
 [[bench]]
 name = "benchmarks"

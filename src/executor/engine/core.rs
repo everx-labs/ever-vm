@@ -845,7 +845,7 @@ impl Engine {
     }
 
     pub(in crate::executor) fn debug(&self) -> bool {
-        self.debug_on > 0
+        self.debug_on > 0 && log::log_enabled!(target: "tvm", log::Level::Trace)
     }
 
     pub(in crate::executor) fn dump(&mut self, dump: &str) {
