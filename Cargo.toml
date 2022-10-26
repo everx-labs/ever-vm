@@ -2,7 +2,7 @@
 build = 'build.rs'
 edition = '2021'
 name = 'ton_vm'
-version = '1.8.45'
+version = '1.8.46'
 
 [dependencies]
 diffy = '0.2.2'
@@ -26,6 +26,7 @@ ci_run = [  ]
 fift_check = [  ]
 gosh = [ 'ton_block/gosh', 'zstd' ]
 log_file = [  ]
+required-features = [ 'gosh' ]
 verbose = [  ]
 
 [[bench]]
@@ -36,5 +37,5 @@ name = 'benchmarks'
 bench = false
 
 [profile]
-bench = { debug = true, required-features = [ 'gosh' ] }
+bench = { debug = true }
 
