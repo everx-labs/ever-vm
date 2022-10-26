@@ -5,7 +5,6 @@ name = 'ton_vm'
 version = '1.8.45'
 
 [dependencies]
-diffy = '0.2.2'
 ed25519 = '1.2'
 ed25519-dalek = '1.0'
 failure = '0.1'
@@ -16,25 +15,27 @@ num = '0.4'
 num-traits = '0.2'
 rand = '0.7'
 sha2 = '0.9'
+diffy = '0.2.2'
 similar = { features = [ 'bytes' ], version = '2.2.0' }
-ton_block = { git = 'https://github.com/tonlabs/ton-labs-block.git', tag = '1.8.3' }
-ton_types = { git = 'https://github.com/tonlabs/ton-labs-types.git', tag = '1.11.4' }
 zstd = { default-features = false, optional = true, version = '0.11' }
+ton_types = { git = 'https://github.com/tonlabs/ton-labs-types.git', tag = '1.11.4' }
+ton_block = { git = 'https://github.com/tonlabs/ton-labs-block.git', tag = '1.8.3' }
 
 [features]
 ci_run = [  ]
 fift_check = [  ]
-gosh = [ 'ton_block/gosh', 'zstd' ]
 log_file = [  ]
 verbose = [  ]
-
-[[bench]]
-harness = false
-name = 'benchmarks'
+gosh = [ 'ton_block/gosh', 'zstd' ]
 
 [lib]
 bench = false
 
-[profile]
-bench = { debug = true, required-features = [ 'gosh' ] }
+[profile.bench]
+debug = true
 
+required-features = [ 'gosh' ]
+
+[[bench]]
+name = "benchmarks"
+harness = false

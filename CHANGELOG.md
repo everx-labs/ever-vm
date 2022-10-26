@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version: 1.8.45
+
+### New
+ - TVM changes
+
+
 ## Version: 1.8.40
 
 ### Fixed
