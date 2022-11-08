@@ -20,6 +20,9 @@ use std::sync::Arc;
 use ton_block::{GlobalCapabilities, CurrencyCollection};
 use ton_types::{Cell, HashmapE, HashmapType, SliceData, types::UInt256};
 
+#[cfg(test)]
+#[path = "tests/test_smart_contract_info.rs"]
+mod tests;
 
 /*
 The smart-contract information

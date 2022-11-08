@@ -21,3 +21,6 @@ pub use self::core::{
     BehaviorModifiers, Engine, EngineTraceInfo, EngineTraceInfoType, IndexProvider,
 };
 
+#[cfg(test)]
+#[path = "../../tests/test_microfunctions.rs"]
+mod tests;

@@ -2,7 +2,7 @@
 build = 'build.rs'
 edition = '2021'
 name = 'ton_vm'
-version = '1.8.54'
+version = '1.8.51'
 
 [dependencies]
 diffy = '0.2.2'
@@ -17,17 +17,28 @@ num-traits = '0.2'
 rand = '0.7'
 sha2 = '0.9'
 similar = { features = [ 'bytes' ], version = '2.2.0' }
-ton_block = { git = 'https://github.com/tonlabs/ton-labs-block.git', tag = '1.8.11' }
+ton_block = { git = 'https://github.com/tonlabs/ton-labs-block.git', branch = 'consensus-updates' }
 ton_types = { git = 'https://github.com/tonlabs/ton-labs-types.git', tag = '1.11.4' }
 zstd = { default-features = false, optional = true, version = '0.11' }
+
+[dev-dependencies]
+libloading = '0.6'
+log4rs = '1.1'
+pretty_assertions = '1.2'
+criterion = { features = [ 'html_reports' ], version = '0.3' }
 
 [features]
 ci_run = [  ]
 fift_check = [  ]
 gosh = [ 'ton_block/gosh', 'zstd' ]
 log_file = [  ]
-required-features = [ 'gosh' ]
 verbose = [  ]
+
+[[bench]]
+harness = false
+name = 'bench_diff'
+required-features = [ 'gosh' ]
+
 
 [[bench]]
 harness = false
@@ -39,3 +50,5 @@ bench = false
 [profile]
 bench = { debug = true }
 
+[patch.'https://github.com/tonlabs/ton-labs-block.git']
+ton_block = { git = 'https://github.com:443//tonlabs/ton-labs-block.git', branch = 'consensus-updates' }
