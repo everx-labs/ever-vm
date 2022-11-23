@@ -218,7 +218,7 @@ impl ContinuationData {
                         Ok(ContinuationType::Quit(exit_code))
                     }
                     2 => {
-                        let mut body_slice = SliceData::from(slice.checked_drain_reference()?);
+                        let mut body_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
                         let body: SliceData = slice_deserialize(&mut body_slice)?;
                         Ok(ContinuationType::UntilLoopCondition(body))
                     }
@@ -228,21 +228,21 @@ impl ContinuationData {
             3 => {
                 match slice.get_next_int(2)? {
                     0 => {
-                        let mut cond_slice = SliceData::from(slice.checked_drain_reference()?);
+                        let mut cond_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
                         let cond: SliceData = slice_deserialize(&mut cond_slice)?;
                         gas += Gas::load_cell_price(true);
-                        let mut body_slice = SliceData::from(slice.checked_drain_reference()?);
+                        let mut body_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
                         let body: SliceData = slice_deserialize(&mut body_slice)?;
                         gas += Gas::load_cell_price(true);
                         Ok(ContinuationType::WhileLoopCondition(body, cond))
                     }
                     1 => {
-                        let mut body_slice = SliceData::from(slice.checked_drain_reference()?);
+                        let mut body_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
                         let body: SliceData = slice_deserialize(&mut body_slice)?;
                         Ok(ContinuationType::AgainLoopBody(body))
                     }
                     2 => {
-                        let mut code_slice = SliceData::from(slice.checked_drain_reference()?);
+                        let mut code_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
                         let code: SliceData = slice_deserialize(&mut code_slice)?;
                         let counter = slice.get_next_int(32)? as isize;
                         Ok(ContinuationType::RepeatLoopBody(code, counter))
@@ -272,7 +272,7 @@ impl ContinuationData {
                     stack.push(item);
                     let mut cell = slice.checked_drain_reference()?;
                     for _ in 1..depth {
-                        let mut slice = SliceData::from(cell);
+                        let mut slice = SliceData::load_cell(cell)?;
                         let (item, gas2) = StackItem::deserialize(&mut slice)?;
                         stack.push(item);
                         gas += gas2;

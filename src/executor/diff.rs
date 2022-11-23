@@ -299,7 +299,7 @@ pub(super) fn execute_unzip(engine: &mut Engine) -> Status {
 
     engine.load_instruction(Instruction::new("UNZIP"))?;
     fetch_stack(engine, 1)?;
-    let s = engine.cmd.var(0).as_cell()?.clone().into();
+    let s = SliceData::load_cell_ref(engine.cmd.var(0).as_cell()?)?;
     let data = unpack_data_from_cell(s, engine)?;
 
     let decompressed = unzip(engine, &data)?;

@@ -34,7 +34,6 @@ use ton_types::{
     BuilderData, error, fail, GasConsumer, HashmapE, HashmapSubtree, PfxHashmapE, Result, SliceData,
     types::ExceptionCode
 };
-use std::sync::Arc;
 
 fn try_unref_leaf(slice: SliceData) -> Result<StackItem> {
     match slice.remaining_bits() == 0 && slice.remaining_references() != 0 {
@@ -134,9 +133,9 @@ fn dictcont(
     let dict = HashmapE::with_hashmap(nbits, engine.cmd.var(1).as_dict()?.cloned());
     let key = keyreader(engine.cmd.var(2), nbits)?;
     if let Some(data) = dict.get_with_gas(key, engine)? {
-        engine.cmd.vars.push(StackItem::Continuation(Arc::new(
+        engine.cmd.vars.push(StackItem::continuation(
             ContinuationData::with_code(data)
-        )));
+        ));
         let n = engine.cmd.var_count() - 1;
         if how.bit(SWITCH) {
             switch(engine, var!(n))
@@ -192,7 +191,7 @@ fn find(
     let mut dict = HashmapE::with_hashmap(nbits, engine.cmd.var(1).as_dict()?.cloned());
     if let Some((key, value)) = finder(engine, &dict, how)? {
         if how.bit(DEL) {
-            dict.remove_with_gas(key.clone().into_cell()?.into(), engine)?;
+            dict.remove_with_gas(SliceData::load_builder(key.clone())?, engine)?;
             engine.cc.stack.push(StackItem::dict(&dict));
         }
         engine.cc.stack.push(value);
@@ -273,9 +272,9 @@ fn pfxdictget(engine: &mut Engine, name: &'static str, how: u8) -> Status {
     if let (prefix, Some(value), suffix) = dict.get_prefix_leaf_with_gas(key.clone(), engine)? {
         engine.cc.stack.push(StackItem::Slice(key.shrink_data(prefix.remaining_bits()..)));
         if get_cont {
-            engine.cmd.vars.push(StackItem::Continuation(Arc::new(
+            engine.cmd.vars.push(StackItem::continuation(
                 ContinuationData::with_code(value)
-            )));
+            ));
         } else {
             engine.cc.stack.push(StackItem::Slice(value));
         }
@@ -525,15 +524,15 @@ fn finder(engine: &mut Engine, dict: &HashmapE, how: u8) -> Result<Option<(Build
 fn write_key(engine: &mut Engine, key: BuilderData, how: u8) -> Result<StackItem> {
     if how.bit(SLC) {
         let cell = engine.finalize_cell(key)?;
-        Ok(StackItem::Slice(cell.into()))
+        Ok(StackItem::Slice(SliceData::load_cell(cell)?))
     } else if how.bit(SIGN) {
         let encoding = SignedIntegerBigEndianEncoding::new(key.length_in_bits());
         let ret = encoding.deserialize(key.data());
-        Ok(StackItem::Integer(Arc::new(ret)))
+        Ok(StackItem::integer(ret))
     } else {
         let encoding = UnsignedIntegerBigEndianEncoding::new(key.length_in_bits());
         let ret = encoding.deserialize(key.data());
-        Ok(StackItem::Integer(Arc::new(ret)))
+        Ok(StackItem::integer(ret))
     }
 }
 

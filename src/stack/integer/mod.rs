@@ -198,7 +198,7 @@ impl IntegerData {
     }
 
     pub fn as_slice<T: Encoding>(&self, bits: usize) -> Result<SliceData> {
-        Ok(self.as_builder::<T>(bits)?.into_cell()?.into())
+        SliceData::load_builder(self.as_builder::<T>(bits)?)
     }
 
     pub fn as_builder<T: Encoding>(&self, bits: usize) -> Result<BuilderData> {

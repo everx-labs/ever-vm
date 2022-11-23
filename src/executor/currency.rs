@@ -18,7 +18,6 @@ use crate::{
     types::{Exception, Status}
 };
 use ton_types::{BuilderData, error, IBitstring, types::ExceptionCode};
-use std::sync::Arc;
 
 // slice - uint slice'
 fn load_var(engine: &mut Engine, name: &'static str, max_bytes: u8, sign: bool) -> Status {

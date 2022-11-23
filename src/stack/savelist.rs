@@ -90,7 +90,7 @@ impl SaveList {
             if let Some(ref item) = self.storage[index] {
                 let mut builder = BuilderData::new();
                 builder.append_bits(if index == 6 { 7 } else { index }, 4)?;
-                let key = builder.into_cell()?.into();
+                let key = SliceData::load_builder(builder)?;
                 let (value, gas2) = item.serialize()?;
                 gas += gas2;
                 dict.set_builder(key, &value)?;
@@ -119,7 +119,7 @@ impl SaveList {
                 let mut savelist = SaveList::new();
                 for item in dict.iter() {
                     let (key, value) = item?;
-                    let key = SliceData::from(key.into_cell()?).get_next_int(4)? as usize;
+                    let key = SliceData::load_builder(key)?.get_next_int(4)? as usize;
                     let (mut value, gas2) = StackItem::deserialize(&mut value.clone())?;
                     gas += gas2;
                     savelist.put(key, &mut value)?;

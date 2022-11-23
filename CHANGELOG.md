@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version: 1.8.60
+
+### Fixed
+ - Fix for cells loading
+ - Some refactoring for remove direct usage of Arcs
+ - Bumped versions of some creates
+
 ## Version: 1.8.40
 
 ### Fixed

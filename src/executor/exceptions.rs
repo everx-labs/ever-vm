@@ -20,7 +20,7 @@ use crate::{
     stack::{StackItem, continuation::ContinuationType, integer::IntegerData},
     types::{Exception, Status}
 };
-use std::{ops::Range, sync::Arc};
+use std::ops::Range;
 use ton_types::{error, fail, types::ExceptionCode};
 
 //Utilities **********************************************************************************

@@ -18,7 +18,6 @@ use crate::{
     types::{Exception, Status}
 };
 use ton_types::{error, types::ExceptionCode, Result};
-use std::sync::Arc;
 
 pub mod gas_state;
 

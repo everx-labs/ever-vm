@@ -63,7 +63,12 @@ fn dump_var_impl(item: &StackItem, how: u8, in_tuple: bool) -> String {
         let string = match item {
             StackItem::None            => return String::new(),
             StackItem::Builder(x)      => x.data().into(),
-            StackItem::Cell(x)         => SliceData::from(x).get_bytestring(0),
+            StackItem::Cell(x)         => {
+                match SliceData::load_cell_ref(x) {
+                    Ok(slice) => slice.get_bytestring(0),
+                    Err(err) => return err.to_string()
+                }
+            }
             StackItem::Continuation(x) => x.code().get_bytestring(0),
             StackItem::Integer(x)      => return format!("{}", Arc::as_ref(x)),
             StackItem::Slice(x)        => x.get_bytestring(0),
