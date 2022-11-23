@@ -34,13 +34,13 @@ macro_rules! int {
         StackItem::nan()
     };
     ($value: expr) => {
-        StackItem::Integer(Arc::new(IntegerData::from($value).unwrap()))
+        StackItem::integer(IntegerData::from($value).unwrap())
     };
     (parse $str: expr) => {
-        StackItem::Integer(Arc::new(std::str::FromStr::from_str($str).unwrap()))
+        StackItem::integer(std::str::FromStr::from_str($str).unwrap())
     };
     (parse_hex $str: expr) => {
-        StackItem::Integer(Arc::new(IntegerData::from_str_radix($str, 16).unwrap()))
+        StackItem::integer(IntegerData::from_str_radix($str, 16).unwrap())
     };
 }
 
@@ -88,7 +88,7 @@ fn slice_deserialize(slice: &mut SliceData) -> Result<SliceData> {
     if ref_start > MAX_REFERENCES_COUNT || ref_end > MAX_REFERENCES_COUNT || ref_start > ref_end {
         return err!(ExceptionCode::FatalError)
     }
-    let mut res = SliceData::from(cell);
+    let mut res = SliceData::load_cell(cell)?;
     res.shrink_data(data_start..data_end);
     res.shrink_references(ref_start..ref_end);
     Ok(res)
@@ -313,7 +313,10 @@ impl StackItem {
                 let start = data.pos();
                 let end = start + data.remaining_bits();
                 let refs = data.get_references();
-                let data = SliceData::from(data.cell());
+                let data = match SliceData::load_cell_ref(data.cell()) {
+                    Ok(data) => data,
+                    Err(err) => return err.to_string()
+                };
                 let mut bytes = vec![];
                 let is_special = data.cell().cell_type() != CellType::Ordinary;
                 bytes.push(d1(data.cell().level_mask().mask(), data.cell().references_count() as u8, is_special as u8));
@@ -433,7 +436,7 @@ impl StackItem {
                 }
                 let mut cell = slice.checked_drain_reference()?;
                 for _ in 1..len {
-                    let mut slice = SliceData::from(cell);
+                    let mut slice = SliceData::load_cell(cell)?;
                     gas += Gas::load_cell_price(true);
                     let (item, gas2) = StackItem::deserialize(&mut slice)?;
                     tuple.push(item);

@@ -26,7 +26,6 @@ use crate::{
     types::{Exception, Status}
 };
 use ed25519::signature::Verifier;
-use std::sync::Arc;
 use ton_types::{BuilderData, error, GasConsumer, ExceptionCode, UInt256};
 
 const PUBLIC_KEY_BITS:  usize = PUBLIC_KEY_BYTES * 8;

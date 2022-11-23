@@ -15,7 +15,6 @@ use crate::{
     executor::{Mask, engine::{Engine, storage::fetch_stack}, types::Instruction},
     stack::{StackItem, integer::IntegerData}, types::Status
 };
-use std::sync::Arc;
 
 pub(super) fn execute_null(engine: &mut Engine) -> Status {
     engine.load_instruction(

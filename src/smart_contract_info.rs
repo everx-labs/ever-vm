@@ -16,7 +16,6 @@ use crate::stack::{
     integer::IntegerData,
 };
 use sha2::{Sha256, Digest};
-use std::sync::Arc;
 use ton_block::{GlobalCapabilities, CurrencyCollection};
 use ton_types::{Cell, HashmapE, HashmapType, SliceData, types::UInt256};
 

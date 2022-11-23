@@ -32,7 +32,6 @@ use crate::{
     types::{Exception, Status}
 };
 use ton_types::{BuilderData, CellType, GasConsumer, error, IBitstring, Result, ExceptionCode, MAX_LEVEL};
-use std::sync::Arc;
 
 const QUIET: u8 = 0x01; // quiet variant
 const STACK: u8 = 0x02; // length of int in stack

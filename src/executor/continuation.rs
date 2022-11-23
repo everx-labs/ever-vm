@@ -32,7 +32,7 @@ use crate::{
     types::{Exception, Status}
 };
 use ton_types::{error, fail, types::ExceptionCode};
-use std::{mem, ops::{Range, RangeInclusive}, sync::Arc};
+use std::{mem, ops::{Range, RangeInclusive}};
 
 const CALLX: u8 = 0x40;   // CALLX to found value
 const SWITCH: u8 = 0x80;  // SWITCH to found value

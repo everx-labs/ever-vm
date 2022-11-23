@@ -345,7 +345,7 @@ impl Engine {
                 info_type,
                 step: self.step,
                 cmd_str,
-                cmd_code: self.cmd_code(),
+                cmd_code: self.cmd_code().unwrap_or_default(),
                 stack: &self.cc.stack,
                 gas_used: self.gas_used(),
                 gas_cmd: self.gas_used() - gas,
@@ -358,10 +358,10 @@ impl Engine {
         if self.trace_bit(Engine::TRACE_CODE) && info.has_cmd() {
             log::trace!(
                 target: "tvm",
-                "{}: {}\n{:x}\n",
+                "{}: {}\n{}\n",
                 info.step,
                 info.cmd_str,
-                self.cmd_code(),
+                self.cmd_code_string()
             );
         }
         if self.trace_bit(Engine::TRACE_GAS) {
@@ -673,7 +673,7 @@ impl Engine {
 
 
     pub fn load_library_cell(&mut self, cell: Cell) -> Result<Cell> {
-        let mut hash = SliceData::from(cell);
+        let mut hash = SliceData::load_cell(cell)?;
         hash.move_by(8)?;
         for library in self.libraries.clone() {
             if let Some(lib) = library.get_with_gas(hash.clone(), self)? {
@@ -689,9 +689,7 @@ impl Engine {
         self.use_gas(Gas::load_cell_price(first));
         if check_special {
             match cell.cell_type() {
-                CellType::Ordinary => {
-                    Ok(cell.into())
-                }
+                CellType::Ordinary => SliceData::load_cell(cell),
                 CellType::LibraryReference => {
                     let cell = self.load_library_cell(cell)?;
                     self.load_hashed_cell(cell, true)
@@ -699,7 +697,7 @@ impl Engine {
                 cell_type => err!(ExceptionCode::CellUnderflow, "Wrong cell type {}", cell_type)
             }
         } else {
-            Ok(cell.into())
+            SliceData::load_cell(cell)
         }
     }
 
@@ -889,7 +887,7 @@ impl Engine {
     }
 
     fn extract_slice(&mut self, offset: usize, r: usize, x: usize, mut refs: usize, mut bytes: usize) -> Result<SliceData> {
-        let mut code = self.cmd_code();
+        let mut code = self.cmd_code()?;
         let mut slice = code.clone();
         if offset >= slice.remaining_bits() {
             return err!(ExceptionCode::InvalidOpcode)
@@ -1196,7 +1194,7 @@ impl Engine {
             }
             Some(InstructionOptions::Dictionary(offset, bits)) => {
                 self.use_gas(Gas::basic_gas_price(offset + 1 + bits, 0));
-                let mut code = self.cmd_code();
+                let mut code = self.cmd_code()?;
                 code.shrink_data(offset..);
                 // TODO: need to check this failure case
                 let slice = code.get_dictionary_opt().unwrap_or_else(SliceData::default);
@@ -1230,7 +1228,7 @@ impl Engine {
         let exception = match tvm_exception_full(&err) {
             Some(exception) => exception,
             None => {
-                log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code());
+                log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code_string());
                 return Err(err)
             }
         };
@@ -1238,7 +1236,7 @@ impl Engine {
             self.step += 1;
         }
         if exception.exception_code() == Some(ExceptionCode::OutOfGas) {
-            log::trace!(target: "tvm", "OUT OF GAS CODE: {}\n", self.cmd_code());
+            log::trace!(target: "tvm", "OUT OF GAS CODE: {}\n", self.cmd_code_string());
             return Err(err)
         }
         if let Err(err) = self.gas.try_use_gas(Gas::exception_price()) {
@@ -1260,7 +1258,7 @@ impl Engine {
             switch(self, var!(n))?;
         } else {
             self.trace_info(EngineTraceInfoType::Exception, self.gas_used(), Some(format!("UNHANDLED EXCEPTION: {}", err)));
-            log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code());
+            log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code_string());
             return Err(err)
         }
         Ok(())
@@ -1289,13 +1287,19 @@ impl Engine {
         }
     }
 
-    fn cmd_code(&self) -> SliceData {
-        let mut code = SliceData::from(self.cc.code().cell());
+    fn cmd_code_string(&self) -> String {
+        match self.cmd_code() {
+            Ok(code) => code.to_string(),
+            Err(err) => err.to_string()
+        }
+    }
+    fn cmd_code(&self) -> Result<SliceData> {
+        let mut code = SliceData::load_cell_ref(self.cc.code().cell())?;
         let data = &self.cmd_code.data_window;
         code.shrink_data(data.start..data.end);
         let refs = &self.cmd_code.references_window;
         code.shrink_references(refs.start..refs.end);
-        code
+        Ok(code)
     }
 
     /// Set code page for interpret bytecode. now only code page 0 is supported
@@ -1333,7 +1337,7 @@ impl Engine {
             let params = HashmapE::with_hashmap(32, Some(data.clone()));
             let mut key = BuilderData::new();
             key.append_i32(index)?;
-            if let Some(value) = params.get_with_gas(key.into_cell()?.into(), self)? {
+            if let Some(value) = params.get_with_gas(SliceData::load_builder(key)?, self)? {
                 return Ok(value.reference_opt(0))
             }
         }
