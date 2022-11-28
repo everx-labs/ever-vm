@@ -13,13 +13,14 @@
 */
 
 use crate::{
+    error::TvmError,
     stack::integer::{
         behavior::{OperationBehavior, Quiet, Signaling},
         serialization::Encoding,
     },
-    types::ResultOpt
+    types::{ResultOpt, Exception},
 };
-use ton_types::{Result, BuilderData, SliceData};
+use ton_types::{error, BuilderData, ExceptionCode, Result, SliceData};
 
 use core::mem;
 use num_traits::{One, Signed, Zero};
@@ -137,6 +138,19 @@ impl IntegerData {
         match &self.value {
             IntegerValue::NaN => false,
             IntegerValue::Value(ref value) => value.is_negative()
+        }
+    }
+
+    pub fn check_neg(&self) -> Result<()> {
+        match self.value {
+            IntegerValue::NaN => err!(ExceptionCode::RangeCheckError, "not a number"),
+            IntegerValue::Value(ref value) => {
+                if value.is_negative() {
+                    err!(ExceptionCode::RangeCheckError, "{} is negative", value)
+                } else {
+                    Ok(())
+                }
+            }
         }
     }
 

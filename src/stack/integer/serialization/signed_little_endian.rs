@@ -11,14 +11,22 @@
 * limitations under the License.
 */
 
-use crate::stack::{
-    BuilderData,
-    integer::{IntegerData, serialization::{Encoding, common::extend_buffer_le}},
-    serialization::{Serializer, Deserializer}
+use crate::{
+    error::TvmError,
+    stack::{
+        integer::{
+            serialization::{
+                common::extend_buffer_le,
+                Encoding,
+            },
+            IntegerData,
+        },
+        serialization::{Deserializer, Serializer},
+    },
+    types::Exception,
 };
-use num::bigint::ToBigInt;
-use num_traits::Signed;
-use ton_types::{error, Result, types::ExceptionCode, fail};
+use num::{bigint::ToBigInt, Signed};
+use ton_types::{error, BuilderData, ExceptionCode, Result};
 
 pub struct SignedIntegerLittleEndianEncoding {
     length_in_bits: usize
@@ -38,8 +46,8 @@ impl Serializer<IntegerData> for SignedIntegerLittleEndianEncoding {
             //   −2^(n−1) <= x < 2^(n−1) (for signed integer serialization)
             //   or 0 <= x < 2^n (for unsigned integer serialization),
             //   a range check exception is usually generated
-            fail!(ExceptionCode::RangeCheckError)
-        }
+            return err!(ExceptionCode::RangeCheckError, "{} is not fit in {}", value, self.length_in_bits)
+       }
 
         let value = value.take_value_of(|x| x.to_bigint())?;
         let mut bytes = value.to_signed_bytes_le();

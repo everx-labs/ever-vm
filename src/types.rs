@@ -158,7 +158,7 @@ macro_rules! exception {
         error!(
             TvmError::TvmExceptionFull(
                 Exception::from_code_and_value($code, $value, file!(), line!()), 
-                format!($msg)
+                $msg.to_string()
             )
         )
     };
@@ -166,7 +166,7 @@ macro_rules! exception {
         error!(
             TvmError::TvmExceptionFull(
                 Exception::from_code($code, file!(), line!()), 
-                format!($msg)
+                $msg.to_string()
             )
         )
     };

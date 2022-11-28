@@ -89,7 +89,7 @@ fn dict(
     let key = keyreader(engine.cmd.var(2), nbits)?;
     if key.is_empty() {
         if how.any(SET | DEL) {
-            err!(ExceptionCode::RangeCheckError)
+            err!(ExceptionCode::RangeCheckError, "key cannot be empty for set or delete")
         } else {
             if how.bit(RET) {
                 engine.cc.stack.push(boolean!(false));
