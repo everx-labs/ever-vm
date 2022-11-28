@@ -2,7 +2,7 @@
 build = 'build.rs'
 edition = '2021'
 name = 'ton_vm'
-version = '1.8.68'
+version = '1.8.69'
 
 [dependencies]
 diffy = '0.2.2'

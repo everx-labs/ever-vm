@@ -56,14 +56,14 @@ fn store_var(engine: &mut Engine, name: &'static str, max_bits: usize, sign: boo
     let x = engine.cmd.var(0).as_integer()?;
     let b = engine.cmd.var(1).as_builder()?;
     let (bits, vec) = match sign {
-        false => match x.is_neg() {
-            true => return err!(ExceptionCode::RangeCheckError),
-            false => (x.ubitsize(), x.take_value_of(|x| Some(x.to_bytes_be().1))?)
+        false => {
+            x.check_neg()?;
+            (x.ubitsize(), x.take_value_of(|x| Some(x.to_bytes_be().1))?)
         }
         true => (x.bitsize(), x.take_value_of(|x| Some(x.to_signed_bytes_be()))?)
     };
     if bits > max_bits {
-        return err!(ExceptionCode::RangeCheckError)
+        return err!(ExceptionCode::RangeCheckError, "{} has {} bits, but max is {}", x, bits, max_bits)
     }
     let len = 16 - (max_bits as u16 / 8).leading_zeros();
     match max_bits {

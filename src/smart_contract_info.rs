@@ -19,7 +19,6 @@ use sha2::{Sha256, Digest};
 use ton_block::{GlobalCapabilities, CurrencyCollection};
 use ton_types::{Cell, HashmapE, HashmapType, SliceData, types::UInt256};
 
-
 /*
 The smart-contract information
 structure SmartContractInfo, passed in the first reference of the cell contained
@@ -216,3 +215,4 @@ impl SmartContractInfo{
 
     }
 }
+

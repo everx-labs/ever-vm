@@ -21,7 +21,7 @@ use crate::{
     types::{Exception, Status}
 };
 use ton_block::GlobalCapabilities;
-use ton_types::{error, types::ExceptionCode};
+use ton_types::{error, fail, ExceptionCode};
 
 fn tuple(engine: &mut Engine, name: &'static str, how: u8) -> Status {
     let mut inst = Instruction::new(name);
@@ -62,7 +62,7 @@ fn tuple_index(engine: &mut Engine, how: u8) -> Status {
         1 => Instruction::new("INDEX" ).set_opts(InstructionOptions::Length(0..16)),
         2 => Instruction::new("INDEX2").set_opts(InstructionOptions::StackRegisterPair(WhereToGetParams::GetFromLastByte2Bits)),
         3 => Instruction::new("INDEX3").set_opts(InstructionOptions::StackRegisterTrio(WhereToGetParams::GetFromLastByte2Bits)),
-        _ => return err!(ExceptionCode::FatalError)
+        _ => fail!("unreachabe tuple_index")
     })?;
     fetch_stack(engine, params)?;
     let n = if index == 0 {
@@ -74,63 +74,32 @@ fn tuple_index(engine: &mut Engine, how: u8) -> Status {
         engine.cc.stack.push(StackItem::None);
         return Ok(())
     }
-    let len = engine.cmd.var(params - 1).as_tuple()?.len();
-    match index & 3 {
+    let value = match index & 3 {
         0 => {
-            if n < len {
-                let value = engine.cmd.var(1).as_tuple()?[n].clone();
-                engine.cc.stack.push(value);
-                return Ok(())
-            } else if how.bit(QUIET) {
-                engine.cc.stack.push(StackItem::None);
-                return Ok(())
-            }
+            engine.cmd.var(1).tuple_item(n,how.bit(QUIET))?
         }
         1 => {
             let n = engine.cmd.length();
-            if n < len {
-                let value = engine.cmd.var_mut(0).as_tuple()?[n].clone();
-                engine.cc.stack.push(value);
-                return Ok(())
-            } else if how.bit(QUIET) {
-                engine.cc.stack.push(StackItem::None);
-                return Ok(())
-            }
+            engine.cmd.var_mut(0).tuple_item(n, how.bit(QUIET))?
         }
         2 => {
             let n = engine.cmd.sregs().ra;
-            if n < len {
-                let value = engine.cmd.var(0).as_tuple()?[n].clone();
-                let n = engine.cmd.sregs().rb;
-                let len = value.as_tuple()?.len();
-                if n < len {
-                    let value = value.as_tuple()?[n].clone();
-                    engine.cc.stack.push(value);
-                    return Ok(())
-                }
-            }
+            let value = engine.cmd.var(0).tuple_item(n, false)?;
+            let n = engine.cmd.sregs().rb;
+            value.tuple_item(n, false)?
         }
         3 => {
             let n = engine.cmd.sregs3().ra;
-            if n < len {
-                let value = engine.cmd.var(0).as_tuple()?[n].clone();
-                let n = engine.cmd.sregs3().rb;
-                let len = value.as_tuple()?.len();
-                if n < len {
-                    let value = value.as_tuple()?[n].clone();
-                    let n = engine.cmd.sregs3().rc;
-                    let len = value.as_tuple()?.len();
-                    if n < len {
-                        let value = value.as_tuple()?[n].clone();
-                        engine.cc.stack.push(value);
-                        return Ok(())
-                    }
-                }
-            }
+            let value = engine.cmd.var(0).tuple_item(n, false)?;
+            let n = engine.cmd.sregs3().rb;
+            let value = value.tuple_item(n, false)?;
+            let n = engine.cmd.sregs3().rc;
+            value.tuple_item(n, false)?
         }
-        _ => return err!(ExceptionCode::FatalError)
-    }
-    err!(ExceptionCode::RangeCheckError)
+        _ => fail!("unreachabe tuple_index")
+    };
+    engine.cc.stack.push(value);
+    Ok(())
 }
 
 // INDEX k (t – x)
@@ -297,7 +266,7 @@ fn set_index_v2(engine: &mut Engine, name: &'static str, how: u8) -> Status {
             engine.use_gas(Gas::tuple_gas_price(n + 1));
         }
     } else {
-        return err!(ExceptionCode::RangeCheckError)
+        return err!(ExceptionCode::RangeCheckError, "set_index failed {} >= {}", n, len)
     }
     engine.cc.stack.push_tuple(tuple);
     Ok(())
@@ -336,7 +305,7 @@ fn set_index_v1(engine: &mut Engine, name: &'static str, how: u8) -> Status {
         tuple.append(&mut vec![StackItem::None; n - len]);
         tuple.push(var);
     } else {
-        return err!(ExceptionCode::RangeCheckError)
+        return err!(ExceptionCode::RangeCheckError, "set_index failed {} >= {}", n, len)
     }
     if !value_is_null {
         engine.use_gas(Gas::tuple_gas_price(tuple.len()));
@@ -390,10 +359,13 @@ pub(super) fn execute_tuple_len_quiet(engine: &mut Engine) -> Status {
 pub(super) fn execute_tuple_last(engine: &mut Engine) -> Status {
     engine.load_instruction(Instruction::new("LAST"))?;
     fetch_stack(engine, 1)?;
-    let var = engine.cmd.var(0).as_tuple()?.last()
-        .ok_or(ExceptionCode::TypeCheckError)?.clone();
-    engine.cc.stack.push(var);
-    Ok(())
+    match engine.cmd.var(0).as_tuple()?.last() {
+        Some(var) => {
+            engine.cc.stack.push(var.clone());
+            Ok(())
+        }
+        None => err!(ExceptionCode::TypeCheckError, "tuple is empty")
+    }
 }
 
 // TPUSH (t x – t0)

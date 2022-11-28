@@ -243,7 +243,7 @@ impl Gas {
         if self.gas_remaining >= 0 {
             Ok(None)
         } else {
-            err!(ExceptionCode::OutOfGas, self.gas_base - self.gas_remaining, "")
+            Err(exception!(ExceptionCode::OutOfGas, self.gas_base - self.gas_remaining, "check_gas_remaining"))
         }
     }
 

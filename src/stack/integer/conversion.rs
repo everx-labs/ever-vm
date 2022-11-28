@@ -144,7 +144,7 @@ impl IntegerData {
         T: PartialOrd + std::fmt::Display + FromInt
     {
         match self.value {
-            IntegerValue::NaN => err!(ExceptionCode::RangeCheckError),
+            IntegerValue::NaN => err!(ExceptionCode::RangeCheckError, "not a number"),
             IntegerValue::Value(ref value) => {
                 T::from_int(value).and_then(|ret| {
                     if *range.start() > ret || *range.end() < ret {
@@ -160,12 +160,12 @@ impl IntegerData {
     #[inline]
     pub fn take_value_of<T>(&self, convert: impl Fn(&Int) -> Option<T>) -> Result<T> {
         match self.value {
-            IntegerValue::NaN => err!(ExceptionCode::IntegerOverflow),
+            IntegerValue::NaN => err!(ExceptionCode::IntegerOverflow, "not a number"),
             IntegerValue::Value(ref value) => {
                 if let Some(value) = convert(value) {
                     Ok(value)
                 } else {
-                    err!(ExceptionCode::RangeCheckError)
+                    err!(ExceptionCode::RangeCheckError, "cannot convert {}", value)
                 }
             }
         }

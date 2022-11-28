@@ -245,10 +245,27 @@ impl StackItem {
         }
     }
 
-    pub fn as_tuple(&self) -> ResultRef<Vec<StackItem>> {
+    pub fn as_tuple(&self) -> ResultRef<[StackItem]> {
         match self {
             StackItem::Tuple(ref data) => Ok(data),
             _ => err!(ExceptionCode::TypeCheckError, "item is not a tuple")
+        }
+    }
+
+    pub fn tuple_item(&self, index: usize, default: bool) -> Result<StackItem> {
+        let tuple = self.as_tuple()?;
+        match tuple.get(index) {
+            Some(value) => Ok(value.clone()),
+            None if default => Ok(StackItem::None),
+            None => err!(ExceptionCode::RangeCheckError, "tuple index is {} but length is {}", index, tuple.len())
+        }
+    }
+
+    pub fn tuple_item_ref(&self, index: usize) -> ResultRef<StackItem> {
+        let tuple = self.as_tuple()?;
+        match tuple.get(index) {
+            Some(value) => Ok(value),
+            None => err!(ExceptionCode::RangeCheckError, "tuple index is {} but length is {}", index, tuple.len())
         }
     }
 

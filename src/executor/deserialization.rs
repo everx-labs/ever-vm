@@ -904,11 +904,8 @@ fn datasize(engine: &mut Engine, name: &'static str, how: u8) -> Status {
         engine.cmd.var(1).as_cell()?;
     }
     let x = engine.cmd.var(0).as_integer()?;
-    let mut counter = if x.is_neg() {
-        return err!(ExceptionCode::RangeCheckError)
-    } else {
-        DataCounter::new(x.into(0..=std::i64::MAX).unwrap_or(std::i64::MAX) as usize)
-    };
+    x.check_neg()?;
+    let mut counter = DataCounter::new(x.into(0..=std::i64::MAX).unwrap_or(std::i64::MAX) as usize);
     let result = if !how.bit(CEL) {
         let slice = engine.cmd.var(1).as_slice()?.clone();
         counter.count_slice(slice, engine)?

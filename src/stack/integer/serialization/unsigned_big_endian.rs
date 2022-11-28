@@ -11,15 +11,22 @@
 * limitations under the License.
 */
 
-use crate::stack::{
-    BuilderData,
-    integer::{
-        IntegerData,
-        serialization::{Encoding, common::{calc_excess_bits, extend_buffer_be}}
+use crate::{
+    error::TvmError,
+    stack::{
+        integer::{
+            serialization::{
+                common::{calc_excess_bits, extend_buffer_be},
+                Encoding,
+            },
+            IntegerData,
+        },
+        serialization::{Deserializer, Serializer},
+        BuilderData,
     },
-    serialization::{Serializer, Deserializer}
+    types::Exception,
 };
-use ton_types::{error, Result, types::ExceptionCode, fail};
+use ton_types::{error, ExceptionCode, Result};
 
 pub struct UnsignedIntegerBigEndianEncoding {
     length_in_bits: usize
@@ -33,13 +40,14 @@ impl Encoding for UnsignedIntegerBigEndianEncoding {
 
 impl Serializer<IntegerData> for UnsignedIntegerBigEndianEncoding {
     fn try_serialize(&self, value: &IntegerData) -> Result<BuilderData> {
-        if value.is_neg() || !value.ufits_in(self.length_in_bits) {
+        value.check_neg()?;
+        if !value.ufits_in(self.length_in_bits) {
             // Spec. 3.2.7
             // * If the integer x to be serialized is not in the range
             //   −2^(n−1) <= x < 2^(n−1) (for signed integer serialization)
             //   or 0 <= x < 2^n (for unsigned integer serialization),
             //   a range check exception is usually generated
-            fail!(ExceptionCode::RangeCheckError)
+            return err!(ExceptionCode::RangeCheckError, "{} cannot fit in {}", value, self.length_in_bits)
         }
 
         let mut value = value.take_value_of(|x| x.to_biguint())?;
