@@ -2,7 +2,7 @@
 build = 'build.rs'
 edition = '2021'
 name = 'ton_vm'
-version = '1.8.71'
+version = '1.8.72'
 
 [dependencies]
 diffy = '0.2.2'
@@ -17,8 +17,8 @@ num-traits = '0.2'
 rand = '0.7'
 sha2 = '0.10'
 similar = { features = [ 'bytes' ], version = '2.2.0' }
-ton_block = { git = 'https://github.com/tonlabs/ton-labs-block.git', tag = '1.9.5' }
-ton_types = { git = 'https://github.com/tonlabs/ton-labs-types.git', tag = '1.12.1' }
+ton_block = { git = 'https://github.com/tonlabs/ton-labs-block.git', tag = '1.9.6' }
+ton_types = { git = 'https://github.com/tonlabs/ton-labs-types.git', tag = '1.12.2' }
 zstd = { default-features = false, optional = true, version = '0.11' }
 
 [features]
