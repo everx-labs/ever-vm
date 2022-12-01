@@ -43,7 +43,7 @@ pub trait IndexProvider: Send + Sync {
     fn get_accounts_by_data_hash(&self, hash: &UInt256) -> Result<Vec<ShardAccount>>;
 }
 
-pub struct SliceProto {
+pub(super) struct SliceProto {
     data_window: Range<usize>,
     references_window: Range<usize>,
 }
@@ -72,6 +72,8 @@ impl From<&SliceData> for SliceProto {
     }
 }
 
+pub type TraceCallback = dyn Fn(&Engine, &EngineTraceInfo);
+
 pub struct Engine {
     pub(in crate::executor) cc: ContinuationData,
     pub(in crate::executor) cmd: InstructionExt,
@@ -90,7 +92,7 @@ pub struct Engine {
     cmd_code: SliceProto, // start of current cmd
     last_cmd: u8,
     trace: u8,
-    trace_callback: Option<Box<dyn Fn(&Engine, &EngineTraceInfo)>>,
+    trace_callback: Option<Box<TraceCallback>>,
     log_string: Option<&'static str>,
     flags: u64,
     capabilities: u64
@@ -212,7 +214,7 @@ impl Engine {
             || log::log_enabled!(target: "tvm", log::Level::Info)
             || log::log_enabled!(target: "tvm", log::Level::Error)
             || log::log_enabled!(target: "tvm", log::Level::Warn);
-        let trace_callback: Option<Box<dyn Fn(&Engine, &EngineTraceInfo)>> = if !log_enabled {
+        let trace_callback: Option<Box<TraceCallback>> = if !log_enabled {
             None
         } else if cfg!(feature="fift_check") {
             Some(Box::new(Self::fift_trace_callback))
@@ -1203,7 +1205,7 @@ impl Engine {
                 let mut code = self.cmd_code()?;
                 code.shrink_data(offset..);
                 // TODO: need to check this failure case
-                let slice = code.get_dictionary_opt().unwrap_or_else(SliceData::default);
+                let slice = code.get_dictionary_opt().unwrap_or_default();
                 self.cmd.params.push(InstructionParameter::Slice(slice));
                 let length = code.get_next_int(bits)? as usize;
                 *self.cc.code_mut() = code;

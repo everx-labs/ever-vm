@@ -229,7 +229,7 @@ pub(super) fn execute_rewrite_std_addr<T: OperationBehavior>(engine: &mut Engine
             let x = tuple[2].clone();
             Ok(vec![x, StackItem::Integer(Arc::new(y))])
         } else {
-            return err!(ExceptionCode::CellUnderflow)
+            err!(ExceptionCode::CellUnderflow)
         }
     })
 }
@@ -253,7 +253,7 @@ pub(super) fn execute_rewrite_var_addr<T: OperationBehavior>(engine: &mut Engine
             let x = tuple[2].clone();
             Ok(vec![x, StackItem::Slice(addr)])
         } else {
-            return err!(ExceptionCode::CellUnderflow)
+            err!(ExceptionCode::CellUnderflow)
         }
     })
 }

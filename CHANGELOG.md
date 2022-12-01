@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version: 1.8.71
+
+### New
+- Add common as submodule
+
+### Fixed
+- Some minor fixes
+
 ## Version: 1.8.60
 
 ### Fixed

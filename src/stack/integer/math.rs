@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -24,7 +24,7 @@ use num_traits::Zero;
 use ton_types::{Result, Status};
 
 // [x / y] -> (q, r)  :  q*y + r = x  :  |r| < |y|
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub enum Round {
     Ceil = 0,                    // r and y have opposite sign
     FloorToNegativeInfinity = 1, // r has the same sign as y
