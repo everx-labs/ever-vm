@@ -21,7 +21,7 @@ use std::{fmt, mem};
 use ton_types::{BuilderData, Cell, IBitstring, Result, error, types::ExceptionCode};
 use super::{slice_serialize, slice_deserialize};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ContinuationType {
     AgainLoopBody(SliceData),
     TryCatch,

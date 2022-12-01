@@ -30,7 +30,7 @@ fn dump_var(item: &StackItem, how: u8) -> String {
     dump_var_impl(item, how, false)
 }
 
-fn dump_tuple_impl(x: &Vec<StackItem>, how: u8, in_tuple: bool) -> String {
+fn dump_tuple_impl(x: &[StackItem], how: u8, in_tuple: bool) -> String {
     if in_tuple {
         String::from("(<tuple>)")
     } else {

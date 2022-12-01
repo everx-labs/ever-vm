@@ -50,7 +50,7 @@ impl IntegerData {
                         num::bigint::Sign::Minus
                     } else {
                         num::bigint::Sign::Plus
-                    }, vec![value.abs() as u32])
+                    }, vec![value.unsigned_abs()])
             )
         }
     }

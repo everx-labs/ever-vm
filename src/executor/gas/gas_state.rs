@@ -12,11 +12,11 @@
 */
 
 use crate::{error::TvmError, types::Exception};
-use std::{cmp::{max, min}};
+use std::cmp::{max, min};
 use ton_types::{error, Result, types::ExceptionCode};
 
 // Gas state
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Gas {
     gas_limit_max: i64,
     gas_limit: i64,
