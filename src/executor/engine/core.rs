@@ -679,11 +679,16 @@ impl Engine {
 
 
     pub fn load_library_cell(&mut self, cell: Cell) -> Result<Cell> {
+        self.check_capability(GlobalCapabilities::CapSetLibCode)?;
         let mut hash = SliceData::load_cell(cell)?;
         hash.move_by(8)?;
         for library in self.libraries.clone() {
-            if let Some(lib) = library.get_with_gas(hash.clone(), self)? {
-                return lib.reference(0)
+            if let Some(lib_bucket) = library.get_with_gas(hash.clone(), self)? {
+                let lib = lib_bucket.reference(0)?;
+                if lib.repr_hash() != hash {
+                    return err!(ExceptionCode::DictionaryError, "Librariy hash does not correspond to map key {:x}", hash)
+                }
+                return Ok(lib);
             }
         }
         err!(ExceptionCode::CellUnderflow, "Libraries do not contain code with hash {:x}", hash)
@@ -691,19 +696,22 @@ impl Engine {
 
     /// Loads cell to slice cheking in precashed map
     pub fn load_hashed_cell(&mut self, cell: Cell, check_special: bool) -> Result<SliceData> {
-        let first = self.visited_cells.insert(cell.repr_hash());
-        self.use_gas(Gas::load_cell_price(first));
-        if check_special {
-            match cell.cell_type() {
-                CellType::Ordinary => SliceData::load_cell(cell),
-                CellType::LibraryReference => {
-                    let cell = self.load_library_cell(cell)?;
-                    self.load_hashed_cell(cell, true)
+        let mut current_cell = cell;
+        loop {
+            let first = self.visited_cells.insert(current_cell.repr_hash());
+            self.try_use_gas(Gas::load_cell_price(first))?;
+            if check_special {
+                match current_cell.cell_type() {
+                    CellType::Ordinary => return SliceData::load_cell(current_cell),
+                    CellType::LibraryReference => {
+                        current_cell = self.load_library_cell(current_cell)?;
+                        continue;
+                    }
+                    cell_type => return err!(ExceptionCode::CellUnderflow, "Wrong cell type {}", cell_type)
                 }
-                cell_type => err!(ExceptionCode::CellUnderflow, "Wrong cell type {}", cell_type)
+            } else {
+                return SliceData::load_cell(current_cell)
             }
-        } else {
-            SliceData::load_cell(cell)
         }
     }
 
