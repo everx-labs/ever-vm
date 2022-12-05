@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version: 1.8.77
+### Fixed
+- debug output fix
+
 ## Version: 1.8.71
 
 ### New

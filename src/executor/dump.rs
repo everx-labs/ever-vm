@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -16,7 +16,7 @@ use crate::{
     executor::{Mask, engine::Engine, types::{Instruction, InstructionOptions}},
     stack::StackItem, types::{Exception, Status}
 };
-use ton_types::{error, SliceData, types::ExceptionCode};
+use ton_types::{error, types::ExceptionCode};
 use std::{cmp, str, sync::Arc};
 
 const STR:   u8 = 0x01;
@@ -62,13 +62,8 @@ fn dump_var_impl(item: &StackItem, how: u8, in_tuple: bool) -> String {
     } else if how.bit(STR) {
         let string = match item {
             StackItem::None            => return String::new(),
-            StackItem::Builder(x)      => x.data().into(),
-            StackItem::Cell(x)         => {
-                match SliceData::load_cell_ref(x) {
-                    Ok(slice) => slice.get_bytestring(0),
-                    Err(err) => return err.to_string()
-                }
-            }
+            StackItem::Builder(x)      => x.data().to_vec(),
+            StackItem::Cell(x)         => x.data().to_vec(),
             StackItem::Continuation(x) => x.code().get_bytestring(0),
             StackItem::Integer(x)      => return format!("{}", Arc::as_ref(x)),
             StackItem::Slice(x)        => x.get_bytestring(0),
@@ -235,12 +230,13 @@ where F: FnOnce(&mut Engine, &str) -> Status {
     engine.load_instruction(
         Instruction::new(name).set_opts(InstructionOptions::Bytestring(12, 0, 4, 1))
     )?;
-    if let Ok(string) = str::from_utf8(&engine.cmd.slice().get_bytestring(8)) {
-        if engine.debug() {
-            op(engine, string)?
+    match str::from_utf8(&engine.cmd.slice().get_bytestring(8)) {
+        Ok(string) => {
+            if engine.debug() {
+                op(engine, string)?
+            }
         }
-    } else {
-        return err!(ExceptionCode::InvalidOpcode)
+        Err(err) => return err!(ExceptionCode::InvalidOpcode, "convert from utf-8 error {}", err)
     }
     if how.bit(FLUSH) {
         engine.flush();
@@ -250,24 +246,23 @@ where F: FnOnce(&mut Engine, &str) -> Status {
 
 pub(crate) fn execute_dump_string(engine: &mut Engine) -> Status {
     let length = 1 + (0x0F & engine.last_cmd() as usize);
-    match engine.next_cmd() {
-        Ok(0) if length == 1 => internal_dump_string(engine, "LOGFLUSH", FLUSH, |_, _| {
+    match engine.next_cmd()? {
+        0 if length == 1 => internal_dump_string(engine, "LOGFLUSH", FLUSH, |_, _| {
             Ok(())
         }),
-        Ok(0) => internal_dump_string(engine, "LOGSTR", 0, |engine, string| {
+        0 => internal_dump_string(engine, "LOGSTR", 0, |engine, string| {
             engine.dump(string);
             Ok(())
         }),
-        Ok(1) => internal_dump_string(engine, "PRINTSTR", FLUSH, |engine, string| {
+        1 => internal_dump_string(engine, "PRINTSTR", FLUSH, |engine, string| {
             engine.dump(string);
             Ok(())
         }),
         // TODO: dump s0 as TL-B supported type
-        Ok(_) => internal_dump_string(engine, "DUMPTOSFMT", 0, |engine, string| {
+        _ => internal_dump_string(engine, "DUMPTOSFMT", 0, |engine, string| {
             engine.dump(string);
             Ok(())
-        }),
-        Err(err) => Err(err)
+        })
     }
 }
 

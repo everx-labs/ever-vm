@@ -72,7 +72,7 @@ impl From<&SliceData> for SliceProto {
     }
 }
 
-pub type TraceCallback = dyn Fn(&Engine, &EngineTraceInfo);
+pub type TraceCallback = dyn Fn(&Engine, &EngineTraceInfo) + Send + Sync;
 
 pub struct Engine {
     pub(in crate::executor) cc: ContinuationData,
@@ -92,7 +92,7 @@ pub struct Engine {
     cmd_code: SliceProto, // start of current cmd
     last_cmd: u8,
     trace: u8,
-    trace_callback: Option<Box<TraceCallback>>,
+    trace_callback: Option<Arc<TraceCallback>>,
     log_string: Option<&'static str>,
     flags: u64,
     capabilities: u64
@@ -214,14 +214,14 @@ impl Engine {
             || log::log_enabled!(target: "tvm", log::Level::Info)
             || log::log_enabled!(target: "tvm", log::Level::Error)
             || log::log_enabled!(target: "tvm", log::Level::Warn);
-        let trace_callback: Option<Box<TraceCallback>> = if !log_enabled {
+        let trace_callback: Option<Arc<TraceCallback>> = if !log_enabled {
             None
         } else if cfg!(feature="fift_check") {
-            Some(Box::new(Self::fift_trace_callback))
+            Some(Arc::new(Self::fift_trace_callback))
         } else if cfg!(feature="verbose") {
-            Some(Box::new(Self::default_trace_callback))
+            Some(Arc::new(Self::default_trace_callback))
         } else {
-            Some(Box::new(Self::simple_trace_callback))
+            Some(Arc::new(Self::simple_trace_callback))
         };
         Engine {
             cc: ContinuationData::new_empty(),
@@ -332,16 +332,17 @@ impl Engine {
     }
 
     fn trace_info(&self, info_type: EngineTraceInfoType, gas: i64, log_string: Option<String>) {
-        if self.is_trace_enabled() {
-            let default = Box::new(Self::default_trace_callback) as Box<dyn Fn(&Engine, &EngineTraceInfo)>;
-            let callback = self.trace_callback.as_ref()
-                .unwrap_or(&default);
+        if let Some(trace_callback) = self.trace_callback.as_ref() {
             // bigint param has been withdrawn during execution, so take it from the stack
             let cmd_str = if self.cmd.biginteger_raw().is_some() {
-                format!("{}{} {}", self.cmd.proto.name_prefix.unwrap_or(""),
+                format!("{}{} {}", self.cmd.proto.name_prefix.unwrap_or_default(),
                     self.cmd.proto.name, self.cc.stack.get(0).as_integer().unwrap_or(&IntegerData::default()))
+            } else if let Some(string) = log_string {
+                string
+            } else if let Some(string) = self.cmd.dump_with_params() {
+                string
             } else {
-                log_string.or_else(|| self.cmd.dump_with_params()).unwrap_or_default()
+                String::new()
             };
             let info = EngineTraceInfo {
                 info_type,
@@ -352,7 +353,7 @@ impl Engine {
                 gas_used: self.gas_used(),
                 gas_cmd: self.gas_used() - gas,
             };
-            callback(self, &info);
+            trace_callback(self, &info);
         }
     }
 
@@ -401,7 +402,7 @@ impl Engine {
             }
         } else if info.info_type == EngineTraceInfoType::Exception {
             if self.trace_bit(Engine::TRACE_CODE) {
-                log::info!(target: "tvm", "{}\n", info.cmd_str);
+                log::info!(target: "tvm", "BAD_CODE: {}\n", info.cmd_str);
             }
             if self.trace_bit(Engine::TRACE_STACK) {
                 log::info!(target: "tvm", " [ {} ] \n", self.get_stack_result_fift());
@@ -493,7 +494,7 @@ impl Engine {
             }
         } else if info.info_type == EngineTraceInfoType::Exception {
             if enine.trace_bit(Engine::TRACE_CODE) {
-                log::info!(target: "tvm", "{} ({}) {}\n", info.step, info.gas_cmd, info.cmd_str);
+                log::info!(target: "tvm", "{} ({}) BAD_CODE: {}\n", info.step, info.gas_cmd, info.cmd_str);
             }
             if enine.trace_bit(Engine::TRACE_STACK) {
                 log::info!(target: "tvm", " [ {} ] \n", Self::dump_stack_result(info.stack));
@@ -595,8 +596,8 @@ impl Engine {
                 let mut cond = ContinuationData::with_code(cond);
                 let mut while_ = ContinuationData::move_without_stack(&mut self.cc, body);
                 while_.savelist.put_opt(0, self.ctrl_mut(0)?)?;
-                cond.savelist.put_opt(0, &mut StackItem::Continuation(Arc::new(while_)))?;
-                self.ctrls.put_opt(0, &mut StackItem::Continuation(Arc::new(cond)))?;
+                cond.savelist.put_opt(0, &mut StackItem::continuation(while_))?;
+                self.ctrls.put_opt(0, &mut StackItem::continuation(cond))?;
             }
             Ok(false) => {
                 self.log_string = Some("RET FROM WHILE");
@@ -613,7 +614,7 @@ impl Engine {
                 self.log_string = Some("NEXT REPEAT ITERATION");
                 let mut repeat = ContinuationData::move_without_stack(&mut self.cc, body);
                 repeat.savelist.put_opt(0, self.ctrl_mut(0)?)?;
-                self.ctrls.put_opt(0, &mut StackItem::Continuation(Arc::new(repeat)))?;
+                self.ctrls.put_opt(0, &mut StackItem::continuation(repeat))?;
             } else {
                 self.log_string = Some("RET FROM REPEAT");
                 switch(self, ctrl!(0))?;
@@ -627,7 +628,7 @@ impl Engine {
                 self.log_string = Some("NEXT UNTIL ITERATION");
                 let mut until = ContinuationData::move_without_stack(&mut self.cc, body);
                 until.savelist.put_opt(0, self.ctrl_mut(0)?)?;
-                self.ctrls.put_opt(0, &mut StackItem::Continuation(Arc::new(until)))?;
+                self.ctrls.put_opt(0, &mut StackItem::continuation(until))?;
             }
             Ok(false) => {
                 self.log_string = Some("RET FROM UNTIL");
@@ -640,7 +641,7 @@ impl Engine {
     fn step_again_loop(&mut self, body: SliceData) -> Result<Option<i32>> {
         self.log_string = Some("NEXT AGAIN ITERATION");
         let again = ContinuationData::move_without_stack(&mut self.cc, body);
-        self.ctrls.put_opt(0, &mut StackItem::Continuation(Arc::new(again)))?;
+        self.ctrls.put_opt(0, &mut StackItem::continuation(again))?;
         Ok(None)
     }
 
@@ -783,8 +784,12 @@ impl Engine {
         self.trace = trace_mask
     }
 
-    pub fn set_trace_callback(&mut self, callback: impl Fn(&Engine, &EngineTraceInfo) + 'static) {
-        self.trace_callback = Some(Box::new(callback));
+    pub fn set_trace_callback(&mut self, callback: impl Fn(&Engine, &EngineTraceInfo) + Send + Sync + 'static) {
+        self.trace_callback = Some(Arc::new(callback));
+    }
+
+    pub fn set_arc_trace_callback(&mut self, callback: Arc<TraceCallback>) {
+        self.trace_callback = Some(callback);
     }
 
     pub fn trace_bit(&self, trace_mask: u8) -> bool {
@@ -859,7 +864,7 @@ impl Engine {
     }
 
     pub(in crate::executor) fn debug(&self) -> bool {
-        self.debug_on > 0 && log::log_enabled!(target: "tvm", log::Level::Trace)
+        self.debug_on > 0 && self.is_trace_enabled()
     }
 
     pub(in crate::executor) fn dump(&mut self, dump: &str) {
@@ -1268,13 +1273,13 @@ impl Engine {
             switch(self, ctrl!(2))?;
         } else if let Some(number) = exception.is_normal_termination() {
             let cont = ContinuationData::with_type(ContinuationType::Quit(number));
-            self.cmd.push_var(StackItem::Continuation(Arc::new(cont)));
+            self.cmd.push_var(StackItem::continuation(cont));
             self.cc.stack.push(exception.value);
             self.cmd.vars[n].as_continuation_mut()?.nargs = 1;
             switch(self, var!(n))?;
         } else {
-            self.trace_info(EngineTraceInfoType::Exception, self.gas_used(), Some(format!("UNHANDLED EXCEPTION: {}", err)));
-            log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code_string());
+            let log_string = Some(format!("UNHANDLED EXCEPTION: {}", err));
+            self.trace_info(EngineTraceInfoType::Exception, self.gas_used(), log_string);
             return Err(err)
         }
         Ok(())
@@ -1290,16 +1295,11 @@ impl Engine {
                 self.last_cmd = cmd;
                 Ok(cmd)
             }
-            Err(_) => {
-                // TODO: combine error! and err!
-                // panic!("n >= 8 is expected, actual value: {}", self.code.remaining_bits());
-                log::error!(
-                    target: "tvm",
-                    "remaining bits expected >= 8, but actual value is: {}\n",
-                    self.cc.code().remaining_bits()
-                );
-                err!(ExceptionCode::InvalidOpcode)
-            }
+            Err(_) => err!(
+                ExceptionCode::InvalidOpcode,
+                "remaining bits expected >= 8, but actual value is: {}",
+                self.cc.code().remaining_bits()
+            )
         }
     }
 
@@ -1345,7 +1345,7 @@ impl Engine {
         };
         let mut t1_items = t1.as_tuple_mut()?;
         match t1_items.get_mut(6) {
-            Some(v) => *v = StackItem::Integer(Arc::new(rand)),
+            Some(v) => *v = StackItem::int(rand),
             None => return err!(ExceptionCode::RangeCheckError, "set tuple index is {} but length is {}", 6, t1_items.len())
         }
         self.use_gas(Gas::tuple_gas_price(t1_items.len()));
