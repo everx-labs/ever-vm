@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -26,7 +26,7 @@ use crate::{
     },
     types::{Exception, Status}
 };
-use std::{cmp::Ordering, mem, sync::Arc};
+use std::{cmp::Ordering, mem};
 use ton_types::{error, Result, types::{Bitmask, ExceptionCode}};
 
 // Common definitions *********************************************************
@@ -370,9 +370,9 @@ where
         on_nan_parameter!(T)?;
         engine.cc.stack.push(var);
     } else if var.as_integer()?.is_neg() {
-        engine.cc.stack.push(StackItem::Integer(Arc::new(
+        engine.cc.stack.push(StackItem::int(
             var.as_integer()?.neg::<T>()?
-        )));
+        ));
     } else {
         engine.cc.stack.push(var);
     }
@@ -562,10 +562,10 @@ where
     };
 
     if mode.need_quotient() {
-        engine.cc.stack.push(StackItem::Integer(Arc::new(q)));
+        engine.cc.stack.push(StackItem::int(q));
     }
     if mode.need_remainder() {
-        engine.cc.stack.push(StackItem::Integer(Arc::new(r)));
+        engine.cc.stack.push(StackItem::int(r));
     }
     Ok(())
 }

@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -142,8 +142,8 @@ impl StackItem {
     /// new stack item as bool
     pub fn boolean(boolean: bool) -> Self {
         match boolean {
-            true => StackItem::Integer(Arc::new(IntegerData::minus_one())),
-            false => StackItem::Integer(Arc::new(IntegerData::zero())),
+            true => StackItem::int(IntegerData::minus_one()),
+            false => StackItem::int(IntegerData::zero()),
         }
     }
 
@@ -618,12 +618,12 @@ impl Stack {
     }
     /// pushes a builder as new var to stack
     pub fn push_builder(&mut self, item: BuilderData) -> &mut Stack {
-        self.storage.push(StackItem::Builder(Arc::new(item)));
+        self.storage.push(StackItem::builder(item));
         self
     }
     /// pushes a continuation as new var to stack
     pub fn push_cont(&mut self, item: ContinuationData) -> &mut Stack {
-        self.storage.push(StackItem::Continuation(Arc::new(item)));
+        self.storage.push(StackItem::continuation(item));
         self
     }
     /// pushes a vector as tuple

@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -32,7 +32,6 @@ use ton_block::{
     Deserializable, GlobalCapabilities, MsgAddressInt, ACTION_CHANGE_LIB, ACTION_COPYLEFT,
     ACTION_RESERVE, ACTION_SEND_MSG, ACTION_SET_CODE,
 };
-use std::sync::Arc;
 use ton_types::{
     error, types::ExceptionCode, BuilderData, Cell, GasConsumer, IBitstring, Result, SliceData,
 };
@@ -227,7 +226,7 @@ pub(super) fn execute_rewrite_std_addr<T: OperationBehavior>(engine: &mut Engine
                 }
             };
             let x = tuple[2].clone();
-            Ok(vec![x, StackItem::Integer(Arc::new(y))])
+            Ok(vec![x, StackItem::int(y)])
         } else {
             err!(ExceptionCode::CellUnderflow)
         }

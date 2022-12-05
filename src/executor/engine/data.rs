@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -15,7 +15,6 @@ use crate::{
     executor::{engine::Engine, microcode::{VAR, CELL, SLICE, BUILDER, CONTINUATION}},
     stack::{StackItem, continuation::ContinuationData}, types::Status
 };
-use std::sync::Arc;
 use ton_types::{fail, GasConsumer};
 
 // Utilities ******************************************************************
@@ -42,7 +41,7 @@ fn convert_any(engine: &mut Engine, x: u16, to: u16, from: u16) -> Status {
                     let cell = var.as_cell()?.clone();
                     let slice = engine.load_cell(cell)?;
                     match to {
-                        CONTINUATION => StackItem::Continuation(Arc::new(ContinuationData::with_code(slice))),
+                        CONTINUATION => StackItem::continuation(ContinuationData::with_code(slice)),
                         SLICE => StackItem::Slice(slice),
                         _ => StackItem::None
                     }
@@ -51,7 +50,7 @@ fn convert_any(engine: &mut Engine, x: u16, to: u16, from: u16) -> Status {
                     let var = engine.cmd.var(storage_index!(x));
                     let slice = var.as_slice()?.clone();
                     match to {
-                        CONTINUATION => StackItem::Continuation(Arc::new(ContinuationData::with_code(slice))),
+                        CONTINUATION => StackItem::continuation(ContinuationData::with_code(slice)),
                         SLICE => StackItem::Slice(slice),
                         CELL => StackItem::Cell(slice.cell().clone()),
                         _ => StackItem::None

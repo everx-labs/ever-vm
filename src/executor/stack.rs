@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -27,7 +27,7 @@ use crate::{
     },
     types::{Exception, Status}
 };
-use std::{cmp, sync::Arc};
+use std::cmp;
 use ton_types::{error, fail, types::ExceptionCode};
 
 // Stack manipulation *********************************************************
@@ -419,7 +419,7 @@ pub(super) fn execute_pushint_big(engine: &mut Engine) -> Status {
         Instruction::new("PUSHINT").set_opts(InstructionOptions::BigInteger)
     )?;
     let num = engine.cmd.biginteger_mut();
-    engine.cc.stack.push(StackItem::Integer(Arc::new(num.withdraw())));
+    engine.cc.stack.push(StackItem::int(num.withdraw()));
     Ok(())
 }
 
@@ -441,10 +441,10 @@ pub(super) fn execute_pushnegpow2(engine: &mut Engine) -> Status {
             )
     )?;
     let power = engine.cmd.length();
-    engine.cc.stack.push(StackItem::Integer(Arc::new(
+    engine.cc.stack.push(StackItem::int(
         IntegerData::minus_one()
             .shl::<Signaling>(power)?
-    )));
+    ));
     Ok(())
 }
 
@@ -454,9 +454,9 @@ pub(super) fn execute_pushpow2(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("PUSHPOW2")
     )?;
-    engine.cc.stack.push(StackItem::Integer(Arc::new(
+    engine.cc.stack.push(StackItem::int(
         IntegerData::one().shl::<Signaling>(power as usize + 1)?
-    )));
+    ));
     Ok(())
 }
 
@@ -469,13 +469,13 @@ pub(super) fn execute_pushpow2dec(engine: &mut Engine) -> Status {
             )
     )?;
     let power = engine.cmd.length();
-    engine.cc.stack.push(StackItem::Integer(Arc::new(
+    engine.cc.stack.push(StackItem::int(
         IntegerData::one()
             .shl::<Signaling>(power - 1)?
             .sub::<Signaling>(&IntegerData::one())?
             .shl::<Signaling>(1)?
             .add::<Signaling>(&IntegerData::one())?
-    )));
+    ));
     Ok(())
 }
 

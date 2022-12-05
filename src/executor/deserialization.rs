@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -34,7 +34,7 @@ use crate::{
 use ton_types::{
     Cell, CellType, error, GasConsumer, Result, SliceData, ExceptionCode, UInt256
 };
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
 
 const QUIET: u8 = 0x01; // quiet variant
 const STACK: u8 = 0x02; // length of int in stack
@@ -104,7 +104,7 @@ fn ld_int<T: Encoding>(engine: &mut Engine, name: &'static str, mut len: usize, 
     proc_slice(engine, len, how,
         |slice, _| {
             let value = T::new(len).deserialize(slice.get_next_bits(len)?.as_slice());
-            Ok(StackItem::Integer(Arc::new(value)))
+            Ok(StackItem::int(value))
         }
     )
 }
@@ -334,8 +334,8 @@ pub fn execute_plduz(engine: &mut Engine) -> Status {
     }
     let encoder = UnsignedIntegerBigEndianEncoding::new(l);
     let value = encoder.deserialize(&data);
-    engine.cc.stack.push(StackItem::Slice(slice));
-    engine.cc.stack.push(StackItem::Integer(Arc::new(value)));
+    engine.cc.stack.push(StackItem::slice(slice));
+    engine.cc.stack.push(StackItem::int(value));
     Ok(())
 }
 
