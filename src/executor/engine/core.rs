@@ -28,7 +28,8 @@ use crate::{
     smart_contract_info::SmartContractInfo,
     types::{Exception, ResultMut, ResultOpt, ResultRef, Status}
 };
-use std::{collections::HashSet, sync::{Arc, Mutex}, ops::Range};
+use std::{sync::{Arc, Mutex}, ops::Range};
+use std::collections::HashMap;
 use ton_types::{
     BuilderData, Cell, CellType, error, GasConsumer, Result, SliceData, HashmapE,
     types::{ExceptionCode, UInt256}, IBitstring,
@@ -81,7 +82,8 @@ pub struct Engine {
     pub(in crate::executor) libraries: Vec<HashmapE>, // 256 bit dictionaries
     pub(in crate::executor) index_provider: Option<Arc<dyn IndexProvider>>,
     pub(in crate::executor) modifiers: BehaviorModifiers,
-    visited_cells: HashSet<UInt256>,
+    visited_cells: HashMap<UInt256, SliceData>,
+    visited_exotic_cells: HashMap<UInt256, SliceData>,
     cstate: CommittedState,
     time: u64,
     gas: Gas,
@@ -230,7 +232,8 @@ impl Engine {
             libraries: Vec::new(),
             index_provider: None,
             modifiers: BehaviorModifiers::default(),
-            visited_cells: HashSet::new(),
+            visited_cells: HashMap::new(),
+            visited_exotic_cells: HashMap::new(),
             cstate: CommittedState::new_empty(),
             time: 0,
             gas: Gas::empty(),
@@ -695,25 +698,39 @@ impl Engine {
         err!(ExceptionCode::CellUnderflow, "Libraries do not contain code with hash {:x}", hash)
     }
 
-    /// Loads cell to slice cheking in precashed map
-    pub fn load_hashed_cell(&mut self, cell: Cell, check_special: bool) -> Result<SliceData> {
-        let mut current_cell = cell;
-        loop {
-            let first = self.visited_cells.insert(current_cell.repr_hash());
-            self.try_use_gas(Gas::load_cell_price(first))?;
-            if check_special {
-                match current_cell.cell_type() {
-                    CellType::Ordinary => return SliceData::load_cell(current_cell),
-                    CellType::LibraryReference => {
-                        current_cell = self.load_library_cell(current_cell)?;
-                        continue;
-                    }
-                    cell_type => return err!(ExceptionCode::CellUnderflow, "Wrong cell type {}", cell_type)
+    /// Loads cell to slice checking in precashed map
+    pub fn load_hashed_cell(&mut self, mut cell: Cell, resolve_special: bool) -> Result<SliceData> {
+        let mut previous_hashes = Vec::new();
+        let slice = loop {
+            let hash = cell.repr_hash();
+            if !resolve_special || cell.cell_type() == CellType::Ordinary {
+                if let Some(slice) = self.visited_cells.get(&hash).cloned() {
+                    self.try_use_gas(Gas::load_cell_price(false))?;
+                    break slice;
+                } else {
+                    self.try_use_gas(Gas::load_cell_price(true))?;
+                    let slice = SliceData::load_cell(cell)?;
+                    self.visited_cells.insert(hash, slice.clone());
+                    break slice;
+                }
+            } else if cell.cell_type() == CellType::LibraryReference {
+                if let Some(slice) = self.visited_exotic_cells.get(&hash).cloned() {
+                    self.try_use_gas(Gas::load_cell_price(false))?;
+                    break slice;
+                } else {
+                    self.try_use_gas(Gas::load_cell_price(true))?;
+                    previous_hashes.push(hash);
+                    cell = self.load_library_cell(cell)?;
+                    continue;
                 }
             } else {
-                return SliceData::load_cell(current_cell)
+                return err!(ExceptionCode::CellUnderflow, "Wrong resolving cell type {}", cell.cell_type())
             }
+        };
+        for hash in previous_hashes {
+            self.visited_exotic_cells.insert(hash, slice.clone());
         }
+        Ok(slice)
     }
 
     pub fn get_committed_state(&self) -> &CommittedState {

@@ -190,6 +190,8 @@ pub fn execute_xload(engine: &mut Engine) -> Status {
     fetch_stack(engine, 1)?;
     // now it does nothing as Durov's code
     let cell = engine.cmd.var(0).as_cell()?.clone();
+    let slice = engine.load_cell(cell)?;
+    let cell = slice.into_cell();
     engine.cc.stack.push(StackItem::Cell(cell));
     Ok(())
 }
@@ -202,8 +204,14 @@ pub fn execute_xloadq(engine: &mut Engine) -> Status {
     fetch_stack(engine, 1)?;
     // now it does nothing as Durov's code
     let cell = engine.cmd.var(0).as_cell()?.clone();
-    engine.cc.stack.push(StackItem::Cell(cell));
-    engine.cc.stack.push(boolean!(true));
+    if let Ok(slice) = engine.load_cell(cell.clone()) {
+        let cell = slice.into_cell();
+        engine.cc.stack.push(StackItem::Cell(cell));
+        engine.cc.stack.push(boolean!(true));
+    } else {
+        engine.cc.stack.push(StackItem::Cell(cell));
+        engine.cc.stack.push(boolean!(false));
+    }
     Ok(())
 }
 
@@ -876,7 +884,7 @@ impl DataCounter {
         }
         self.max -= 1;
         self.cells += 1;
-        self.count_slice(engine.load_cell(cell)?, engine)
+        self.count_slice(SliceData::load_cell(cell)?, engine)
     }
     fn count_slice(&mut self, slice: SliceData, engine: &mut Engine) -> Result<bool> {
         let refs = slice.remaining_references();
