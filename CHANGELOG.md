@@ -2,9 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
-## Version: 1.8.77
+## Version: 1.8.79
+
+### Fixed
+ - Adapt some functions (CDATASIZE, XCTOS, XLOAD, CTOS) to library cells
+
+## Version: 1.8.78
 ### Fixed
 - debug output fix
+
+## Version: 1.8.77
+
+### Fixed
+ - Stack overflow during load library cell
 
 ## Version: 1.8.71
 
