@@ -74,8 +74,8 @@ pub(super) fn execute_sha256u(engine: &mut Engine) -> Status {
     }
 }
 
-//CHKSIGNS(d s k–?)
-// checks whethersis a valid Ed25519-signature of the data portion of Slice d using public key k,
+// CHKSIGNS (d s k – ?)
+// checks whether s is a valid Ed25519-signature of the data portion of Slice d using public key k,
 // similarly to CHKSIGNU. If the bit length of Slice d is not divisible by eight,
 // throws a cell underflow exception. The verification of Ed25519 signatures is the standard one,
 // with sha256 used to reduce d to the 256-bit number that is actually signed.
@@ -84,8 +84,8 @@ pub(super) fn execute_chksigns(engine: &mut Engine) -> Status {
     fetch_stack(engine, 3)?;
     let pub_key = engine.cmd.var(0).as_integer()?
         .as_builder::<UnsignedIntegerBigEndianEncoding>(PUBLIC_KEY_BITS)?;
-    if (engine.cmd.var(1).as_slice()?.remaining_bits() < SIGNATURE_BITS) &&
-        (engine.cmd.var(2).as_slice()?.remaining_bits() % 8 != 0) {
+    if engine.cmd.var(1).as_slice()?.remaining_bits() < SIGNATURE_BITS ||
+       engine.cmd.var(2).as_slice()?.remaining_bits() % 8 != 0 {
         return err!(ExceptionCode::CellUnderflow)
     }
     let pub_key = ed25519_dalek::PublicKey::from_bytes(
