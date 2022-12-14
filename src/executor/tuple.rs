@@ -174,8 +174,7 @@ fn untuple(engine: &mut Engine, name: &'static str, how: u8) -> Status {
         n = len;
     }
     engine.use_gas(Gas::tuple_gas_price(n));
-    let mut vars: Vec<StackItem> = engine.cmd.var(params - 1).as_tuple()?.iter().take(n)
-        .cloned().collect();
+    let mut vars = engine.cmd.var_mut(params - 1).withdraw_tuple_part(n)?;
     vars.drain(..).for_each(|v| {engine.cc.stack.push(v);});
     if how.bit(COUNT) {
         engine.cc.stack.push(int!(len));

@@ -13,13 +13,12 @@
 
 use crate::{
     error::TvmError,
-    executor::gas::gas_state::Gas,
     stack::{SliceData, Stack, StackItem, savelist::SaveList},
     types::{Exception, ResultOpt}
 };
 use std::{fmt, mem};
-use ton_types::{BuilderData, Cell, IBitstring, Result, error, types::ExceptionCode};
-use super::{slice_serialize, slice_deserialize};
+use ton_types::{BuilderData, Cell, IBitstring, Result, error, types::ExceptionCode, GasConsumer};
+use super::{slice_serialize, slice_deserialize, items_deserialize, items_serialize};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ContinuationType {
@@ -139,13 +138,13 @@ impl ContinuationData {
             .map_err(|_| exception!(ExceptionCode::InvalidOpcode))
     }
 
-    pub fn serialize(&self) -> Result<(BuilderData, i64)> {
-        let mut gas = 0;
+    pub fn serialize(&self, gas_consumer: &mut dyn GasConsumer) -> Result<BuilderData> {
         let mut builder = BuilderData::new();
         match &self.type_of {
             ContinuationType::AgainLoopBody(body) => {
                 builder.append_bits(0xd, 4)?;
-                builder.append_reference_cell(slice_serialize(body)?.into_cell()?);
+                let child_cell = gas_consumer.finalize_cell(slice_serialize(body)?)?;
+                builder.checked_append_reference(child_cell)?;
             }
             ContinuationType::TryCatch => {
                 builder.append_bits(0x9, 4)?;
@@ -161,133 +160,102 @@ impl ContinuationData {
                 builder.append_bits(0x8, 4)?;
                 builder.append_bits(*exit_code as usize, 32)?;
             }
-            ContinuationType::RepeatLoopBody(code, counter) => {
+            ContinuationType::RepeatLoopBody(body, counter) => {
                 builder.append_bits(0xe, 4)?;
-                builder.append_reference_cell(slice_serialize(code)?.into_cell()?);
+                let child_cell = gas_consumer.finalize_cell(slice_serialize(body)?)?;
+                builder.checked_append_reference(child_cell)?;
                 builder.append_bits(*counter as usize, 32)?;
             }
             ContinuationType::UntilLoopCondition(body) => {
                 builder.append_bits(0xa, 4)?;
-                builder.append_reference_cell(slice_serialize(body)?.into_cell()?);
+                let child_cell = gas_consumer.finalize_cell(slice_serialize(body)?)?;
+                builder.checked_append_reference(child_cell)?;
             }
             ContinuationType::WhileLoopCondition(body, cond) => {
                 builder.append_bits(0xc, 4)?;
-                builder.append_reference_cell(slice_serialize(cond)?.into_cell()?);
-                builder.append_reference_cell(slice_serialize(body)?.into_cell()?);
+                let mut child_cell = slice_serialize(cond)?;
+                child_cell.append_builder(&slice_serialize(body)?)?;
+                let child_cell = gas_consumer.finalize_cell(child_cell)?;
+                builder.checked_append_reference(child_cell)?;
             }
         }
-
-        let mut stack = BuilderData::new();
-        stack.append_bits(self.stack.depth(), 24)?;
-        let mut stack_list = BuilderData::new();
-        for item in self.stack.iter().rev() {
-            let mut cons = BuilderData::new();
-            let (serialized, gas2) = item.serialize()?;
-            gas += gas2;
-            cons.append_builder(&serialized)?;
-            cons.append_reference_cell(stack_list.into_cell()?);
-            gas += Gas::finalize_price();
-            stack_list = cons;
-        }
-        stack.append_builder(&stack_list)?;
+        // can be one reference
 
         builder.append_bits(self.nargs as usize, 22)?;
-        if self.stack.depth() == 0 {
+        if self.stack.is_empty() {
             builder.append_bit_zero()?;
         } else {
             builder.append_bit_one()?;
-            builder.append_builder(&stack)?;
+            let stack = items_serialize(&self.stack.storage, 24, gas_consumer)?;
+            builder.append_builder(&stack)?; // second ref
         }
-        let (serialized, gas2) = self.savelist.serialize()?;
-        gas += gas2;
-        builder.append_builder(&serialized)?;
+        let savelist = self.savelist.serialize(gas_consumer)?;
+        builder.append_builder(&savelist)?; // third ref
         builder.append_bits(0, 16)?; // codepage
-        builder.append_builder(&slice_serialize(&self.code)?)?;
-        Ok((builder, gas))
+        builder.append_builder(&slice_serialize(&self.code)?)?; // last ref
+        Ok(builder)
     }
 
-    pub fn deserialize(slice: &mut SliceData) -> Result<(Self, i64)> {
-        let mut gas = 0;
+    pub fn deserialize(slice: &mut SliceData, gas_consumer: &mut dyn GasConsumer) -> Result<Self> {
         let cont_type = match slice.get_next_int(2)? {
-            0 => Ok(ContinuationType::Ordinary),
-            1 => Ok(ContinuationType::TryCatch),
+            0 => ContinuationType::Ordinary,
+            1 => ContinuationType::TryCatch,
             2 => {
                 match slice.get_next_int(2)? {
                     0 => {
                         let exit_code = slice.get_next_int(32)? as i32;
-                        Ok(ContinuationType::Quit(exit_code))
+                        ContinuationType::Quit(exit_code)
                     }
                     2 => {
-                        let mut body_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
-                        let body: SliceData = slice_deserialize(&mut body_slice)?;
-                        Ok(ContinuationType::UntilLoopCondition(body))
+                        let mut child_slice = gas_consumer.load_cell(slice.checked_drain_reference()?)?;
+                        let body = slice_deserialize(&mut child_slice)?;
+                        ContinuationType::UntilLoopCondition(body)
                     }
-                    _ => err!(ExceptionCode::UnknownError)
+                    typ => return err!(ExceptionCode::UnknownError, "wrong continuation type 10{:2b}", typ)
                 }
-            },
+            }
             3 => {
                 match slice.get_next_int(2)? {
                     0 => {
-                        let mut cond_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
-                        let cond: SliceData = slice_deserialize(&mut cond_slice)?;
-                        gas += Gas::load_cell_price(true);
-                        let mut body_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
-                        let body: SliceData = slice_deserialize(&mut body_slice)?;
-                        gas += Gas::load_cell_price(true);
-                        Ok(ContinuationType::WhileLoopCondition(body, cond))
+                        let mut child_slice = gas_consumer.load_cell(slice.checked_drain_reference()?)?;
+                        let cond = slice_deserialize(&mut child_slice)?;
+                        let body = slice_deserialize(&mut child_slice)?;
+                        ContinuationType::WhileLoopCondition(body, cond)
                     }
                     1 => {
-                        let mut body_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
-                        let body: SliceData = slice_deserialize(&mut body_slice)?;
-                        Ok(ContinuationType::AgainLoopBody(body))
+                        let mut child_slice = gas_consumer.load_cell(slice.checked_drain_reference()?)?;
+                        let body = slice_deserialize(&mut child_slice)?;
+                        ContinuationType::AgainLoopBody(body)
                     }
                     2 => {
-                        let mut code_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
-                        let code: SliceData = slice_deserialize(&mut code_slice)?;
+                        let mut child_slice = gas_consumer.load_cell(slice.checked_drain_reference()?)?;
+                        let code = slice_deserialize(&mut child_slice)?;
                         let counter = slice.get_next_int(32)? as isize;
-                        Ok(ContinuationType::RepeatLoopBody(code, counter))
+                        ContinuationType::RepeatLoopBody(code, counter)
                     }
                     3 => {
                         let value = slice.get_next_int(32)? as i32;
-                        Ok(ContinuationType::PushInt(value))
+                        ContinuationType::PushInt(value)
                     }
-                    _ => err!(ExceptionCode::UnknownError)
+                    typ => return err!(ExceptionCode::UnknownError, "wrong continuation type 10{:2b}", typ)
                 }
             }
-            _ => err!(ExceptionCode::UnknownError)
-        }?;
+            typ => return err!(ExceptionCode::UnknownError, "wrong continuation type {:2b}", typ)
+        };
 
         let nargs = match slice.get_next_int(22)? as isize {
             0x3fffff => -1,
             x => x
         };
-        let stack = match slice.get_next_bit()? {
-            false => vec![],
-            true => {
-                let depth = slice.get_next_int(24)? as usize;
-                let mut stack = vec![];
-                if depth > 0 {
-                    let (item, gas2) = StackItem::deserialize(slice)?;
-                    gas += gas2;
-                    stack.push(item);
-                    let mut cell = slice.checked_drain_reference()?;
-                    for _ in 1..depth {
-                        let mut slice = SliceData::load_cell(cell)?;
-                        let (item, gas2) = StackItem::deserialize(&mut slice)?;
-                        stack.push(item);
-                        gas += gas2;
-                        cell = slice.checked_drain_reference().unwrap_or_default();
-                    }
-                }
-                stack
-            }
+        let stack = if slice.get_next_bit()? {
+            items_deserialize(slice, 24, gas_consumer)?
+        } else {
+            vec!()
         };
-        let (save, gas2) = SaveList::deserialize(slice)?;
-        gas += gas2;
+        let save = SaveList::deserialize(slice, gas_consumer)?;
         slice.get_next_int(16)?; // codepage
         let code = slice_deserialize(slice)?;
-        gas += Gas::load_cell_price(true);
-        Ok((ContinuationData {
+        Ok(ContinuationData {
             code,
             nargs,
             savelist: save,
@@ -295,7 +263,7 @@ impl ContinuationData {
                 storage: stack
             },
             type_of: cont_type
-        }, gas))
+        })
     }
 }
 

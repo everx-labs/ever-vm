@@ -120,10 +120,10 @@ pub fn execute_endxc(engine: &mut Engine) -> Status {
     let mut b = engine.cmd.var_mut(1).as_builder_mut()?;
     if special {
         if b.length_in_bits() < 8 {
-            engine.use_gas(Gas::finalize_price());
+            engine.try_use_gas(Gas::finalize_price())?;
             return err!(ExceptionCode::CellOverflow, "Not enough data for a special cell")
         }
-        let cell_type = CellType::from(b.data()[0]);
+        let cell_type = CellType::try_from(b.data()[0])?;
         b.set_type(cell_type);
     }
     let cell = engine.finalize_cell(b)?;
@@ -149,7 +149,7 @@ fn store_data(engine: &mut Engine, var: usize, x: Result<BuilderData>, quiet: bo
                 let mut b = engine.cmd.var_mut(var).as_builder_mut()?;
                 b.append_builder(&x)?;
                 if finalize {
-                    engine.use_gas(Gas::finalize_price());
+                    engine.try_use_gas(Gas::finalize_price())?;
                 }
                 engine.cc.stack.push_builder(b);
                 0
@@ -709,7 +709,7 @@ pub fn execute_stcont(engine: &mut Engine) -> Status {
     engine.load_instruction(Instruction::new("STCONT"))?;
     fetch_stack(engine, 2)?;
     engine.cmd.var(0).as_builder()?;
-    let (cont, gas) = engine.cmd.var(1).as_continuation()?.serialize()?;
-    engine.use_gas(gas);
+    engine.cmd.var(1).as_continuation()?;
+    let cont = engine.cmd.var_mut(1).withdraw().as_continuation()?.serialize(engine)?;
     store_data(engine, 0, Ok(cont), false, false)
 }
