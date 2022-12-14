@@ -53,10 +53,10 @@ fn get_bigint(slice: &SliceData) -> BigInt {
 fn add_action(engine: &mut Engine, action_id: u32, cell: Option<Cell>, suffix: BuilderData) -> Status {
     let mut new_action = BuilderData::new();
     let c5 = engine.ctrls.get(5).ok_or(ExceptionCode::TypeCheckError)?;
-    new_action.append_reference_cell(c5.as_cell()?.clone());
+    new_action.checked_append_reference(c5.as_cell()?.clone())?;
     new_action.append_u32(action_id)?.append_builder(&suffix)?;
     if let Some(cell) = cell {
-        new_action.append_reference_cell(cell);
+        new_action.checked_append_reference(cell)?;
     }
     let cell = engine.finalize_cell(new_action)?;
     engine.ctrls.put(5, &mut StackItem::Cell(cell))?;

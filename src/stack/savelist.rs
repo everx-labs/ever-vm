@@ -11,9 +11,9 @@
 * limitations under the License.
 */
 
-use crate::{error::TvmError, executor::gas::gas_state::Gas, stack::StackItem, types::{Exception, ResultOpt}};
+use crate::{error::TvmError, stack::StackItem, types::{Exception, ResultOpt}};
 use std::fmt;
-use ton_types::{BuilderData, HashmapE, HashmapType, IBitstring, Result, SliceData, error, types::ExceptionCode};
+use ton_types::{BuilderData, HashmapE, HashmapType, IBitstring, Result, SliceData, error, types::ExceptionCode, GasConsumer};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SaveList {
@@ -83,48 +83,43 @@ impl SaveList {
     pub fn remove(&mut self, index: usize) -> Option<StackItem> {
         std::mem::replace(&mut self.storage[Self::adjust(index)], None)
     }
-    pub fn serialize(&self) -> Result<(BuilderData, i64)> {
-        let mut gas = 0;
+    pub fn serialize(&self, gas_consumer: &mut dyn GasConsumer) -> Result<BuilderData> {
         let mut dict = HashmapE::with_bit_len(4);
         for index in 0..Self::NUMREGS {
             if let Some(ref item) = self.storage[index] {
                 let mut builder = BuilderData::new();
                 builder.append_bits(if index == 6 { 7 } else { index }, 4)?;
                 let key = SliceData::load_builder(builder)?;
-                let (value, gas2) = item.serialize()?;
-                gas += gas2;
-                dict.set_builder(key, &value)?;
+                let value = item.serialize(gas_consumer)?;
+                dict.set_builder(key, &value)?; // consume gas here
             }
         }
         let mut builder = BuilderData::new();
         match dict.data() {
             Some(cell) => {
                 builder.append_bit_one()?;
-                builder.append_reference_cell(cell.clone());
-                gas += Gas::finalize_price();
+                builder.checked_append_reference(cell.clone())?;
             }
             None => {
                 builder.append_bit_zero()?;
             }
         }
-        Ok((builder, gas))
+        Ok(builder)
     }
-    pub fn deserialize(slice: &mut SliceData) -> Result<(Self, i64)> {
-        let mut gas = 0;
+    pub fn deserialize(slice: &mut SliceData, gas_consumer: &mut dyn GasConsumer) -> Result<Self> {
         match slice.get_next_bit()? {
-            false => Ok((Self::new(), gas)),
+            false => Ok(Self::new()),
             true => {
                 let dict = HashmapE::with_hashmap(4, slice.checked_drain_reference().ok());
-                gas += Gas::load_cell_price(true);
+                // TODO: gas += Gas::load_cell_price(true);
                 let mut savelist = SaveList::new();
                 for item in dict.iter() {
                     let (key, value) = item?;
                     let key = SliceData::load_builder(key)?.get_next_int(4)? as usize;
-                    let (mut value, gas2) = StackItem::deserialize(&mut value.clone())?;
-                    gas += gas2;
+                    let mut value = StackItem::deserialize(&mut value.clone(), gas_consumer)?;
                     savelist.put(key, &mut value)?;
                 }
-                Ok((savelist, gas))
+                Ok(savelist)
             }
         }
     }

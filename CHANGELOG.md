@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version: 1.8.82
+### Fixed
+ - Fixed STCONT/LDCONT primitives for tuples and continuations
+
 ## Version: 1.8.79
 
 ### Fixed
@@ -9,7 +13,7 @@ All notable changes to this project will be documented in this file.
 
 ## Version: 1.8.78
 ### Fixed
-- debug output fix
+ - Fixed debug output
 
 ## Version: 1.8.77
 

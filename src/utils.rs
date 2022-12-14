@@ -24,7 +24,7 @@ pub fn pack_data_to_cell(bytes: &[u8], engine: &mut dyn GasConsumer) -> Result<C
     for cur_slice in bytes.chunks(cell_length_in_bytes).rev() {
         if cell.bits_used() != 0 {
             let mut new_cell = BuilderData::new();
-            new_cell.append_reference_cell(engine.finalize_cell(cell)?);
+            new_cell.checked_append_reference(engine.finalize_cell(cell)?)?;
             cell = new_cell;
         }
         cell.append_raw(cur_slice, cur_slice.len() * 8)?;
