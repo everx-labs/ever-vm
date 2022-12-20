@@ -17,8 +17,8 @@ use crate::{
     types::{Exception, ResultOpt}
 };
 use std::{fmt, mem};
-use ton_types::{BuilderData, Cell, IBitstring, Result, error, types::ExceptionCode, GasConsumer};
-use super::{slice_serialize, slice_deserialize, items_deserialize, items_serialize};
+use ton_types::{BuilderData, Cell, IBitstring, Result, error, ExceptionCode, GasConsumer, HashmapE, HashmapType};
+use super::{slice_serialize, slice_deserialize, items_deserialize, items_serialize, prepare_cont_serialize_vars};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ContinuationType {
@@ -138,7 +138,13 @@ impl ContinuationData {
             .map_err(|_| exception!(ExceptionCode::InvalidOpcode))
     }
 
-    pub fn serialize(&self, gas_consumer: &mut dyn GasConsumer) -> Result<BuilderData> {
+    pub(crate) fn serialize(&self, gas_consumer: &mut dyn GasConsumer) -> Result<BuilderData> {
+        let mut items = Vec::new();
+        prepare_cont_serialize_vars(self, BuilderData::default(), &mut items, false);
+        items_serialize(items, gas_consumer)
+    }
+
+    pub(super) fn serialize_internal(&self, stack: BuilderData, savelist: HashmapE, gas_consumer: &mut dyn GasConsumer) -> Result<BuilderData> {
         let mut builder = BuilderData::new();
         match &self.type_of {
             ContinuationType::AgainLoopBody(body) => {
@@ -186,17 +192,16 @@ impl ContinuationData {
             builder.append_bit_zero()?;
         } else {
             builder.append_bit_one()?;
-            let stack = items_serialize(&self.stack.storage, 24, gas_consumer)?;
+            builder.append_bits(self.stack.depth(), 24)?;
             builder.append_builder(&stack)?; // second ref
         }
-        let savelist = self.savelist.serialize(gas_consumer)?;
-        builder.append_builder(&savelist)?; // third ref
+        savelist.write_hashmap_data(&mut builder)?; // third ref
         builder.append_bits(0, 16)?; // codepage
-        builder.append_builder(&slice_serialize(&self.code)?)?; // last ref
+        builder.append_builder(&slice_serialize(self.code())?)?; // last ref
         Ok(builder)
     }
 
-    pub fn deserialize(slice: &mut SliceData, gas_consumer: &mut dyn GasConsumer) -> Result<Self> {
+    pub(crate) fn deserialize(slice: &mut SliceData, gas_consumer: &mut dyn GasConsumer) -> Result<Self> {
         let cont_type = match slice.get_next_int(2)? {
             0 => ContinuationType::Ordinary,
             1 => ContinuationType::TryCatch,
@@ -248,17 +253,18 @@ impl ContinuationData {
             x => x
         };
         let stack = if slice.get_next_bit()? {
-            items_deserialize(slice, 24, gas_consumer)?
+            let length = slice.get_next_int(24)? as usize;
+            items_deserialize(slice, length, gas_consumer)?
         } else {
             vec!()
         };
-        let save = SaveList::deserialize(slice, gas_consumer)?;
+        let savelist = SaveList::deserialize(slice, gas_consumer)?;
         slice.get_next_int(16)?; // codepage
         let code = slice_deserialize(slice)?;
         Ok(ContinuationData {
             code,
             nargs,
-            savelist: save,
+            savelist,
             stack: Stack {
                 storage: stack
             },

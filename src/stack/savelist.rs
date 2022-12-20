@@ -13,7 +13,7 @@
 
 use crate::{error::TvmError, stack::StackItem, types::{Exception, ResultOpt}};
 use std::fmt;
-use ton_types::{BuilderData, HashmapE, HashmapType, IBitstring, Result, SliceData, error, types::ExceptionCode, GasConsumer};
+use ton_types::{HashmapE, HashmapType, Result, SliceData, error, ExceptionCode, GasConsumer};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SaveList {
@@ -27,7 +27,7 @@ impl Default for SaveList {
 }
 
 impl SaveList {
-    const NUMREGS: usize = 7;
+    pub const NUMREGS: usize = 7;
     pub const REGS: [usize; Self::NUMREGS] = [0, 1, 2, 3, 4, 5, 7];
     const fn adjust(index: usize) -> usize {
         if index == 7 { 6 } else { index }
@@ -47,6 +47,13 @@ impl SaveList {
             _ => false
         }
     }
+    pub fn check_can_put(index: usize, value: &StackItem) -> Result<()> {
+        if Self::can_put(index, value) {
+            Ok(())
+        } else {
+            err!(ExceptionCode::TypeCheckError, "wrong item {} for index {}", value, index)
+        }
+    }
     pub fn get(&self, index: usize) -> Option<&StackItem> {
         self.storage[Self::adjust(index)].as_ref()
     }
@@ -62,16 +69,13 @@ impl SaveList {
         true
     }
     pub fn put(&mut self, index: usize, value: &mut StackItem) -> ResultOpt<StackItem> {
-        if !Self::can_put(index, value) {
-            err!(ExceptionCode::TypeCheckError)
-        } else {
-            self.put_opt(index, value)
-        }
+        Self::check_can_put(index, value)?;
+        Ok(self.put_opt(index, value))
     }
-    pub fn put_opt(&mut self, index: usize, value: &mut StackItem) -> ResultOpt<StackItem> {
+    pub fn put_opt(&mut self, index: usize, value: &mut StackItem) -> Option<StackItem> {
         debug_assert!(Self::can_put(index, value));
         debug_assert!(!value.is_null());
-        Ok(std::mem::replace(&mut self.storage[Self::adjust(index)], Some(value.withdraw())))
+        std::mem::replace(&mut self.storage[Self::adjust(index)], Some(value.withdraw()))
     }
     pub fn apply(&mut self, other: &mut Self) {
         for index in 0..Self::NUMREGS {
@@ -81,30 +85,7 @@ impl SaveList {
         }
     }
     pub fn remove(&mut self, index: usize) -> Option<StackItem> {
-        std::mem::replace(&mut self.storage[Self::adjust(index)], None)
-    }
-    pub fn serialize(&self, gas_consumer: &mut dyn GasConsumer) -> Result<BuilderData> {
-        let mut dict = HashmapE::with_bit_len(4);
-        for index in 0..Self::NUMREGS {
-            if let Some(ref item) = self.storage[index] {
-                let mut builder = BuilderData::new();
-                builder.append_bits(if index == 6 { 7 } else { index }, 4)?;
-                let key = SliceData::load_builder(builder)?;
-                let value = item.serialize(gas_consumer)?;
-                dict.set_builder(key, &value)?; // consume gas here
-            }
-        }
-        let mut builder = BuilderData::new();
-        match dict.data() {
-            Some(cell) => {
-                builder.append_bit_one()?;
-                builder.checked_append_reference(cell.clone())?;
-            }
-            None => {
-                builder.append_bit_zero()?;
-            }
-        }
-        Ok(builder)
+        std::mem::take(&mut self.storage[Self::adjust(index)])
     }
     pub fn deserialize(slice: &mut SliceData, gas_consumer: &mut dyn GasConsumer) -> Result<Self> {
         match slice.get_next_bit()? {

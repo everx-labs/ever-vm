@@ -598,9 +598,9 @@ impl Engine {
                 self.log_string = Some("NEXT WHILE ITERATION");
                 let mut cond = ContinuationData::with_code(cond);
                 let mut while_ = ContinuationData::move_without_stack(&mut self.cc, body);
-                while_.savelist.put_opt(0, self.ctrl_mut(0)?)?;
-                cond.savelist.put_opt(0, &mut StackItem::continuation(while_))?;
-                self.ctrls.put_opt(0, &mut StackItem::continuation(cond))?;
+                while_.savelist.put_opt(0, self.ctrl_mut(0)?);
+                cond.savelist.put_opt(0, &mut StackItem::continuation(while_));
+                self.ctrls.put_opt(0, &mut StackItem::continuation(cond));
             }
             Ok(false) => {
                 self.log_string = Some("RET FROM WHILE");
@@ -616,8 +616,8 @@ impl Engine {
                 *counter -= 1;
                 self.log_string = Some("NEXT REPEAT ITERATION");
                 let mut repeat = ContinuationData::move_without_stack(&mut self.cc, body);
-                repeat.savelist.put_opt(0, self.ctrl_mut(0)?)?;
-                self.ctrls.put_opt(0, &mut StackItem::continuation(repeat))?;
+                repeat.savelist.put_opt(0, self.ctrl_mut(0)?);
+                self.ctrls.put_opt(0, &mut StackItem::continuation(repeat));
             } else {
                 self.log_string = Some("RET FROM REPEAT");
                 switch(self, ctrl!(0))?;
@@ -630,8 +630,8 @@ impl Engine {
             Ok(true) => {
                 self.log_string = Some("NEXT UNTIL ITERATION");
                 let mut until = ContinuationData::move_without_stack(&mut self.cc, body);
-                until.savelist.put_opt(0, self.ctrl_mut(0)?)?;
-                self.ctrls.put_opt(0, &mut StackItem::continuation(until))?;
+                until.savelist.put_opt(0, self.ctrl_mut(0)?);
+                self.ctrls.put_opt(0, &mut StackItem::continuation(until));
             }
             Ok(false) => {
                 self.log_string = Some("RET FROM UNTIL");
@@ -644,7 +644,7 @@ impl Engine {
     fn step_again_loop(&mut self, body: SliceData) -> Result<Option<i32>> {
         self.log_string = Some("NEXT AGAIN ITERATION");
         let again = ContinuationData::move_without_stack(&mut self.cc, body);
-        self.ctrls.put_opt(0, &mut StackItem::continuation(again))?;
+        self.ctrls.put_opt(0, &mut StackItem::continuation(again));
         Ok(None)
     }
 

@@ -710,6 +710,7 @@ pub fn execute_stcont(engine: &mut Engine) -> Status {
     fetch_stack(engine, 2)?;
     engine.cmd.var(0).as_builder()?;
     engine.cmd.var(1).as_continuation()?;
-    let cont = engine.cmd.var_mut(1).withdraw().as_continuation()?.serialize(engine)?;
+    let cont = engine.cmd.var_mut(1).withdraw();
+    let cont = cont.as_continuation()?.serialize(engine)?;
     store_data(engine, 0, Ok(cont), false, false)
 }
