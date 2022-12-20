@@ -13,13 +13,18 @@
 
 use crate::{
     error::TvmError,
-    stack::{continuation::ContinuationData, integer::IntegerData},
     types::{Exception, ResultMut, ResultOpt, ResultRef, ResultVec, Status}
 };
+use self::{savelist::SaveList, continuation::ContinuationData, integer::IntegerData};
 use std::{fmt, mem, ops::Range, slice::Iter, sync::Arc, cmp::Ordering};
 use integer::serialization::{Encoding, SignedIntegerBigEndianEncoding};
 use serialization::Deserializer;
-use ton_types::{BuilderData, Cell, CellType, ExceptionCode, HashmapType, IBitstring, MAX_DATA_BITS, MAX_REFERENCES_COUNT, Result, SliceData, error, GasConsumer};
+use ton_types::{
+    MAX_DATA_BITS, MAX_REFERENCES_COUNT,
+    error,
+    BuilderData, Cell, CellType, ExceptionCode, HashmapType, IBitstring,
+    Result, SliceData, GasConsumer, HashmapE
+};
 
 pub mod serialization;
 pub mod savelist;
@@ -54,8 +59,9 @@ macro_rules! boolean {
     };
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub enum StackItem {
+    #[default]
     None,
     Builder(Arc<BuilderData>),
     Cell(Cell),
@@ -65,11 +71,19 @@ pub enum StackItem {
     Tuple(Arc<Vec<StackItem>>)
 }
 
+pub(crate) enum SerializeItem<'a> {
+    Item(&'a StackItem),
+    Tuple(BuilderData),
+    Cont(BuilderData, &'a ContinuationData, bool),
+    SaveList,
+    SaveListItem(usize),
+}
+
 fn slice_serialize(slice: &SliceData) -> Result<BuilderData> {
     let mut builder = BuilderData::new();
     builder.checked_append_reference(slice.cell().clone())?;
     builder.append_bits(slice.pos(), 10)?;
-    builder.append_bits(slice.remaining_bits() + slice.pos(), 10)?;
+    builder.append_bits(slice.pos() + slice.remaining_bits(), 10)?;
     builder.append_bits(slice.get_references().start, 3)?;
     builder.append_bits(slice.get_references().end, 3)?;
     Ok(builder)
@@ -80,12 +94,12 @@ fn slice_deserialize(slice: &mut SliceData) -> Result<SliceData> {
     let data_start = slice.get_next_int(10)? as usize;
     let data_end = slice.get_next_int(10)? as usize;
     if data_start > MAX_DATA_BITS || data_end > MAX_DATA_BITS || data_start > data_end {
-        return err!(ExceptionCode::FatalError)
+        return err!(ExceptionCode::FatalError, "slice deserialize error data: {}..{}", data_start, data_end)
     }
     let ref_start = slice.get_next_int(3)? as usize;
     let ref_end = slice.get_next_int(3)? as usize;
     if ref_start > MAX_REFERENCES_COUNT || ref_end > MAX_REFERENCES_COUNT || ref_start > ref_end {
-        return err!(ExceptionCode::FatalError)
+        return err!(ExceptionCode::FatalError, "slice deserialize error refs: {}..{}", ref_start, ref_end)
     }
     let mut res = SliceData::load_cell(cell)?;
     res.shrink_data(data_start..data_end);
@@ -93,23 +107,97 @@ fn slice_deserialize(slice: &mut SliceData) -> Result<SliceData> {
     Ok(res)
 }
 
-fn items_serialize(items: &[StackItem], length_bits: usize, gas_consumer: &mut dyn GasConsumer) -> Result<BuilderData> {
-    let mut builder = BuilderData::new();
-    builder.append_bits(items.len(), length_bits)?;
-    let mut list = BuilderData::new();
-    for item in items.iter().rev() {
-        let mut cons = item.serialize(gas_consumer)?;
-        let tail = gas_consumer.finalize_cell(list)?;
-        cons.checked_append_reference(tail)?;
-        list = cons;
+fn items_serialize(mut items: Vec<SerializeItem>, gas_consumer: &mut dyn GasConsumer) -> Result<BuilderData> {
+    let mut list = Some(BuilderData::default());
+    let mut list_stack = Vec::new();
+    let mut savelist = None;
+    let mut savelist_stack = Vec::new();
+    while let Some(item) = items.pop() {
+        let mut builder = match item {
+            SerializeItem::Item(item) => {
+                if let Some(cons) = item.serialize_internal(&mut items, gas_consumer)? {
+                    cons
+                } else {
+                    if let Some(cell) = list.replace(BuilderData::default()) {
+                        list_stack.push(cell);
+                    }
+                    continue
+                }
+            }
+            SerializeItem::Tuple(mut header) => {
+                if let Some(cell) = list {
+                    let cell = gas_consumer.finalize_cell(cell)?;
+                    header.checked_append_reference(cell)?;
+                }
+                list = list_stack.pop();
+                header
+            }
+            SerializeItem::Cont(mut header, cont, append_cell) => {
+                let cons = cont.serialize_internal(
+                    list.unwrap_or_default(),
+                    savelist.unwrap_or_default(),
+                    gas_consumer
+                )?;
+                if append_cell {
+                    let cell = gas_consumer.finalize_cell(cons)?;
+                    header.checked_append_reference(cell)?;
+                } else {
+                    header.append_builder(&cons)?;
+                }
+                list = list_stack.pop();
+                savelist = savelist_stack.pop();
+                header
+            }
+            SerializeItem::SaveListItem(index) => {
+                if let Some(value) = list.replace(BuilderData::default()) {
+                    if let Some(savelist) = savelist.as_mut() {
+                        let mut builder = BuilderData::new();
+                        builder.append_bits(index, 4)?;
+                        let key = SliceData::load_builder(builder)?;
+                        savelist.set_builder(key, &value)?; // TODO: gas here?
+                    } else {
+                        panic!("savelist is None {}", index)
+                    }
+                } else {
+                    panic!("list is None {}", index)
+                }
+                continue
+            }
+            SerializeItem::SaveList => {
+                if let Some(savelist) = savelist.replace(HashmapE::with_bit_len(4)) {
+                    savelist_stack.push(savelist);
+                }
+                continue
+            }
+        };
+        if let Some(cell) = list {
+            let cell = gas_consumer.finalize_cell(cell)?;
+            builder.checked_append_reference(cell)?;
+        }
+        list = Some(builder);
     }
-    builder.append_builder(&mut list)?;
-    Ok(builder)
+    debug_assert_eq!(0, list_stack.len());
+    list.ok_or_else(|| exception!(ExceptionCode::FatalError, "nothing was serialized"))
 }
 
-fn items_deserialize(slice: &mut SliceData, length_bits: usize, gas_consumer: &mut dyn GasConsumer) -> Result<Vec<StackItem>> {
+fn prepare_savelist_serialize_vars<'a>(savelist: &'a SaveList, items: &mut Vec<SerializeItem<'a>>) {
+    for index in 0..SaveList::NUMREGS {
+        if let Some(item) = savelist.get(index) {
+            items.push(SerializeItem::SaveListItem(if index == 6 { 7 } else { index }));
+            items.push(SerializeItem::Item(item));
+        }
+    }
+    items.push(SerializeItem::SaveList);
+}
+
+fn prepare_cont_serialize_vars<'a>(cont: &'a ContinuationData, header: BuilderData, items: &mut Vec<SerializeItem<'a>>, append_cell: bool) {
+    items.push(SerializeItem::Cont(header, cont, append_cell));
+    items.extend(cont.stack.iter().map(SerializeItem::Item));
+    prepare_savelist_serialize_vars(&cont.savelist, items);
+}
+
+fn items_deserialize(slice: &mut SliceData, length: usize, gas_consumer: &mut dyn GasConsumer) -> Result<Vec<StackItem>> {
     let mut items = vec!();
-    let length = slice.get_next_int(length_bits)? as usize;
     if length != 0 {
         let item = StackItem::deserialize(slice, gas_consumer)?;
         items.push(item);
@@ -305,6 +393,7 @@ impl StackItem {
         self.as_tuple()?;
         match self.withdraw() {
             StackItem::Tuple(arc) => {
+                // wait for stable Ok(Arc::unwrap_or_clone(arc))
                 Ok(Arc::try_unwrap(arc).unwrap_or_else(|arc| arc.as_ref().clone()))
             }
             _ => err!(ExceptionCode::TypeCheckError)
@@ -404,7 +493,13 @@ impl StackItem {
         }
     }
 
-    pub fn serialize(&self, gas_consumer: &mut dyn GasConsumer) -> Result<BuilderData> {
+    #[allow(dead_code)] // reserved for future use
+    pub(crate) fn serialize(&self, gas_consumer: &mut dyn GasConsumer) -> Result<BuilderData> {
+        let items = vec!(SerializeItem::Item(self));
+        items_serialize(items, gas_consumer)
+    }
+
+    fn serialize_internal<'a>(&'a self, items: &mut Vec<SerializeItem<'a>>, gas_consumer: &mut dyn GasConsumer) -> Result<Option<BuilderData>> {
         let mut builder = BuilderData::new();
         match self {
             StackItem::None => {
@@ -424,13 +519,13 @@ impl StackItem {
                 builder.checked_append_reference(data.clone())?;
             }
             StackItem::Continuation(data) => {
-                builder.append_bits(0x06, 8)?;
-                let serialized = data.serialize(gas_consumer)?;
-                builder.append_builder(&serialized)?;
+                builder.append_bits(0x0A, 8)?;
+                prepare_cont_serialize_vars(data, builder, items, true);
+                return Ok(None)
             }
             StackItem::Builder(data) => {
                 builder.append_bits(0x05, 8)?;
-                let cell = data.as_ref().clone().into_cell()?;
+                let cell = gas_consumer.finalize_cell(data.as_ref().clone())?;
                 builder.checked_append_reference(cell)?;
             }
             StackItem::Slice(data) => {
@@ -438,12 +533,14 @@ impl StackItem {
                 builder.append_builder(&slice_serialize(data)?)?;
             }
             StackItem::Tuple(data) => {
-                builder.append_bits(0x08, 8)?;
-                let tuple = items_serialize(data, 8, gas_consumer)?;
-                builder.checked_append_reference(tuple.into_cell()?)?;
+                builder.append_bits(0x09, 8)?;
+                builder.append_bits(data.len(), 8)?;
+                items.push(SerializeItem::Tuple(builder));
+                items.extend(data.iter().map(SerializeItem::Item));
+                return Ok(None)
             }
         }
-        Ok(builder)
+        Ok(Some(builder))
     }
 
     pub fn deserialize(slice: &mut SliceData, gas_consumer: &mut dyn GasConsumer) -> Result<StackItem> {
@@ -452,7 +549,9 @@ impl StackItem {
             0x02 => {
                 match slice.get_next_int(7)? {
                     0x00 => {
-                        let value = SignedIntegerBigEndianEncoding::new(257).deserialize(slice.get_next_bits(257)?.as_slice());
+                        let decoder = SignedIntegerBigEndianEncoding::new(257);
+                        let value = slice.get_next_bits(257)?;
+                        let value = decoder.deserialize(&value);
                         Ok(StackItem::integer(value))
                     }
                     0x7f => {
@@ -466,31 +565,36 @@ impl StackItem {
                 }
             }
             0x03 => Ok(StackItem::cell(slice.checked_drain_reference()?)),
-            0x04 => {
-                Ok(StackItem::slice(slice_deserialize(slice)?))
-            }
+            0x04 => Ok(StackItem::slice(slice_deserialize(slice)?)),
             0x05 => Ok(StackItem::builder(BuilderData::from(slice.checked_drain_reference()?))),
             0x06 => {
                 let cont = ContinuationData::deserialize(slice, gas_consumer)?;
                 Ok(StackItem::continuation(cont))
             }
+            0x0A => {
+                let slice = &mut gas_consumer.load_cell(slice.checked_drain_reference()?)?;
+                let cont = ContinuationData::deserialize(slice, gas_consumer)?;
+                Ok(StackItem::continuation(cont))
+            }
             0x07 => { // old wrong version
-                let tuple = items_deserialize(slice, 8, gas_consumer)?;
+                let length = slice.get_next_int(8)? as usize;
+                let tuple = items_deserialize(slice, length, gas_consumer)?;
                 Ok(StackItem::tuple(tuple))
             }
             0x08 => {
                 let mut tuple_slice = gas_consumer.load_cell(slice.checked_drain_reference()?)?;
-                let tuple = items_deserialize(&mut tuple_slice, 8, gas_consumer)?;
+                let length = tuple_slice.get_next_int(8)? as usize;
+                let tuple = items_deserialize(&mut tuple_slice, length, gas_consumer)?;
+                Ok(StackItem::tuple(tuple))
+            }
+            0x09 => {
+                let length = slice.get_next_int(8)? as usize;
+                let mut tuple_slice = gas_consumer.load_cell(slice.checked_drain_reference()?)?;
+                let tuple = items_deserialize(&mut tuple_slice, length, gas_consumer)?;
                 Ok(StackItem::tuple(tuple))
             }
             typ => err!(ExceptionCode::UnknownError, "unknown StackItem type {}", typ)
         }
-    }
-}
-
-impl Default for StackItem {
-    fn default() -> StackItem {
-        StackItem::None
     }
 }
 
@@ -519,12 +623,19 @@ impl fmt::Display for StackItem {
             StackItem::Continuation(x) => write!(f, "Continuation x{:x}", x.code().cell().repr_hash()),
             StackItem::Integer(x)      => write!(f, "{}", Arc::as_ref(x)),
             StackItem::Slice(x)        => write!(f, "Slice x{:x}", x),
-            StackItem::Tuple(x)        => write!(f, "Tuple ({})", x.iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join(", ")),
+            StackItem::Tuple(x)        => {
+                if f.alternate() {
+                    write!(f, "Tuple ({})", x.len())
+                } else {
+                    write!(f, "Tuple ({})", x.len())?;
+                    f.debug_list().entries(x.iter().map(|v| format!("{:#}", v))).finish()
+                }
+            }
         }
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Stack {
     pub storage: Vec<StackItem>,
 }
