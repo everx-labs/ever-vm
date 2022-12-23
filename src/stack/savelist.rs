@@ -13,7 +13,7 @@
 
 use crate::{error::TvmError, stack::StackItem, types::{Exception, ResultOpt}};
 use std::fmt;
-use ton_types::{HashmapE, HashmapType, Result, SliceData, error, ExceptionCode, GasConsumer};
+use ton_types::{error, ExceptionCode, Result};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SaveList {
@@ -86,23 +86,6 @@ impl SaveList {
     }
     pub fn remove(&mut self, index: usize) -> Option<StackItem> {
         std::mem::take(&mut self.storage[Self::adjust(index)])
-    }
-    pub fn deserialize(slice: &mut SliceData, gas_consumer: &mut dyn GasConsumer) -> Result<Self> {
-        match slice.get_next_bit()? {
-            false => Ok(Self::new()),
-            true => {
-                let dict = HashmapE::with_hashmap(4, slice.checked_drain_reference().ok());
-                // TODO: gas += Gas::load_cell_price(true);
-                let mut savelist = SaveList::new();
-                for item in dict.iter() {
-                    let (key, value) = item?;
-                    let key = SliceData::load_builder(key)?.get_next_int(4)? as usize;
-                    let mut value = StackItem::deserialize(&mut value.clone(), gas_consumer)?;
-                    savelist.put(key, &mut value)?;
-                }
-                Ok(savelist)
-            }
-        }
     }
 }
 
