@@ -18,7 +18,7 @@ use crate::{
 };
 use std::{fmt, mem};
 use ton_types::{BuilderData, Cell, IBitstring, Result, error, ExceptionCode, GasConsumer, HashmapE, HashmapType};
-use super::{slice_serialize, slice_deserialize, items_deserialize, items_serialize, prepare_cont_serialize_vars};
+use super::{slice_serialize, slice_deserialize, items_deserialize, items_serialize, prepare_cont_serialize_vars, DeserializeItem};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ContinuationType {
@@ -193,7 +193,8 @@ impl ContinuationData {
         } else {
             builder.append_bit_one()?;
             builder.append_bits(self.stack.depth(), 24)?;
-            builder.append_builder(&stack)?; // second ref
+            let cell = gas_consumer.finalize_cell(stack)?;
+            builder.checked_append_reference(cell)?; // second ref
         }
         savelist.write_hashmap_data(&mut builder)?; // third ref
         builder.append_bits(0, 16)?; // codepage
@@ -202,7 +203,21 @@ impl ContinuationData {
     }
 
     pub(crate) fn deserialize(slice: &mut SliceData, gas_consumer: &mut dyn GasConsumer) -> Result<Self> {
-        let cont_type = match slice.get_next_int(2)? {
+        let mut list = Vec::new();
+        ContinuationData::deserialize_internal(&mut list, slice, gas_consumer)?;
+        Ok(std::mem::replace(
+            items_deserialize(list, gas_consumer)?.remove(0).as_continuation_mut()?,
+            ContinuationData::new_empty()
+        ))
+    }
+
+    pub(crate) fn deserialize_internal(
+        list: &mut Vec<DeserializeItem>,
+        slice: &mut SliceData,
+        gas_consumer: &mut dyn GasConsumer
+    ) -> Result<()> {
+        let mut new_list = Vec::new();
+        let type_of = match slice.get_next_int(2)? {
             0 => ContinuationType::Ordinary,
             1 => ContinuationType::TryCatch,
             2 => {
@@ -249,27 +264,40 @@ impl ContinuationData {
         };
 
         let nargs = match slice.get_next_int(22)? as isize {
-            0x3fffff => -1,
+            0x3fffff => -1, // 4194303
             x => x
         };
         let stack = if slice.get_next_bit()? {
             let length = slice.get_next_int(24)? as usize;
-            items_deserialize(slice, length, gas_consumer)?
+            let stack_slice = gas_consumer.load_cell(slice.checked_drain_reference()?)?;
+            DeserializeItem::Items(length, stack_slice)
         } else {
-            vec!()
+            DeserializeItem::Items(0, SliceData::default())
         };
-        let savelist = SaveList::deserialize(slice, gas_consumer)?;
-        slice.get_next_int(16)?; // codepage
+        // savelist
+        if slice.get_next_bit()? {
+            let dict = HashmapE::with_hashmap(4, Some(slice.checked_drain_reference()?));
+            dict.iterate_slices(|mut key, value| {
+                let key = key.get_next_int(4)? as usize;
+                new_list.push(DeserializeItem::SaveListItem(key));
+                new_list.push(DeserializeItem::Items(1, value));
+                Ok(true)
+            })?;
+        }
+        new_list.push(DeserializeItem::SaveList);
+        let _codepage = slice.get_next_int(16)?; // codepage
         let code = slice_deserialize(slice)?;
-        Ok(ContinuationData {
+        let cont = ContinuationData {
             code,
             nargs,
-            savelist,
-            stack: Stack {
-                storage: stack
-            },
-            type_of: cont_type
-        })
+            savelist: SaveList::default(),
+            stack: Stack::default(),
+            type_of,
+        };
+        list.push(DeserializeItem::Cont(cont));
+        list.append(&mut new_list);
+        list.push(stack);
+        Ok(())
     }
 }
 

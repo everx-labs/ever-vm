@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version: 1.8.93
+### Fixed
+ - Removed recursion in STCONT/LDCONT primitives
+
 ## Version: 1.8.82
 ### Fixed
  - Fixed STCONT/LDCONT primitives for tuples and continuations
