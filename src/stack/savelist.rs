@@ -11,9 +11,14 @@
 * limitations under the License.
 */
 
-use crate::{error::TvmError, stack::StackItem, types::{Exception, ResultOpt}};
+use crate::{
+    error::TvmError,
+    executor::gas::gas_state::Gas,
+    stack::StackItem,
+    types::{Exception, ResultOpt},
+};
 use std::fmt;
-use ton_types::{error, ExceptionCode, Result};
+use ton_types::{error, ExceptionCode, Result, SliceData, HashmapE, HashmapType, BuilderData, IBitstring};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SaveList {
@@ -86,6 +91,54 @@ impl SaveList {
     }
     pub fn remove(&mut self, index: usize) -> Option<StackItem> {
         std::mem::take(&mut self.storage[Self::adjust(index)])
+    }
+}
+
+impl SaveList {
+    pub fn serialize_old(&self) -> Result<(BuilderData, i64)> {
+        let mut gas = 0;
+        let mut dict = HashmapE::with_bit_len(4);
+        for index in 0..Self::NUMREGS {
+            if let Some(ref item) = self.storage[index] {
+                let mut builder = BuilderData::new();
+                builder.append_bits(if index == 6 { 7 } else { index }, 4)?;
+                let key = SliceData::load_builder(builder)?;
+                let (value, gas2) = item.serialize_old()?;
+                gas += gas2;
+                dict.set_builder(key, &value)?;
+            }
+        }
+        let mut builder = BuilderData::new();
+        match dict.data() {
+            Some(cell) => {
+                builder.append_bit_one()?;
+                builder.checked_append_reference(cell.clone())?;
+                gas += Gas::finalize_price();
+            }
+            None => {
+                builder.append_bit_zero()?;
+            }
+        }
+        Ok((builder, gas))
+    }
+    pub fn deserialize_old(slice: &mut SliceData) -> Result<(Self, i64)> {
+        let mut gas = 0;
+        match slice.get_next_bit()? {
+            false => Ok((Self::new(), gas)),
+            true => {
+                let dict = HashmapE::with_hashmap(4, slice.checked_drain_reference().ok());
+                gas += Gas::load_cell_price(true);
+                let mut savelist = SaveList::new();
+                dict.iterate_slices(|mut key, mut value| {
+                    let key = key.get_next_int(4)? as usize;
+                    let (mut value, gas2) = StackItem::deserialize_old(&mut value)?;
+                    gas += gas2;
+                    savelist.put(key, &mut value)?;
+                    Ok(true)
+                })?;
+                Ok((savelist, gas))
+            }
+        }
     }
 }
 

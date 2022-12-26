@@ -120,11 +120,13 @@ pub fn execute_endxc(engine: &mut Engine) -> Status {
     let mut b = engine.cmd.var_mut(1).as_builder_mut()?;
     if special {
         if b.length_in_bits() < 8 {
-            engine.try_use_gas(Gas::finalize_price())?;
+            engine.use_gas(Gas::finalize_price());
             return err!(ExceptionCode::CellOverflow, "Not enough data for a special cell")
         }
-        let cell_type = CellType::try_from(b.data()[0])?;
-        b.set_type(cell_type);
+        match CellType::try_from(b.data()[0]) {
+            Ok(cell_type) => b.set_type(cell_type),
+            Err(err) => return err!(ExceptionCode::CellOverflow, "{}", err)
+        }
     }
     let cell = engine.finalize_cell(b)?;
     engine.cc.stack.push(StackItem::Cell(cell));
@@ -711,6 +713,12 @@ pub fn execute_stcont(engine: &mut Engine) -> Status {
     engine.cmd.var(0).as_builder()?;
     engine.cmd.var(1).as_continuation()?;
     let cont = engine.cmd.var_mut(1).withdraw();
-    let cont = cont.as_continuation()?.serialize(engine)?;
+    let cont = if engine.check_capabilities(ton_block::GlobalCapabilities::CapStcontNewFormat as u64) {
+        cont.as_continuation()?.serialize(engine)?
+    } else {
+        let (cont, gas) = cont.as_continuation()?.serialize_old()?;
+        engine.use_gas(gas);
+        cont
+    };
     store_data(engine, 0, Ok(cont), false, false)
 }

@@ -957,7 +957,13 @@ pub fn execute_ldcont(engine: &mut Engine) -> Status {
     engine.load_instruction(Instruction::new("LDCONT"))?;
     fetch_stack(engine, 1)?;
     let mut slice = engine.cmd.var(0).as_slice()?.clone();
-    let cont = ContinuationData::deserialize(&mut slice, engine)?;
+    let cont = if engine.check_capabilities(ton_block::GlobalCapabilities::CapStcontNewFormat as u64) {
+        ContinuationData::deserialize(&mut slice, engine)?
+    } else {
+        let (cont, gas) = ContinuationData::deserialize_old(&mut slice)?;
+        engine.use_gas(gas);
+        cont
+    };
     engine.cc.stack.push_cont(cont);
     engine.cc.stack.push(StackItem::Slice(slice));
     Ok(())
