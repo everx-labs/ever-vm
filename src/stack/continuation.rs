@@ -13,8 +13,9 @@
 
 use crate::{
     error::TvmError,
+    executor::gas::gas_state::Gas,
     stack::{SliceData, Stack, StackItem, savelist::SaveList},
-    types::{Exception, ResultOpt}
+    types::{Exception, ResultOpt},
 };
 use std::{fmt, mem};
 use ton_types::{BuilderData, Cell, IBitstring, Result, error, ExceptionCode, GasConsumer, HashmapE, HashmapType};
@@ -298,6 +299,167 @@ impl ContinuationData {
         list.append(&mut new_list);
         list.push(stack);
         Ok(())
+    }
+}
+
+impl ContinuationData {
+    pub fn serialize_old(&self) -> Result<(BuilderData, i64)> {
+        let mut gas = 0;
+        let mut builder = BuilderData::new();
+        match &self.type_of {
+            ContinuationType::AgainLoopBody(body) => {
+                builder.append_bits(0xd, 4)?;
+                builder.checked_append_reference(slice_serialize(body)?.into_cell()?)?;
+            }
+            ContinuationType::TryCatch => {
+                builder.append_bits(0x9, 4)?;
+            }
+            ContinuationType::Ordinary => {
+                builder.append_bits(0x0, 2)?;
+            }
+            ContinuationType::PushInt(value) => {
+                builder.append_bits(0xf, 4)?;
+                builder.append_bits(*value as usize, 32)?;
+            }
+            ContinuationType::Quit(exit_code) => {
+                builder.append_bits(0x8, 4)?;
+                builder.append_bits(*exit_code as usize, 32)?;
+            }
+            ContinuationType::RepeatLoopBody(code, counter) => {
+                builder.append_bits(0xe, 4)?;
+                builder.checked_append_reference(slice_serialize(code)?.into_cell()?)?;
+                builder.append_bits(*counter as usize, 32)?;
+            }
+            ContinuationType::UntilLoopCondition(body) => {
+                builder.append_bits(0xa, 4)?;
+                builder.checked_append_reference(slice_serialize(body)?.into_cell()?)?;
+            }
+            ContinuationType::WhileLoopCondition(body, cond) => {
+                builder.append_bits(0xc, 4)?;
+                builder.checked_append_reference(slice_serialize(cond)?.into_cell()?)?;
+                builder.checked_append_reference(slice_serialize(body)?.into_cell()?)?;
+            }
+        }
+
+        let mut stack = BuilderData::new();
+        stack.append_bits(self.stack.depth(), 24)?;
+        let mut stack_list = BuilderData::new();
+        for item in self.stack.iter().rev() {
+            let mut cons = BuilderData::new();
+            let (serialized, gas2) = item.serialize_old()?;
+            gas += gas2;
+            cons.append_builder(&serialized)?;
+            cons.checked_append_reference(stack_list.into_cell()?)?;
+            gas += Gas::finalize_price();
+            stack_list = cons;
+        }
+        stack.append_builder(&stack_list)?;
+
+        builder.append_bits(self.nargs as usize, 22)?;
+        if self.stack.depth() == 0 {
+            builder.append_bit_zero()?;
+        } else {
+            builder.append_bit_one()?;
+            builder.append_builder(&stack)?;
+        }
+        let (serialized, gas2) = self.savelist.serialize_old()?;
+        gas += gas2;
+        builder.append_builder(&serialized)?;
+        builder.append_bits(0, 16)?; // codepage
+        builder.append_builder(&slice_serialize(&self.code)?)?;
+        Ok((builder, gas))
+    }
+
+    pub fn deserialize_old(slice: &mut SliceData) -> Result<(Self, i64)> {
+        let mut gas = 0;
+        let cont_type = match slice.get_next_int(2)? {
+            0 => Ok(ContinuationType::Ordinary),
+            1 => Ok(ContinuationType::TryCatch),
+            2 => {
+                match slice.get_next_int(2)? {
+                    0 => {
+                        let exit_code = slice.get_next_int(32)? as i32;
+                        Ok(ContinuationType::Quit(exit_code))
+                    }
+                    2 => {
+                        let mut body_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
+                        let body: SliceData = slice_deserialize(&mut body_slice)?;
+                        Ok(ContinuationType::UntilLoopCondition(body))
+                    }
+                    _ => err!(ExceptionCode::UnknownError)
+                }
+            },
+            3 => {
+                match slice.get_next_int(2)? {
+                    0 => {
+                        let mut cond_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
+                        let cond: SliceData = slice_deserialize(&mut cond_slice)?;
+                        gas += Gas::load_cell_price(true);
+                        let mut body_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
+                        let body: SliceData = slice_deserialize(&mut body_slice)?;
+                        gas += Gas::load_cell_price(true);
+                        Ok(ContinuationType::WhileLoopCondition(body, cond))
+                    }
+                    1 => {
+                        let mut body_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
+                        let body: SliceData = slice_deserialize(&mut body_slice)?;
+                        Ok(ContinuationType::AgainLoopBody(body))
+                    }
+                    2 => {
+                        let mut code_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
+                        let code: SliceData = slice_deserialize(&mut code_slice)?;
+                        let counter = slice.get_next_int(32)? as isize;
+                        Ok(ContinuationType::RepeatLoopBody(code, counter))
+                    }
+                    3 => {
+                        let value = slice.get_next_int(32)? as i32;
+                        Ok(ContinuationType::PushInt(value))
+                    }
+                    _ => err!(ExceptionCode::UnknownError)
+                }
+            }
+            _ => err!(ExceptionCode::UnknownError)
+        }?;
+
+        let nargs = match slice.get_next_int(22)? as isize {
+            0x3fffff => -1,
+            x => x
+        };
+        let stack = match slice.get_next_bit()? {
+            false => vec![],
+            true => {
+                let depth = slice.get_next_int(24)? as usize;
+                let mut stack = vec![];
+                if depth > 0 {
+                    let (item, gas2) = StackItem::deserialize_old(slice)?;
+                    gas += gas2;
+                    stack.push(item);
+                    let mut cell = slice.checked_drain_reference()?;
+                    for _ in 1..depth {
+                        let mut slice = SliceData::load_cell(cell)?;
+                        let (item, gas2) = StackItem::deserialize_old(&mut slice)?;
+                        stack.push(item);
+                        gas += gas2;
+                        cell = slice.checked_drain_reference().unwrap_or_default();
+                    }
+                }
+                stack
+            }
+        };
+        let (save, gas2) = SaveList::deserialize_old(slice)?;
+        gas += gas2;
+        slice.get_next_int(16)?; // codepage
+        let code = slice_deserialize(slice)?;
+        gas += Gas::load_cell_price(true);
+        Ok((ContinuationData {
+            code,
+            nargs,
+            savelist: save,
+            stack: Stack {
+                storage: stack
+            },
+            type_of: cont_type
+        }, gas))
     }
 }
 

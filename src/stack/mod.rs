@@ -13,7 +13,8 @@
 
 use crate::{
     error::TvmError,
-    types::{Exception, ResultMut, ResultOpt, ResultRef, ResultVec, Status}
+    executor::gas::gas_state::Gas,
+    types::{Exception, ResultMut, ResultOpt, ResultRef, ResultVec, Status},
 };
 use self::{savelist::SaveList, continuation::ContinuationData, integer::IntegerData};
 use std::{fmt, mem, ops::Range, slice::Iter, sync::Arc, cmp::Ordering};
@@ -640,6 +641,119 @@ impl StackItem {
             typ => return err!(ExceptionCode::UnknownError, "unknown StackItem type {}", typ)
         };
         Ok(Some(item))
+    }
+}
+
+impl StackItem {
+    pub fn serialize_old(&self) -> Result<(BuilderData, i64)> {
+        let mut builder = BuilderData::new();
+        let mut gas = 0;
+        match self {
+            StackItem::None => {
+                builder.append_bits(0x00, 8)?;
+            },
+            StackItem::Integer(data) => {
+                if data.is_nan() {
+                    builder.append_bits(0x02ff, 16)?;
+                } else {
+                    builder.append_bits(0x02, 8)?;
+                    builder.append_bits(0x00, 7)?;
+                    builder.append_builder(&data.as_builder::<SignedIntegerBigEndianEncoding>(257)?)?;
+                }
+            },
+            StackItem::Cell(data) => {
+                builder.append_bits(0x03, 8)?;
+                builder.checked_append_reference(data.clone())?;
+            },
+            StackItem::Continuation(data) => {
+                builder.append_bits(0x06, 8)?;
+                let (serialized, gas2) = data.serialize_old()?;
+                gas += gas2;
+                builder.append_builder(&serialized)?;
+            },
+            StackItem::Builder(data) => {
+                builder.append_bits(0x05, 8)?;
+                let cell = data.as_ref().clone().into_cell()?;
+                builder.checked_append_reference(cell)?;
+                gas += Gas::finalize_price();
+            },
+            StackItem::Slice(data) => {
+                builder.append_bits(0x04, 8)?;
+                builder.append_builder(&slice_serialize(data)?)?;
+            },
+            StackItem::Tuple(data) => {
+                builder.append_bits(0x07, 8)?;
+                let mut tuple = BuilderData::new();
+                tuple.append_bits(data.len(), 8)?;
+                let mut tuple_list = BuilderData::new();
+                for item in data.iter().rev() {
+                    let mut cons = BuilderData::new();
+                    let (serialized, gas2) = item.serialize_old()?;
+                    gas += gas2;
+                    cons.append_builder(&serialized)?;
+                    cons.checked_append_reference(tuple_list.into_cell()?)?;
+                    gas += Gas::finalize_price();
+                    tuple_list = cons;
+                }
+                tuple.append_builder(&tuple_list)?;
+                builder.append_builder(&tuple)?;
+            }
+        }
+        Ok((builder, gas))
+    }
+
+    pub fn deserialize_old(slice: &mut SliceData) -> Result<(StackItem, i64)> {
+        let mut gas = 0;
+        match slice.get_next_byte()? {
+            0x00 => Ok((StackItem::None, gas)),
+            0x02 => {
+                match slice.get_next_int(7)? {
+                    0x00 => {
+                        let value = SignedIntegerBigEndianEncoding::new(257).deserialize(slice.get_next_bits(257)?.as_slice());
+                        Ok((StackItem::integer(value), gas))
+                    }
+                    0x7f => {
+                        if slice.get_next_bit()? {
+                            Ok((StackItem::nan(), gas))
+                        } else {
+                            err!(ExceptionCode::UnknownError)
+                        }
+                    }
+                    _ => err!(ExceptionCode::UnknownError)
+                }
+            },
+            0x03 => Ok((StackItem::cell(slice.checked_drain_reference()?), gas)),
+            0x04 => {
+                gas += Gas::load_cell_price(true);
+                Ok((StackItem::slice(slice_deserialize(slice)?), gas))
+            },
+            0x05 => Ok((StackItem::builder(BuilderData::from(slice.checked_drain_reference()?)), gas)),
+            0x06 => {
+                let (cont, gas2) = ContinuationData::deserialize_old(slice)?;
+                gas += gas2;
+                Ok((StackItem::continuation(cont), gas))
+            },
+            0x07 => {
+                let mut tuple = vec![];
+                let len = slice.get_next_int(8)? as usize;
+                if len > 0 {
+                    let (item, gas2) = StackItem::deserialize_old(slice)?;
+                    tuple.push(item);
+                    gas += gas2;
+                }
+                let mut cell = slice.checked_drain_reference()?;
+                for _ in 1..len {
+                    let mut slice = SliceData::load_cell(cell)?;
+                    gas += Gas::load_cell_price(true);
+                    let (item, gas2) = StackItem::deserialize_old(&mut slice)?;
+                    tuple.push(item);
+                    gas += gas2;
+                    cell = slice.checked_drain_reference()?;
+                }
+                Ok((StackItem::tuple(tuple), gas))
+            },
+            _ => err!(ExceptionCode::UnknownError)
+        }
     }
 }
 
