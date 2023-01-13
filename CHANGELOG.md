@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version: 1.8.97
+### Fixed
+ - Fix DATASIZE primitives with GlobalCapability
+
 ## Version: 1.8.94
 ### Fixed
  - Put new code under Capability
