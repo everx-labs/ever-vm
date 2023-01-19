@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2023 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -917,7 +917,12 @@ fn datasize(engine: &mut Engine, name: &'static str, how: u8) -> Status {
                     break false
                 }
                 cells += 1;
-                let slice = SliceData::load_cell(cell)?;
+                // Version 34 contains bug with cell loading without gas calculation. Some blocks with the bug were applied in mainnet, so we have to support it.
+                let slice = if engine.block_version() == 34 {
+                    SliceData::load_cell(cell)?
+                } else {
+                    engine.load_hashed_cell(cell, false)?
+                };
                 refs = refs.saturating_add(slice.remaining_references());
                 bits = bits.saturating_add(slice.remaining_bits());
                 for i in 0..slice.remaining_references() {

@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2023 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -337,7 +337,7 @@ impl StackItem {
     /// Checks type and NaN
     pub fn as_bool(&self) -> Result<bool> {
         match self {
-            StackItem::Integer(ref data) => {
+            StackItem::Integer(data) => {
                 if data.is_nan() {
                     err!(ExceptionCode::IntegerOverflow)
                 } else {
@@ -416,14 +416,14 @@ impl StackItem {
 
     pub fn as_slice(&self) -> ResultRef<SliceData> {
         match self {
-            StackItem::Slice(ref data) => Ok(data),
+            StackItem::Slice(data) => Ok(data),
             _ => err!(ExceptionCode::TypeCheckError, "item {} is not an slice", self)
         }
     }
 
     pub fn as_tuple(&self) -> ResultRef<[StackItem]> {
         match self {
-            StackItem::Tuple(ref data) => Ok(data),
+            StackItem::Tuple(data) => Ok(data),
             _ => err!(ExceptionCode::TypeCheckError, "item {} is not a tuple", self)
         }
     }
