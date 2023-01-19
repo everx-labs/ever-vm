@@ -97,7 +97,8 @@ pub struct Engine {
     trace_callback: Option<Arc<TraceCallback>>,
     log_string: Option<&'static str>,
     flags: u64,
-    capabilities: u64
+    capabilities: u64,
+    block_version: u32,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -247,8 +248,13 @@ impl Engine {
             trace_callback,
             log_string: None,
             flags: 0,
-            capabilities
+            capabilities,
+            block_version: 0,
         }
+    }
+
+    pub fn set_block_version(&mut self, block_version: u32) {
+        self.block_version = block_version
     }
 
     pub fn assert_ctrl(&self, ctrl: usize, item: &StackItem) -> &Engine {
@@ -274,6 +280,10 @@ impl Engine {
         } else {
             Ok(())
         }
+    }
+
+    pub fn block_version(&self) -> u32 {
+        self.block_version
     }
 
     pub fn check_or_set_flags(&mut self, flags: u64) -> bool {
