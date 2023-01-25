@@ -723,19 +723,61 @@ impl Engine {
                     self.visited_cells.insert(hash, slice.clone());
                     break slice;
                 }
-            } else if cell.cell_type() == CellType::LibraryReference {
-                if let Some(slice) = self.visited_exotic_cells.get(&hash).cloned() {
-                    self.try_use_gas(Gas::load_cell_price(false))?;
-                    break slice;
-                } else {
+            }
+            if let Some(slice) = self.visited_exotic_cells.get(&hash).cloned() {
+                self.try_use_gas(Gas::load_cell_price(false))?;
+                break slice;
+            }
+            previous_hashes.push(hash);
+            match cell.cell_type() {
+                CellType::LibraryReference => {
                     self.try_use_gas(Gas::load_cell_price(true))?;
-                    previous_hashes.push(hash);
                     cell = self.load_library_cell(cell)?;
                     continue;
                 }
-            } else {
-                return err!(ExceptionCode::CellUnderflow, "Wrong resolving cell type {}", cell.cell_type())
+                CellType::MerkleProof => {
+                    if self.check_capabilities(GlobalCapabilities::CapResolveMerkleCell as u64) {
+                        self.try_use_gas(Gas::load_cell_price(true))?;
+                        let mut slice = SliceData::load_cell(cell.clone())?;
+                        slice.move_by(8)?;
+                        let hash = slice.get_next_hash()?;
+                        cell = cell.reference(0)?.virtualize(1);
+                        if cell.repr_hash() != hash {
+                            return err!(
+                                ExceptionCode::CellUnderflow,
+                                "hash of merkle proof cell is not corresponded to child cell"
+                            )
+                        }
+                        continue
+                    }
+                }
+                CellType::MerkleUpdate => {
+                    if self.check_capabilities(GlobalCapabilities::CapResolveMerkleCell as u64) {
+                        self.try_use_gas(Gas::load_cell_price(true))?;
+                        let mut slice = SliceData::load_cell(cell.clone())?;
+                        slice.move_by(8)?;
+                        let hash = slice.get_next_hash()?;
+                        if cell.reference(0)?.virtualize(1).repr_hash() != hash {
+                            return err!(
+                                ExceptionCode::CellUnderflow,
+                                "hash of merkle update cell is not corresponded to child cell"
+                            )
+                        }
+                        slice.move_by(16)?;
+                        let hash = slice.get_next_hash()?;
+                        cell = cell.reference(1)?.virtualize(1);
+                        if cell.repr_hash() != hash {
+                            return err!(
+                                ExceptionCode::CellUnderflow,
+                                "hash of merkle update cell is not corresponded to child cell"
+                            )
+                        }
+                        continue
+                    }
+                }
+                _ => ()
             }
+            return err!(ExceptionCode::CellUnderflow, "Wrong resolving cell type {}", cell.cell_type())
         };
         for hash in previous_hashes {
             self.visited_exotic_cells.insert(hash, slice.clone());
