@@ -27,6 +27,8 @@ fift_check = [  ]
 gosh = [ 'ton_block/gosh', 'zstd' ]
 log_file = [  ]
 required-features = [ 'gosh' ]
+signature_no_check = [  ]
+signature_with_id = [ 'ton_block/signature_with_id' ]
 verbose = [  ]
 
 [[bench]]
