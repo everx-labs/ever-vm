@@ -2,7 +2,7 @@
 build = 'common/build/build.rs'
 edition = '2021'
 name = 'ton_vm'
-version = '1.8.104'
+version = '1.8.106'
 
 [dependencies]
 diffy = '0.2.2'
@@ -22,7 +22,6 @@ ton_types = { git = 'https://github.com/tonlabs/ton-labs-types.git', tag = '1.12
 zstd = { default-features = false, optional = true, version = '0.11' }
 
 [features]
-ci_run = [  ]
 fift_check = [  ]
 gosh = [ 'ton_block/gosh', 'zstd' ]
 log_file = [  ]
