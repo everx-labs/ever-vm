@@ -99,10 +99,13 @@ pub struct Engine {
     flags: u64,
     capabilities: u64,
     block_version: u32,
+    #[cfg(feature = "signature_with_id")]
+    signature_id: i32,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct BehaviorModifiers {
+    #[cfg(feature = "signature_no_check")]
     pub chksig_always_succeed: bool
 }
 
@@ -250,11 +253,18 @@ impl Engine {
             flags: 0,
             capabilities,
             block_version: 0,
+            #[cfg(feature = "signature_with_id")]
+            signature_id: 0,
         }
     }
 
     pub fn set_block_version(&mut self, block_version: u32) {
         self.block_version = block_version
+    }
+
+    #[cfg(feature = "signature_with_id")]
+    pub fn set_signature_id(&mut self, signature_id: i32) {
+        self.signature_id = signature_id;
     }
 
     pub fn assert_ctrl(&self, ctrl: usize, item: &StackItem) -> &Engine {
@@ -284,6 +294,11 @@ impl Engine {
 
     pub fn block_version(&self) -> u32 {
         self.block_version
+    }
+
+    #[cfg(feature = "signature_with_id")]
+    pub fn signature_id(&self) -> i32 {
+        self.signature_id
     }
 
     pub fn check_or_set_flags(&mut self, flags: u64) -> bool {

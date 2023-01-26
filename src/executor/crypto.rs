@@ -26,6 +26,9 @@ use crate::{
     types::{Exception, Status}
 };
 use ed25519::signature::Verifier;
+use std::borrow::Cow;
+#[cfg(feature = "signature_with_id")]
+use ton_block::GlobalCapabilities;
 use ton_types::{BuilderData, error, GasConsumer, ExceptionCode, UInt256};
 
 const PUBLIC_KEY_BITS:  usize = PUBLIC_KEY_BYTES * 8;
@@ -96,7 +99,12 @@ pub(super) fn execute_chksigns(engine: &mut Engine) -> Status {
     ).map_err(|_| exception!(ExceptionCode::FatalError))?;
 
     let data = engine.cmd.var(2).as_slice()?.get_bytestring(0);
-    let result = engine.modifiers.chksig_always_succeed || pub_key.verify(&data, &signature).is_ok();
+    let data = preprocess_signed_data(engine, &data);
+    #[cfg(feature = "signature_no_check")]
+    let result = 
+        engine.modifiers.chksig_always_succeed || pub_key.verify(&data, &signature).is_ok();
+    #[cfg(not(feature = "signature_no_check"))]
+    let result = pub_key.verify(&data, &signature).is_ok();
     engine.cc.stack.push(boolean!(result));
     Ok(())
 }
@@ -118,15 +126,33 @@ pub(super) fn execute_chksignu(engine: &mut Engine) -> Status {
     let signature = engine.cmd.var(1).as_slice()?.get_bytestring(0);
 
     let mut result = false;
+    #[cfg(feature = "signature_no_check")]
     if engine.modifiers.chksig_always_succeed {
         result = true;
-    } else if let Ok(signature) = ed25519::signature::Signature::from_bytes(&signature[..SIGNATURE_BYTES]) {
-        if let Ok(pub_key) = ed25519_dalek::PublicKey::from_bytes(pub_key.data()) {
-            result = pub_key.verify(hash.data(), &signature).is_ok();
+    } 
+    if !result {
+        if let Ok(signature) = ed25519::signature::Signature::from_bytes(
+            &signature[..SIGNATURE_BYTES]
+        ) {
+            if let Ok(pub_key) = ed25519_dalek::PublicKey::from_bytes(pub_key.data()) {
+                let data = preprocess_signed_data(engine, hash.data());
+                result = pub_key.verify(&data, &signature).is_ok();
+            }
         }
     }
     engine.cc.stack.push(boolean!(result));
     Ok(())
+}
+
+fn preprocess_signed_data<'a>(_engine: &Engine, data: &'a [u8]) -> Cow<'a, [u8]> {
+    #[cfg(feature = "signature_with_id")]
+    if _engine.check_capabilities(GlobalCapabilities::CapSignatureWithId as u64) {
+        let mut extended_data = Vec::with_capacity(4 + data.len());
+        extended_data.extend_from_slice(&_engine.signature_id().to_be_bytes());
+        extended_data.extend_from_slice(data);
+        return Cow::Owned(extended_data)
+    }
+    Cow::Borrowed(data)
 }
 
 fn hash_to_uint(bits: impl AsRef<[u8]>) -> IntegerData {
