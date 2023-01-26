@@ -27,7 +27,6 @@ use crate::{
 };
 use std::borrow::Cow;
 use ed25519::signature::Verifier;
-use ton_block::GlobalCapabilities;
 use ton_types::{BuilderData, error, GasConsumer, ExceptionCode, UInt256};
 
 const PUBLIC_KEY_BITS:  usize = PUBLIC_KEY_BYTES * 8;
@@ -99,10 +98,8 @@ pub(super) fn execute_chksigns(engine: &mut Engine) -> Status {
         &engine.cmd.var(1).as_slice()?.get_bytestring(0)[..SIGNATURE_BYTES]
     ).map_err(|_| exception!(ExceptionCode::FatalError))?;
 
-    let mut data = engine.cmd.var(2).as_slice()?.get_bytestring(0);
-    if engine.check_capabilities(GlobalCapabilities::CapSignatureWithGlobalId as u64) {
-        data = extend_with_global_id(&data, engine.global_id());
-    }
+    let data = engine.cmd.var(2).as_slice()?.get_bytestring(0);
+    let data = extend_with_signature_id(engine, &data);
 
     let result = engine.modifiers.chksig_always_succeed || pub_key.verify(&data, &signature).is_ok();
     engine.cc.stack.push(boolean!(result));
@@ -132,11 +129,7 @@ pub(super) fn execute_chksignu(engine: &mut Engine) -> Status {
         result = true;
     } else if let Ok(signature) = ed25519::signature::Signature::from_bytes(&signature[..SIGNATURE_BYTES]) {
         if let Ok(pub_key) = ed25519_dalek::PublicKey::from_bytes(pub_key.data()) {
-            let mut data = Cow::Borrowed(hash.data());
-            if engine.check_capabilities(GlobalCapabilities::CapSignatureWithGlobalId as u64) {
-                data = Cow::Owned(extend_with_global_id(data.as_ref(), engine.global_id()));
-            }
-
+            let data = extend_with_signature_id(engine, hash.data());
             result = pub_key.verify(data.as_ref(), &signature).is_ok();
         }
     }
@@ -144,11 +137,23 @@ pub(super) fn execute_chksignu(engine: &mut Engine) -> Status {
     Ok(())
 }
 
-fn extend_with_global_id(data: &[u8], global_id: i32) -> Vec<u8> {
-    let mut extended_data = Vec::with_capacity(4 + data.len());
-    extended_data.extend_from_slice(&global_id.to_be_bytes());
-    extended_data.extend_from_slice(data);
-    extended_data
+#[cfg(feature = "signature_with_id")]
+fn extend_with_signature_id<'a>(engine: &Engine, data: &'a [u8]) -> Cow<'a, [u8]> {
+    use ton_block::GlobalCapabilities;
+
+    if engine.check_capabilities(GlobalCapabilities::CapSignatureWithId as u64) {
+        let mut extended_data = Vec::with_capacity(4 + data.len());
+        extended_data.extend_from_slice(&engine.signature_id().to_be_bytes());
+        extended_data.extend_from_slice(data);
+        Cow::Owned(extended_data)
+    } else {
+        Cow::Borrowed(data)
+    }
+}
+
+#[cfg(not(feature = "signature_with_id"))]
+fn extend_with_signature_id<'a>(_: &Engine, data: &'a [u8]) -> Cow<'a, [u8]> {
+    Cow::Borrowed(data)
 }
 
 fn hash_to_uint(bits: impl AsRef<[u8]>) -> IntegerData {
