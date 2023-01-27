@@ -83,7 +83,7 @@ pub fn update_error_description(mut err: failure::Error, f: impl FnOnce(&str) ->
         None => {
             if let Some(code) = err.downcast_ref::<ton_types::ExceptionCode>() {
                 // TODO: it is wrong, need to modify current backtrace
-                err = TvmError::TvmExceptionFull(Exception::from_code(*code, file!(), line!()), f("")).into()
+                err = TvmError::TvmExceptionFull(Exception::from_code(*code, file!(), line!()), f(&format!("{:?}", err))).into()
             }
         }
     }

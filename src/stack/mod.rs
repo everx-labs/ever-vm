@@ -512,7 +512,7 @@ impl StackItem {
             }
             StackItem::Slice(data) => {
                 let d1 = |level_mask : u8, refs_count : u8, is_special: u8| {
-                    (refs_count + 8 * is_special + 32 * level_mask) as u8
+                    refs_count + 8 * is_special + 32 * level_mask
                 };
                 let d2 = |bits : u32| {
                     let res = ((bits / 8) * 2) as u8;
