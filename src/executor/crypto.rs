@@ -41,7 +41,7 @@ const SIGNATURE_BYTES:  usize = ed25519_dalek::SIGNATURE_LENGTH;
 pub(super) fn execute_hashcu(engine: &mut Engine) -> Status {
     engine.load_instruction(Instruction::new("HASHCU"))?;
     fetch_stack(engine, 1)?;
-    let hash_int = hash_to_uint(&engine.cmd.var(0).as_cell()?.repr_hash());
+    let hash_int = hash_to_uint(engine.cmd.var(0).as_cell()?.repr_hash());
     engine.cc.stack.push(StackItem::integer(hash_int));
     Ok(())
 }
@@ -54,7 +54,7 @@ pub(super) fn execute_hashsu(engine: &mut Engine) -> Status {
     fetch_stack(engine, 1)?;
     let builder = BuilderData::from_slice(engine.cmd.var(0).as_slice()?);
     let cell = engine.finalize_cell(builder)?;
-    let hash_int = hash_to_uint(&cell.repr_hash());
+    let hash_int = hash_to_uint(cell.repr_hash());
     engine.cc.stack.push(StackItem::integer(hash_int));
     Ok(())
 }

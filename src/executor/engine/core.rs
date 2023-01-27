@@ -32,7 +32,7 @@ use std::{sync::{Arc, Mutex}, ops::Range};
 use std::collections::HashMap;
 use ton_types::{
     BuilderData, Cell, CellType, error, GasConsumer, Result, SliceData, HashmapE,
-    types::{ExceptionCode, UInt256}, IBitstring,
+    ExceptionCode, UInt256, IBitstring,
 };
 use ton_block::{ShardAccount, Deserializable, GlobalCapabilities};
 
@@ -178,7 +178,7 @@ impl GasConsumer for Engine {
         self.use_gas(Gas::finalize_price());
         builder
             .finalize(1024)
-            .map_err(|err| exception!(ExceptionCode::CellOverflow, "too deep cell creation: {}", err))
+            .map_err(|err| exception!(ExceptionCode::CellOverflow, "finalize cell error: {}", err))
     }
     fn load_cell(&mut self, cell: Cell) -> Result<SliceData> {
         self.load_hashed_cell(cell, true)
