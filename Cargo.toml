@@ -17,8 +17,8 @@ num-traits = '0.2'
 rand = '0.7'
 sha2 = '0.10'
 similar = { features = [ 'bytes' ], version = '2.2.0' }
-ton_block = { git = 'https://github.com/tonlabs/ton-labs-block.git', tag = '1.9.22' }
-ton_types = { git = 'https://github.com/tonlabs/ton-labs-types.git', tag = '1.12.6' }
+ton_block = { git = 'https://github.com/tonlabs/ever-block.git', tag = '1.9.22' }
+ton_types = { git = 'https://github.com/tonlabs/ever-types.git', tag = '1.12.6' }
 zstd = { default-features = false, optional = true, version = '0.11' }
 
 [features]
