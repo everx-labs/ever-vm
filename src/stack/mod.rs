@@ -417,7 +417,7 @@ impl StackItem {
     pub fn as_slice(&self) -> ResultRef<SliceData> {
         match self {
             StackItem::Slice(data) => Ok(data),
-            _ => err!(ExceptionCode::TypeCheckError, "item {} is not an slice", self)
+            _ => err!(ExceptionCode::TypeCheckError, "item {} is not a slice", self)
         }
     }
 

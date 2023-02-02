@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2023 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -17,6 +17,7 @@ use crate::{
     stack::{StackItem, integer::IntegerData},
     types::{Exception, Status}
 };
+use ton_block::GlobalCapabilities;
 use ton_types::{BuilderData, error, IBitstring, types::ExceptionCode};
 
 // slice - uint slice'
@@ -54,13 +55,18 @@ fn store_var(engine: &mut Engine, name: &'static str, max_bits: usize, sign: boo
     engine.load_instruction(Instruction::new(name))?;
     fetch_stack(engine, 2)?;
     let x = engine.cmd.var(0).as_integer()?;
+    if engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+        if x.is_nan() {
+            return err!(ExceptionCode::IntegerOverflow);
+        }
+    }
     let b = engine.cmd.var(1).as_builder()?;
     let (bits, vec) = match sign {
         false => {
             x.check_neg()?;
-            (x.ubitsize(), x.take_value_of(|x| Some(x.to_bytes_be().1))?)
+            (x.ubitsize()?, x.take_value_of(|x| Some(x.to_bytes_be().1))?)
         }
-        true => (x.bitsize(), x.take_value_of(|x| Some(x.to_signed_bytes_be()))?)
+        true => (x.bitsize()?, x.take_value_of(|x| Some(x.to_signed_bytes_be()))?)
     };
     if bits > max_bits {
         return err!(ExceptionCode::RangeCheckError, "{} has {} bits, but max is {}", x, bits, max_bits)

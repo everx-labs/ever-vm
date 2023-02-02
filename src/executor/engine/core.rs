@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2023 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -481,8 +481,9 @@ impl Engine {
             let string = match item {
                 StackItem::None => "N".to_string(),
                 StackItem::Integer(data) => match data.bitsize() {
-                    0..=230 => data.to_string(),
-                    bitsize => format!("I{}", bitsize),
+                    Ok(0..=230) => data.to_string(),
+                    Ok(bitsize) => format!("I{}", bitsize),
+                    Err(err) => err.to_string()
                 },
                 StackItem::Cell(data) => {
                     format!("C{}-{}", data.bit_length(), data.references_count())
@@ -621,6 +622,7 @@ impl Engine {
         match self.check_while_loop_condition() {
             Ok(true) => {
                 self.log_string = Some("NEXT WHILE ITERATION");
+                self.discharge_nargs();
                 let mut cond = ContinuationData::with_code(cond);
                 let mut while_ = ContinuationData::move_without_stack(&mut self.cc, body);
                 while_.savelist.put_opt(0, self.ctrl_mut(0)?);
@@ -631,7 +633,13 @@ impl Engine {
                 self.log_string = Some("RET FROM WHILE");
                 switch(self, ctrl!(0))?;
             }
-            Err(err) => return Err(err)
+            Err(err) => {
+                if self.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+                    let quit = ContinuationType::Quit(ExceptionCode::NormalTermination as i32);
+                    self.ctrls.put(0, &mut StackItem::continuation(ContinuationData::with_type(quit)))?;
+                }
+                return Err(err)
+            }
         }
         Ok(None)
     }
@@ -640,6 +648,7 @@ impl Engine {
             if *counter > 1 {
                 *counter -= 1;
                 self.log_string = Some("NEXT REPEAT ITERATION");
+                self.discharge_nargs();
                 let mut repeat = ContinuationData::move_without_stack(&mut self.cc, body);
                 repeat.savelist.put_opt(0, self.ctrl_mut(0)?);
                 self.ctrls.put_opt(0, &mut StackItem::continuation(repeat));
@@ -654,6 +663,7 @@ impl Engine {
         match self.check_until_loop_condition() {
             Ok(true) => {
                 self.log_string = Some("NEXT UNTIL ITERATION");
+                self.discharge_nargs();
                 let mut until = ContinuationData::move_without_stack(&mut self.cc, body);
                 until.savelist.put_opt(0, self.ctrl_mut(0)?);
                 self.ctrls.put_opt(0, &mut StackItem::continuation(until));
@@ -668,9 +678,37 @@ impl Engine {
     }
     fn step_again_loop(&mut self, body: SliceData) -> Result<Option<i32>> {
         self.log_string = Some("NEXT AGAIN ITERATION");
+        self.discharge_nargs();
         let again = ContinuationData::move_without_stack(&mut self.cc, body);
         self.ctrls.put_opt(0, &mut StackItem::continuation(again));
         Ok(None)
+    }
+
+    fn discharge_nargs(&mut self) {
+        if self.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+            if self.cc.nargs != -1 {
+                let depth = self.cc.stack.depth();
+                let _ = self.cc.stack.drop_range_straight((depth - self.cc.nargs as usize)..depth);
+                self.cc.nargs = -1;
+            }
+        }
+    }
+
+    fn make_external_error(&mut self) -> Result<Option<i32>> {
+        let number = self.cc.stack.drop(0)?.as_integer()?.into(0..=0xffff)?;
+        if number == ExceptionCode::NormalTermination as usize ||
+            number == ExceptionCode::AlternativeTermination as usize {
+            return Ok(Some(number as i32))
+        }
+        let value = match self.cc.stack.drop(0) {
+            Ok(item) => item.as_integer().cloned().unwrap_or(IntegerData::zero()),
+            Err(_) => IntegerData::zero()
+        };
+        let exception = match ExceptionCode::from_usize(number) {
+            Some(code) => Exception::from_code_and_value(code, value, file!(), line!()),
+            None => Exception::from_number_and_value(number, StackItem::int(value), file!(), line!())
+        };
+        Err(error!(TvmError::TvmExceptionFull(exception, String::new())))
     }
 
     // return Ok(Some(exit_code)) - if you want to stop execution
@@ -690,6 +728,7 @@ impl Engine {
                     ContinuationType::RepeatLoopBody(code, _counter) => self.step_repeat_loop(code),
                     ContinuationType::UntilLoopCondition(body) => self.step_until_loop(body),
                     ContinuationType::AgainLoopBody(slice) => self.step_again_loop(slice),
+                    ContinuationType::ExcQuit => Ok(self.make_external_error()?),
                 }
             };
             if self.is_trace_enabled() {
@@ -700,7 +739,17 @@ impl Engine {
             match self.gas.check_gas_remaining().and(result) {
                 Ok(None) => (),
                 Ok(Some(exit_code)) => return Ok(Some(exit_code)),
-                Err(err) => self.raise_exception(err)?
+                Err(err) => {
+                    if self.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+                        match self.raise_exception_bugfix0(err) {
+                            Ok(Some(exit_code)) => return Ok(Some(exit_code)),
+                            Ok(None) => (),
+                            Err(err) => return Err(err)
+                        }
+                    } else {
+                        self.raise_exception(err)?
+                    }
+                }
             }
         }
         Ok(None)
@@ -914,6 +963,9 @@ impl Engine {
         self.ctrls.put(0, &mut StackItem::continuation(ContinuationData::with_type(cont))).unwrap();
         let cont = ContinuationType::Quit(ExceptionCode::AlternativeTermination as i32);
         self.ctrls.put(1, &mut StackItem::continuation(ContinuationData::with_type(cont))).unwrap();
+        if self.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+            self.ctrls.put(2, &mut StackItem::continuation(ContinuationData::with_type(ContinuationType::ExcQuit))).unwrap();
+        }
         self.ctrls.put(3, &mut StackItem::continuation(ContinuationData::with_code(code.clone()))).unwrap();
         self.ctrls.put(4, &mut StackItem::cell(Cell::default())).unwrap();
         self.ctrls.put(5, &mut StackItem::cell(Cell::default())).unwrap();
@@ -1367,6 +1419,55 @@ impl Engine {
             return Err(err)
         }
         Ok(())
+    }
+
+    // raises the exception and tries to dispatch it via c(2).
+    // If c(2) is not set, returns that exception, otherwise, returns None
+    fn raise_exception_bugfix0(&mut self, err: failure::Error) -> Result<Option<i32>> {
+        let exception = match tvm_exception_full(&err) {
+            Some(exception) => exception,
+            None => {
+                log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code_string());
+                return Err(err)
+            }
+        };
+        if exception.exception_code().is_some() {
+            self.step += 1;
+        }
+        if exception.exception_code() == Some(ExceptionCode::OutOfGas) {
+            log::trace!(target: "tvm", "OUT OF GAS CODE: {}\n", self.cmd_code_string());
+            return Err(err)
+        }
+        if let Err(err) = self.gas.try_use_gas(Gas::exception_price()) {
+            self.step += 1;
+            return Err(err);
+        }
+        let n = self.cmd.vars.len();
+        // self.trace_info(EngineTraceInfoType::Exception, self.gas_used(), Some(format!("EXCEPTION: {}", err)));
+        let c2 = self.ctrls.remove(2).ok_or(err)?;
+        if let Ok(c2) = c2.as_continuation() {
+            if c2.type_of == ContinuationType::ExcQuit {
+                if let Some(exit_code) = exception.is_normal_termination() {
+                    let cont = ContinuationData::with_type(ContinuationType::Quit(exit_code));
+                    self.cmd.push_var(StackItem::Continuation(Arc::new(cont)));
+                    self.cc.stack.push(exception.value.clone());
+                    self.cmd.vars[n].as_continuation_mut()?.nargs = 1;
+                    switch(self, var!(n))?;
+                    return Ok(None)
+                } else {
+                    self.cc.stack = Stack::new();
+                    self.cc.stack.push(exception.value.clone());
+                    self.cc.stack.push(int!(exception.exception_or_custom_code()));
+                    return Err(error!(TvmError::TvmExceptionFull(exception, String::new())))
+                }
+            }
+        }
+        self.cmd.push_var(c2);
+        self.cc.stack.push(exception.value.clone());
+        self.cc.stack.push(int!(exception.exception_or_custom_code()));
+        self.cmd.vars[n].as_continuation_mut()?.nargs = 2;
+        switch(self, var!(n))?;
+        Ok(None)
     }
 
     pub(in crate::executor) fn last_cmd(&self) -> u8 {

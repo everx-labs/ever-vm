@@ -2,10 +2,9 @@
 build = 'common/build/build.rs'
 edition = '2021'
 name = 'ton_vm'
-version = '1.8.114'
+version = '1.8.115'
 
 [dependencies]
-diffy = '0.2.2'
 ed25519 = '1.2'
 ed25519-dalek = '1.0'
 failure = '0.1'
@@ -16,14 +15,15 @@ num = '0.4'
 num-traits = '0.2'
 rand = '0.7'
 sha2 = '0.10'
-similar = { features = [ 'bytes' ], version = '2.2.0' }
+diffy = { optional = true, version = '0.2.2' }
+similar = { features = [ 'bytes' ], optional = true, version = '2.2.0' }
 ton_block = { git = 'https://github.com/tonlabs/ever-block.git', tag = '1.9.28' }
 ton_types = { git = 'https://github.com/tonlabs/ever-types.git', tag = '1.12.7' }
 zstd = { default-features = false, optional = true, version = '0.11' }
 
 [features]
 fift_check = [  ]
-gosh = [ 'ton_block/gosh', 'zstd' ]
+gosh = [ 'ton_block/gosh', 'diffy', 'similar', 'zstd' ]
 log_file = [  ]
 required-features = [ 'gosh' ]
 signature_no_check = [  ]

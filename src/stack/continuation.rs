@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2023 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -31,6 +31,7 @@ pub enum ContinuationType {
     RepeatLoopBody(SliceData, isize),
     UntilLoopCondition(SliceData),
     WhileLoopCondition(SliceData, SliceData),
+    ExcQuit,
 }
 
 impl Default for ContinuationType {
@@ -167,6 +168,9 @@ impl ContinuationData {
                 builder.append_bits(0x8, 4)?;
                 builder.append_bits(*exit_code as usize, 32)?;
             }
+            ContinuationType::ExcQuit => {
+                builder.append_bits(0xb, 4)?;
+            }
             ContinuationType::RepeatLoopBody(body, counter) => {
                 builder.append_bits(0xe, 4)?;
                 let child_cell = gas_consumer.finalize_cell(slice_serialize(body)?)?;
@@ -220,18 +224,19 @@ impl ContinuationData {
         let mut new_list = Vec::new();
         let type_of = match slice.get_next_int(2)? {
             0 => ContinuationType::Ordinary,
-            1 => ContinuationType::TryCatch,
             2 => {
                 match slice.get_next_int(2)? {
                     0 => {
                         let exit_code = slice.get_next_int(32)? as i32;
                         ContinuationType::Quit(exit_code)
                     }
+                    1 => ContinuationType::TryCatch,
                     2 => {
                         let mut child_slice = gas_consumer.load_cell(slice.checked_drain_reference()?)?;
                         let body = slice_deserialize(&mut child_slice)?;
                         ContinuationType::UntilLoopCondition(body)
                     }
+                    3 => ContinuationType::ExcQuit,
                     typ => return err!(ExceptionCode::UnknownError, "wrong continuation type 10{:2b}", typ)
                 }
             }
@@ -339,6 +344,9 @@ impl ContinuationData {
                 builder.checked_append_reference(slice_serialize(cond)?.into_cell()?)?;
                 builder.checked_append_reference(slice_serialize(body)?.into_cell()?)?;
             }
+            ContinuationType::ExcQuit => {
+                builder.append_bits(0xb, 4)?;
+            }
         }
 
         let mut stack = BuilderData::new();
@@ -374,17 +382,20 @@ impl ContinuationData {
         let mut gas = 0;
         let cont_type = match slice.get_next_int(2)? {
             0 => Ok(ContinuationType::Ordinary),
-            1 => Ok(ContinuationType::TryCatch),
             2 => {
                 match slice.get_next_int(2)? {
                     0 => {
                         let exit_code = slice.get_next_int(32)? as i32;
                         Ok(ContinuationType::Quit(exit_code))
                     }
+                    1 => Ok(ContinuationType::TryCatch),
                     2 => {
                         let mut body_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
                         let body: SliceData = slice_deserialize(&mut body_slice)?;
                         Ok(ContinuationType::UntilLoopCondition(body))
+                    }
+                    3 => {
+                        Ok(ContinuationType::ExcQuit)
                     }
                     _ => err!(ExceptionCode::UnknownError)
                 }
@@ -501,6 +512,7 @@ impl fmt::Display for ContinuationType {
             ContinuationType::RepeatLoopBody(_, _) => "repeat",
             ContinuationType::UntilLoopCondition(_) => "until",
             ContinuationType::WhileLoopCondition(_, _) => "while",
+            ContinuationType::ExcQuit => "exception-quit",
         };
         write!(f, "{}", name)
     }

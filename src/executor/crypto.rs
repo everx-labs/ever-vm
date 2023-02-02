@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2023 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -26,6 +26,7 @@ use crate::{
     types::{Exception, Status}
 };
 use ed25519::signature::Verifier;
+use ton_block::GlobalCapabilities;
 use std::borrow::Cow;
 #[cfg(feature = "signature_with_id")]
 use ton_block::GlobalCapabilities;
@@ -35,6 +36,10 @@ const PUBLIC_KEY_BITS:  usize = PUBLIC_KEY_BYTES * 8;
 const SIGNATURE_BITS:   usize = SIGNATURE_BYTES * 8;
 const PUBLIC_KEY_BYTES: usize = ed25519_dalek::PUBLIC_KEY_LENGTH;
 const SIGNATURE_BYTES:  usize = ed25519_dalek::SIGNATURE_LENGTH;
+
+fn hash_to_uint(bits: impl AsRef<[u8]>) -> IntegerData {
+    IntegerData::from_unsigned_bytes_be(bits)
+}
 
 /// HASHCU (c – x), computes the representation hash of a Cell c
 /// and returns it as a 256-bit unsigned integer x.
@@ -77,71 +82,18 @@ pub(super) fn execute_sha256u(engine: &mut Engine) -> Status {
     }
 }
 
-// CHKSIGNS (d s k – ?)
-// checks whether s is a valid Ed25519-signature of the data portion of Slice d using public key k,
-// similarly to CHKSIGNU. If the bit length of Slice d is not divisible by eight,
-// throws a cell underflow exception. The verification of Ed25519 signatures is the standard one,
-// with sha256 used to reduce d to the 256-bit number that is actually signed.
-pub(super) fn execute_chksigns(engine: &mut Engine) -> Status {
-    engine.load_instruction(Instruction::new("CHKSIGNS"))?;
-    fetch_stack(engine, 3)?;
-    let pub_key = engine.cmd.var(0).as_integer()?
-        .as_builder::<UnsignedIntegerBigEndianEncoding>(PUBLIC_KEY_BITS)?;
-    if engine.cmd.var(1).as_slice()?.remaining_bits() < SIGNATURE_BITS ||
-       engine.cmd.var(2).as_slice()?.remaining_bits() % 8 != 0 {
-        return err!(ExceptionCode::CellUnderflow)
-    }
-    let pub_key = ed25519_dalek::PublicKey::from_bytes(
-        &pub_key.data()[..PUBLIC_KEY_BYTES]
-    ).map_err(|_| exception!(ExceptionCode::FatalError))?;
-    let signature = ed25519::signature::Signature::from_bytes(
-        &engine.cmd.var(1).as_slice()?.get_bytestring(0)[..SIGNATURE_BYTES]
-    ).map_err(|_| exception!(ExceptionCode::FatalError))?;
-
-    let data = engine.cmd.var(2).as_slice()?.get_bytestring(0);
-    let data = preprocess_signed_data(engine, &data);
-    #[cfg(feature = "signature_no_check")]
-    let result = 
-        engine.modifiers.chksig_always_succeed || pub_key.verify(&data, &signature).is_ok();
-    #[cfg(not(feature = "signature_no_check"))]
-    let result = pub_key.verify(&data, &signature).is_ok();
-    engine.cc.stack.push(boolean!(result));
-    Ok(())
+enum DataForSignature {
+    Hash(BuilderData),
+    Slice(Vec<u8>)
 }
 
-/// CHKSIGNU (h s k – -1 or 0)
-/// checks the Ed25519-signature s (slice) of a hash h (a 256-bit unsigned integer)
-/// using public key k (256-bit unsigned integer).
-pub(super) fn execute_chksignu(engine: &mut Engine) -> Status {
-    engine.load_instruction(Instruction::new("CHKSIGNU"))?;
-    fetch_stack(engine, 3)?;
-    let pub_key = engine.cmd.var(0).as_integer()?
-        .as_builder::<UnsignedIntegerBigEndianEncoding>(PUBLIC_KEY_BITS)?;
-    engine.cmd.var(1).as_slice()?;
-    let hash = engine.cmd.var(2).as_integer()?
-        .as_builder::<UnsignedIntegerBigEndianEncoding>(256)?;
-    if engine.cmd.var(1).as_slice()?.remaining_bits() < SIGNATURE_BITS {
-        return err!(ExceptionCode::CellUnderflow)
-    }
-    let signature = engine.cmd.var(1).as_slice()?.get_bytestring(0);
-
-    let mut result = false;
-    #[cfg(feature = "signature_no_check")]
-    if engine.modifiers.chksig_always_succeed {
-        result = true;
-    } 
-    if !result {
-        if let Ok(signature) = ed25519::signature::Signature::from_bytes(
-            &signature[..SIGNATURE_BYTES]
-        ) {
-            if let Ok(pub_key) = ed25519_dalek::PublicKey::from_bytes(pub_key.data()) {
-                let data = preprocess_signed_data(engine, hash.data());
-                result = pub_key.verify(&data, &signature).is_ok();
-            }
+impl AsRef<[u8]> for DataForSignature {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            DataForSignature::Hash(hash) => hash.data(),
+            DataForSignature::Slice(slice) => slice.as_slice()
         }
     }
-    engine.cc.stack.push(boolean!(result));
-    Ok(())
 }
 
 fn preprocess_signed_data<'a>(_engine: &Engine, data: &'a [u8]) -> Cow<'a, [u8]> {
@@ -155,6 +107,62 @@ fn preprocess_signed_data<'a>(_engine: &Engine, data: &'a [u8]) -> Cow<'a, [u8]>
     Cow::Borrowed(data)
 }
 
-fn hash_to_uint(bits: impl AsRef<[u8]>) -> IntegerData {
-    IntegerData::from_unsigned_bytes_be(bits)
+fn check_signature(engine: &mut Engine, name: &'static str, hash: bool) -> Status {
+    engine.load_instruction(Instruction::new(name))?;
+    fetch_stack(engine, 3)?;
+    let pub_key = engine.cmd.var(0).as_integer()?
+        .as_builder::<UnsignedIntegerBigEndianEncoding>(PUBLIC_KEY_BITS)?;
+    engine.cmd.var(1).as_slice()?;
+    if hash {
+        engine.cmd.var(2).as_integer()?;
+    } else {
+        engine.cmd.var(2).as_slice()?;
+    }
+    if engine.cmd.var(1).as_slice()?.remaining_bits() < SIGNATURE_BITS {
+        return err!(ExceptionCode::CellUnderflow)
+    }
+    let data = if hash {
+        DataForSignature::Hash(engine.cmd.var(2).as_integer()?
+            .as_builder::<UnsignedIntegerBigEndianEncoding>(256)?)
+    } else {
+        if engine.cmd.var(2).as_slice()?.remaining_bits() % 8 != 0 {
+            return err!(ExceptionCode::CellUnderflow)
+        }
+        DataForSignature::Slice(engine.cmd.var(2).as_slice()?.get_bytestring(0))
+    };
+    let pub_key = ed25519_dalek::PublicKey::from_bytes(pub_key.data())
+        .map_err(|err| exception!(ExceptionCode::FatalError, "cannot load public key {}", err))?;
+    let signature = engine.cmd.var(1).as_slice()?.get_bytestring(0);
+    let signature = match ed25519::signature::Signature::from_bytes(&signature[..SIGNATURE_BYTES]) {
+        Ok(signature) => signature,
+        Err(_) if hash && !engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) => {
+            engine.cc.stack.push(boolean!(false));
+            return Ok(())
+        }
+        Err(err ) => return err!(ExceptionCode::FatalError, "cannot load signature {}", err)
+    };
+    let data = preprocess_signed_data(engine, data.as_ref());
+    #[cfg(feature = "signature_no_check")]
+    let result = 
+        engine.modifiers.chksig_always_succeed || pub_key.verify(&data, &signature).is_ok();
+    #[cfg(not(feature = "signature_no_check"))]
+    let result = pub_key.verify(&data, &signature).is_ok();
+    engine.cc.stack.push(boolean!(result));
+    Ok(())
+}
+
+// CHKSIGNS (d s k – ?)
+// checks whether s is a valid Ed25519-signature of the data portion of Slice d using public key k,
+// similarly to CHKSIGNU. If the bit length of Slice d is not divisible by eight,
+// throws a cell underflow exception. The verification of Ed25519 signatures is the standard one,
+// with sha256 used to reduce d to the 256-bit number that is actually signed.
+pub(super) fn execute_chksigns(engine: &mut Engine) -> Status {
+    check_signature(engine, "CHKSIGNS", false)
+}
+
+/// CHKSIGNU (h s k – -1 or 0)
+/// checks the Ed25519-signature s (slice) of a hash h (a 256-bit unsigned integer)
+/// using public key k (256-bit unsigned integer).
+pub(super) fn execute_chksignu(engine: &mut Engine) -> Status {
+    check_signature(engine, "CHKSIGNU", true)
 }
