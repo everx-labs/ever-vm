@@ -41,7 +41,7 @@ impl Encoding for SignedIntegerBigEndianEncoding {
 
 impl Serializer<IntegerData> for SignedIntegerBigEndianEncoding {
     fn try_serialize(&self, value: &IntegerData) -> Result<BuilderData> {
-        if !value.fits_in(self.length_in_bits) {
+        if !value.fits_in(self.length_in_bits)? {
             // Spec. 3.2.7
             // * If the integer x to be serialized is not in the range
             //   −2^(n−1) <= x < 2^(n−1) (for signed integer serialization)

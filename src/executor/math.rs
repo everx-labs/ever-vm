@@ -36,7 +36,7 @@ type BinaryAssign = fn(&IntegerData, &mut IntegerData) -> Status;
 type BinaryConst = fn(isize, &IntegerData) -> Result<IntegerData>;
 type Unary = fn(&IntegerData) -> Result<IntegerData>;
 type UnaryWithLen = fn(&IntegerData, usize) -> Result<IntegerData>;
-type FnFits = fn(&IntegerData, usize) -> bool;
+type FnFits = fn(&IntegerData, usize) -> Result<bool>;
 
 // Implementation of binary operation which takes both arguments from stack
 fn binary<T>(engine: &mut Engine, name: &'static str, handler: Binary) -> Status
@@ -138,7 +138,7 @@ where
     if x.is_nan() {
         on_nan_parameter!(T)?;
         *engine.cc.stack.get_mut(0) = int!(nan);
-    } else if !op_fit(x, length) {
+    } else if !op_fit(x, length)? {
         on_integer_overflow!(T)?;
         *engine.cc.stack.get_mut(0) = int!(nan);
     }
@@ -415,7 +415,7 @@ where
         } else if x.is_zero() {
             Ok(IntegerData::zero())
         } else {
-            Ok(IntegerData::from_u32(x.bitsize() as u32))
+            Ok(IntegerData::from_u32(x.bitsize()? as u32))
         }
     )
 }
@@ -862,7 +862,7 @@ where
             on_range_check_error!(T)?;
             Ok(IntegerData::nan())
         } else {
-            Ok(IntegerData::from_u32(x.ubitsize() as u32))
+            Ok(IntegerData::from_u32(x.ubitsize()? as u32))
         }
     )
 }
