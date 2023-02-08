@@ -701,7 +701,7 @@ impl Engine {
             return Ok(Some(number as i32))
         }
         let value = match self.cc.stack.drop(0) {
-            Ok(item) => item.as_integer().cloned().unwrap_or(IntegerData::zero()),
+            Ok(item) => item.as_integer().cloned().unwrap_or_default(),
             Err(_) => IntegerData::zero()
         };
         let exception = match ExceptionCode::from_usize(number) {
@@ -1450,7 +1450,7 @@ impl Engine {
                 if let Some(exit_code) = exception.is_normal_termination() {
                     let cont = ContinuationData::with_type(ContinuationType::Quit(exit_code));
                     self.cmd.push_var(StackItem::Continuation(Arc::new(cont)));
-                    self.cc.stack.push(exception.value.clone());
+                    self.cc.stack.push(exception.value);
                     self.cmd.vars[n].as_continuation_mut()?.nargs = 1;
                     switch(self, var!(n))?;
                     return Ok(None)
