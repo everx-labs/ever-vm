@@ -26,9 +26,7 @@ use crate::{
     types::{Exception, Status}
 };
 use ed25519::signature::Verifier;
-use ton_block::GlobalCapabilities;
 use std::borrow::Cow;
-#[cfg(feature = "signature_with_id")]
 use ton_block::GlobalCapabilities;
 use ton_types::{BuilderData, error, GasConsumer, ExceptionCode, UInt256};
 
