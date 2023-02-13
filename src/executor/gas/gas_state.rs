@@ -12,11 +12,11 @@
 */
 
 use crate::{error::TvmError, types::Exception};
-use std::{cmp::{max, min}};
+use std::cmp::{max, min};
 use ton_types::{error, Result, types::ExceptionCode};
 
 // Gas state
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Gas {
     gas_limit_max: i64,
     gas_limit: i64,
@@ -243,7 +243,7 @@ impl Gas {
         if self.gas_remaining >= 0 {
             Ok(None)
         } else {
-            err!(ExceptionCode::OutOfGas, self.gas_base - self.gas_remaining, "")
+            Err(exception!(ExceptionCode::OutOfGas, self.gas_base - self.gas_remaining, "check_gas_remaining"))
         }
     }
 

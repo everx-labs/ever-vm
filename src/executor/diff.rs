@@ -51,8 +51,8 @@ fn ignore_error(engine: &mut Engine, result: Status) -> Status {
 fn get_two_slices_from_stack(engine: &mut Engine, name: &'static str) -> Result<(SliceData, SliceData)> {
     engine.load_instruction(Instruction::new(name))?;
     fetch_stack(engine, 2)?;
-    let s0 = engine.cmd.var(1).as_cell()?.clone().into();
-    let s1 = engine.cmd.var(0).as_cell()?.clone().into();
+    let s0 = SliceData::load_cell_ref(engine.cmd.var(1).as_cell()?)?;
+    let s1 = SliceData::load_cell_ref(engine.cmd.var(0).as_cell()?)?;
     Ok((s0, s1))
 }
 
@@ -281,7 +281,7 @@ pub(super) fn execute_zip(engine: &mut Engine) -> Status {
 
     engine.load_instruction(Instruction::new("ZIP"))?;
     fetch_stack(engine, 1)?;
-    let s = engine.cmd.var(0).as_cell()?.clone().into();
+    let s = SliceData::load_cell_ref(engine.cmd.var(0).as_cell()?)?;
     let data = unpack_data_from_cell(s, engine)?;
 
     let compressed = zip(engine, &data)?;
@@ -299,7 +299,7 @@ pub(super) fn execute_unzip(engine: &mut Engine) -> Status {
 
     engine.load_instruction(Instruction::new("UNZIP"))?;
     fetch_stack(engine, 1)?;
-    let s = engine.cmd.var(0).as_cell()?.clone().into();
+    let s = SliceData::load_cell_ref(engine.cmd.var(0).as_cell()?)?;
     let data = unpack_data_from_cell(s, engine)?;
 
     let decompressed = unzip(engine, &data)?;

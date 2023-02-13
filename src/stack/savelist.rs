@@ -11,9 +11,14 @@
 * limitations under the License.
 */
 
-use crate::{error::TvmError, executor::gas::gas_state::Gas, stack::StackItem, types::{Exception, ResultOpt}};
+use crate::{
+    error::TvmError,
+    executor::gas::gas_state::Gas,
+    stack::StackItem,
+    types::{Exception, ResultOpt},
+};
 use std::fmt;
-use ton_types::{BuilderData, HashmapE, HashmapType, IBitstring, Result, SliceData, error, types::ExceptionCode};
+use ton_types::{error, ExceptionCode, Result, SliceData, HashmapE, HashmapType, BuilderData, IBitstring};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SaveList {
@@ -27,7 +32,7 @@ impl Default for SaveList {
 }
 
 impl SaveList {
-    const NUMREGS: usize = 7;
+    pub const NUMREGS: usize = 7;
     pub const REGS: [usize; Self::NUMREGS] = [0, 1, 2, 3, 4, 5, 7];
     const fn adjust(index: usize) -> usize {
         if index == 7 { 6 } else { index }
@@ -47,6 +52,13 @@ impl SaveList {
             _ => false
         }
     }
+    pub fn check_can_put(index: usize, value: &StackItem) -> Result<()> {
+        if Self::can_put(index, value) {
+            Ok(())
+        } else {
+            err!(ExceptionCode::TypeCheckError, "wrong item {} for index {}", value, index)
+        }
+    }
     pub fn get(&self, index: usize) -> Option<&StackItem> {
         self.storage[Self::adjust(index)].as_ref()
     }
@@ -62,16 +74,13 @@ impl SaveList {
         true
     }
     pub fn put(&mut self, index: usize, value: &mut StackItem) -> ResultOpt<StackItem> {
-        if !Self::can_put(index, value) {
-            err!(ExceptionCode::TypeCheckError)
-        } else {
-            self.put_opt(index, value)
-        }
+        Self::check_can_put(index, value)?;
+        Ok(self.put_opt(index, value))
     }
-    pub fn put_opt(&mut self, index: usize, value: &mut StackItem) -> ResultOpt<StackItem> {
+    pub fn put_opt(&mut self, index: usize, value: &mut StackItem) -> Option<StackItem> {
         debug_assert!(Self::can_put(index, value));
         debug_assert!(!value.is_null());
-        Ok(std::mem::replace(&mut self.storage[Self::adjust(index)], Some(value.withdraw())))
+        std::mem::replace(&mut self.storage[Self::adjust(index)], Some(value.withdraw()))
     }
     pub fn apply(&mut self, other: &mut Self) {
         for index in 0..Self::NUMREGS {
@@ -81,17 +90,20 @@ impl SaveList {
         }
     }
     pub fn remove(&mut self, index: usize) -> Option<StackItem> {
-        std::mem::replace(&mut self.storage[Self::adjust(index)], None)
+        std::mem::take(&mut self.storage[Self::adjust(index)])
     }
-    pub fn serialize(&self) -> Result<(BuilderData, i64)> {
+}
+
+impl SaveList {
+    pub fn serialize_old(&self) -> Result<(BuilderData, i64)> {
         let mut gas = 0;
         let mut dict = HashmapE::with_bit_len(4);
         for index in 0..Self::NUMREGS {
             if let Some(ref item) = self.storage[index] {
                 let mut builder = BuilderData::new();
                 builder.append_bits(if index == 6 { 7 } else { index }, 4)?;
-                let key = builder.into_cell()?.into();
-                let (value, gas2) = item.serialize()?;
+                let key = SliceData::load_builder(builder)?;
+                let (value, gas2) = item.serialize_old()?;
                 gas += gas2;
                 dict.set_builder(key, &value)?;
             }
@@ -100,7 +112,7 @@ impl SaveList {
         match dict.data() {
             Some(cell) => {
                 builder.append_bit_one()?;
-                builder.append_reference_cell(cell.clone());
+                builder.checked_append_reference(cell.clone())?;
                 gas += Gas::finalize_price();
             }
             None => {
@@ -109,7 +121,7 @@ impl SaveList {
         }
         Ok((builder, gas))
     }
-    pub fn deserialize(slice: &mut SliceData) -> Result<(Self, i64)> {
+    pub fn deserialize_old(slice: &mut SliceData) -> Result<(Self, i64)> {
         let mut gas = 0;
         match slice.get_next_bit()? {
             false => Ok((Self::new(), gas)),
@@ -117,13 +129,13 @@ impl SaveList {
                 let dict = HashmapE::with_hashmap(4, slice.checked_drain_reference().ok());
                 gas += Gas::load_cell_price(true);
                 let mut savelist = SaveList::new();
-                for item in dict.iter() {
-                    let (key, value) = item?;
-                    let key = SliceData::from(key.into_cell()?).get_next_int(4)? as usize;
-                    let (mut value, gas2) = StackItem::deserialize(&mut value.clone())?;
+                dict.iterate_slices(|mut key, mut value| {
+                    let key = key.get_next_int(4)? as usize;
+                    let (mut value, gas2) = StackItem::deserialize_old(&mut value)?;
                     gas += gas2;
                     savelist.put(key, &mut value)?;
-                }
+                    Ok(true)
+                })?;
                 Ok((savelist, gas))
             }
         }

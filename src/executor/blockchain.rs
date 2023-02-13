@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -32,7 +32,6 @@ use ton_block::{
     Deserializable, GlobalCapabilities, MsgAddressInt, ACTION_CHANGE_LIB, ACTION_COPYLEFT,
     ACTION_RESERVE, ACTION_SEND_MSG, ACTION_SET_CODE,
 };
-use std::sync::Arc;
 use ton_types::{
     error, types::ExceptionCode, BuilderData, Cell, GasConsumer, IBitstring, Result, SliceData,
 };
@@ -54,10 +53,10 @@ fn get_bigint(slice: &SliceData) -> BigInt {
 fn add_action(engine: &mut Engine, action_id: u32, cell: Option<Cell>, suffix: BuilderData) -> Status {
     let mut new_action = BuilderData::new();
     let c5 = engine.ctrls.get(5).ok_or(ExceptionCode::TypeCheckError)?;
-    new_action.append_reference_cell(c5.as_cell()?.clone());
+    new_action.checked_append_reference(c5.as_cell()?.clone())?;
     new_action.append_u32(action_id)?.append_builder(&suffix)?;
     if let Some(cell) = cell {
-        new_action.append_reference_cell(cell);
+        new_action.checked_append_reference(cell)?;
     }
     let cell = engine.finalize_cell(new_action)?;
     engine.ctrls.put(5, &mut StackItem::Cell(cell))?;
@@ -227,9 +226,9 @@ pub(super) fn execute_rewrite_std_addr<T: OperationBehavior>(engine: &mut Engine
                 }
             };
             let x = tuple[2].clone();
-            Ok(vec![x, StackItem::Integer(Arc::new(y))])
+            Ok(vec![x, StackItem::int(y)])
         } else {
-            return err!(ExceptionCode::CellUnderflow)
+            err!(ExceptionCode::CellUnderflow)
         }
     })
 }
@@ -253,7 +252,7 @@ pub(super) fn execute_rewrite_var_addr<T: OperationBehavior>(engine: &mut Engine
             let x = tuple[2].clone();
             Ok(vec![x, StackItem::Slice(addr)])
         } else {
-            return err!(ExceptionCode::CellUnderflow)
+            err!(ExceptionCode::CellUnderflow)
         }
     })
 }

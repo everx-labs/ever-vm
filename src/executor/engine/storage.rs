@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -20,7 +20,7 @@ use crate::{
     stack::{StackItem, continuation::ContinuationData, savelist::SaveList},
     types::{Exception, ResultMut, ResultRef, Status}
 };
-use std::{mem, ops::Range, sync::Arc};
+use std::{mem, ops::Range};
 use ton_types::{error, fail, Result, types::ExceptionCode};
 use crate::executor::gas::gas_state::Gas;
 
@@ -264,7 +264,7 @@ pub(in crate::executor) fn copy_to_var(engine: &mut Engine, src: u16) -> Status 
     let copy = match address_tag!(src) {
         CC => {
             let copy = engine.cc.copy_without_stack();
-            StackItem::Continuation(Arc::new(copy))
+            StackItem::continuation(copy)
         }
         CTRL => match engine.ctrls.get(storage_index!(src)) {
             Some(ctrl) => ctrl.clone(),

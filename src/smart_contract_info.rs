@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -16,13 +16,8 @@ use crate::stack::{
     integer::IntegerData,
 };
 use sha2::{Sha256, Digest};
-use std::sync::Arc;
 use ton_block::{GlobalCapabilities, CurrencyCollection};
 use ton_types::{Cell, HashmapE, HashmapType, SliceData, types::UInt256};
-
-#[cfg(test)]
-#[path = "tests/test_smart_contract_info.rs"]
-mod tests;
 
 /*
 The smart-contract information
@@ -34,7 +29,7 @@ unixtime:uint32 block_lt:uint64 trans_lt:uint64
 rand_seed:uint256 balance_remaining:CurrencyCollection
 myself:MsgAddress = SmartContractInfo;
 */
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SmartContractInfo {
     pub actions: u16,
     pub msgs_sent: u16,
@@ -128,10 +123,10 @@ impl SmartContractInfo{
         self.rand_seed = if !rand_seed_block.is_zero() {
             let mut hasher = Sha256::new();
             hasher.update(&rand_seed_block);
-            hasher.update(&account_address_anycast);
+            hasher.update(account_address_anycast);
 
             let sha256 = hasher.finalize();
-            IntegerData::from_unsigned_bytes_be(&sha256)
+            IntegerData::from_unsigned_bytes_be(sha256)
         } else {
             // if the user forgot to set the rand_seed_block value, then this 0 will be clearly visible on tests
             log::warn!(target: "tvm", "Not set rand_seed_block");
@@ -220,3 +215,7 @@ impl SmartContractInfo{
 
     }
 }
+
+#[cfg(test)]
+#[path = "tests/test_smart_contract_info.rs"]
+mod tests;

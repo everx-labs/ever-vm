@@ -72,7 +72,7 @@ fn criterion_bench_elector_algo_1000_vtors(c: &mut Criterion) {
     group.sampling_mode(SamplingMode::Flat);
     group.bench_function("elector-algo-1000-vtors", |b| b.iter(|| {
         let mut engine = Engine::with_capabilities(DEFAULT_CAPABILITIES).setup_with_libraries(
-            SliceData::from(elector_code.clone()),
+            SliceData::load_cell_ref(&elector_code).unwrap(),
             Some(ctrls.clone()),
             Some(stack.clone()),
             None,
@@ -138,7 +138,7 @@ fn criterion_bench_try_elect_new_1000_vtors(c: &mut Criterion) {
     group.sampling_mode(SamplingMode::Flat);
     group.bench_function("try-elect-algo-1000-vtors", |b| b.iter(|| {
         let mut engine = Engine::with_capabilities(DEFAULT_CAPABILITIES).setup_with_libraries(
-            SliceData::from(elector_code.clone()),
+            SliceData::load_cell_ref(&elector_code).unwrap(),
             Some(ctrls.clone()),
             Some(stack.clone()),
             None,
@@ -193,7 +193,7 @@ fn criterion_bench_tiny_loop_200000_iters(c: &mut Criterion) {
     group.sampling_mode(SamplingMode::Flat);
     group.bench_function("tiny-loop-200000-iters", |b| b.iter(|| {
         let mut engine = Engine::with_capabilities(DEFAULT_CAPABILITIES).setup_with_libraries(
-            SliceData::from(tiny_code.clone()),
+            SliceData::load_cell_ref(&tiny_code).unwrap(),
             Some(ctrls.clone()),
             Some(stack.clone()),
             None,
@@ -285,7 +285,7 @@ fn criterion_bench_deep_stack_switch(c: &mut Criterion) {
 
     c.bench_function("deep-cell-switch", |b| b.iter(|| {
         let mut engine = Engine::with_capabilities(DEFAULT_CAPABILITIES).setup_with_libraries(
-            SliceData::from(code.clone()),
+            SliceData::load_cell_ref(&code).unwrap(),
             Some(ctrls.clone()),
             None,
             None,

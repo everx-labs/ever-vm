@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2023 TON Labs. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -31,10 +31,11 @@ use crate::{
     },
     types::{Exception, Status}
 };
+use ton_block::GlobalCapabilities;
 use ton_types::{
-    Cell, CellType, error, GasConsumer, Result, SliceData, ExceptionCode, UInt256
+    error, CellType, GasConsumer, Result, SliceData, ExceptionCode
 };
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
 
 const QUIET: u8 = 0x01; // quiet variant
 const STACK: u8 = 0x02; // length of int in stack
@@ -104,7 +105,7 @@ fn ld_int<T: Encoding>(engine: &mut Engine, name: &'static str, mut len: usize, 
     proc_slice(engine, len, how,
         |slice, _| {
             let value = T::new(len).deserialize(slice.get_next_bits(len)?.as_slice());
-            Ok(StackItem::Integer(Arc::new(value)))
+            Ok(StackItem::int(value))
         }
     )
 }
@@ -190,6 +191,8 @@ pub fn execute_xload(engine: &mut Engine) -> Status {
     fetch_stack(engine, 1)?;
     // now it does nothing as Durov's code
     let cell = engine.cmd.var(0).as_cell()?.clone();
+    let slice = engine.load_cell(cell)?;
+    let cell = slice.into_cell();
     engine.cc.stack.push(StackItem::Cell(cell));
     Ok(())
 }
@@ -202,8 +205,14 @@ pub fn execute_xloadq(engine: &mut Engine) -> Status {
     fetch_stack(engine, 1)?;
     // now it does nothing as Durov's code
     let cell = engine.cmd.var(0).as_cell()?.clone();
-    engine.cc.stack.push(StackItem::Cell(cell));
-    engine.cc.stack.push(boolean!(true));
+    if let Ok(slice) = engine.load_cell(cell.clone()) {
+        let cell = slice.into_cell();
+        engine.cc.stack.push(StackItem::Cell(cell));
+        engine.cc.stack.push(boolean!(true));
+    } else {
+        engine.cc.stack.push(StackItem::Cell(cell));
+        engine.cc.stack.push(boolean!(false));
+    }
     Ok(())
 }
 
@@ -334,8 +343,8 @@ pub fn execute_plduz(engine: &mut Engine) -> Status {
     }
     let encoder = UnsignedIntegerBigEndianEncoding::new(l);
     let value = encoder.deserialize(&data);
-    engine.cc.stack.push(StackItem::Slice(slice));
-    engine.cc.stack.push(StackItem::Integer(Arc::new(value)));
+    engine.cc.stack.push(StackItem::slice(slice));
+    engine.cc.stack.push(StackItem::int(value));
     Ok(())
 }
 
@@ -849,48 +858,6 @@ pub fn execute_splitq(engine: &mut Engine) -> Status {
     split(engine, "SPLITQ", true)
 }
 
-struct DataCounter {
-    visited: HashSet<UInt256>,
-    max: usize,
-    cells: usize,
-    bits: usize,
-    refs: usize
-}
-
-impl DataCounter {
-    fn new(max: usize) -> Self {
-        Self {
-            visited: HashSet::new(),
-            max,
-            cells: 0,
-            bits: 0,
-            refs: 0
-        }
-    }
-    fn count_cell(&mut self, cell: Cell, engine: &mut Engine) -> Result<bool> {
-        if !self.visited.insert(cell.repr_hash()) {
-            return Ok(true)
-        }
-        if self.max == 0 {
-            return Ok(false)
-        }
-        self.max -= 1;
-        self.cells += 1;
-        self.count_slice(engine.load_cell(cell)?, engine)
-    }
-    fn count_slice(&mut self, slice: SliceData, engine: &mut Engine) -> Result<bool> {
-        let refs = slice.remaining_references();
-        self.refs += refs;
-        self.bits += slice.remaining_bits();
-        for i in 0..refs {
-            if !self.count_cell(slice.reference(i)?, engine)? {
-                return Ok(false)
-            }
-        }
-        Ok(true)
-    }
-}
-
 fn datasize(engine: &mut Engine, name: &'static str, how: u8) -> Status {
     engine.load_instruction(
         Instruction::new(name)
@@ -904,24 +871,72 @@ fn datasize(engine: &mut Engine, name: &'static str, how: u8) -> Status {
         engine.cmd.var(1).as_cell()?;
     }
     let x = engine.cmd.var(0).as_integer()?;
-    let mut counter = if x.is_neg() {
-        return err!(ExceptionCode::RangeCheckError)
+    x.check_neg()?;
+    let max = x.into(0..=std::i64::MAX).unwrap_or(std::i64::MAX) as usize;
+    const CAPABILITIES: u64 = GlobalCapabilities::CapFastStorageStatBugfix as u64 | GlobalCapabilities::CapFastStorageStat as u64;
+    let mut cells = 0;
+    let mut bits = 0;
+    let mut refs = 0;
+    let result = if engine.check_capabilities(CAPABILITIES) {
+        if let Ok(slice) = engine.cmd.var(1).as_slice() {
+            refs = slice.remaining_references();
+            bits = slice.remaining_bits();
+            for i in 0..slice.remaining_references() {
+                let cell = slice.reference(i)?;
+                refs = refs.saturating_add(cell.tree_cell_count() as usize);
+                bits = bits.saturating_add(cell.tree_bits_count() as usize);
+            }
+            cells = refs;
+            cells <= max
+        } else if let Ok(cell) = engine.cmd.var(1).as_cell() {
+            cells = cell.tree_cell_count() as usize;
+            bits = cell.tree_bits_count() as usize;
+            refs = cells - 1;
+            cells <= max
+        } else {
+            return err!(ExceptionCode::TypeCheckError, "item is neither Cell nor Slice")
+        }
     } else {
-        DataCounter::new(x.into(0..=std::i64::MAX).unwrap_or(std::i64::MAX) as usize)
-    };
-    let result = if !how.bit(CEL) {
-        let slice = engine.cmd.var(1).as_slice()?.clone();
-        counter.count_slice(slice, engine)?
-    } else if engine.cmd.var(1).is_null() {
-        true
-    } else {
-        let cell = engine.cmd.var(1).as_cell()?.clone();
-        counter.count_cell(cell, engine)?
+        let mut visited = HashSet::new();
+        let mut cell_stack = Vec::new();
+        if let Ok(slice) = engine.cmd.var(1).as_slice() {
+            refs = slice.remaining_references();
+            bits = slice.remaining_bits();
+            for i in 0..slice.remaining_references() {
+                if let Ok(cell) = slice.reference(i) {
+                    cell_stack.push(cell);
+                }
+            }
+        } else if let Ok(cell) = engine.cmd.var(1).as_cell() {
+            cell_stack.push(cell.clone());
+        }
+        loop {
+            let Some(cell) = cell_stack.pop() else { break true };
+            if visited.insert(cell.repr_hash()) {
+                if max == cells {
+                    break false
+                }
+                cells += 1;
+                // Version 34 contains bug with cell loading without gas calculation. Some blocks with the bug were applied in mainnet, so we have to support it.
+                let slice = if engine.block_version() == 34 {
+                    SliceData::load_cell(cell)?
+                } else {
+                    engine.load_hashed_cell(cell, false)?
+                };
+                refs = refs.saturating_add(slice.remaining_references());
+                bits = bits.saturating_add(slice.remaining_bits());
+                for i in 0..slice.remaining_references() {
+                    if let Ok(cell) = slice.reference(i) {
+                        cell_stack.push(cell);
+                    }
+                }
+            }
+        }
     };
     if result {
-        engine.cc.stack.push(int!(counter.cells));
-        engine.cc.stack.push(int!(counter.bits));
-        engine.cc.stack.push(int!(counter.refs));
+        engine.cc.stack.push(int!(cells));
+        engine.cc.stack.push(int!(bits));
+        engine.cc.stack.push(int!(refs));
     } else if !how.bit(QUIET) {
         return err!(ExceptionCode::CellOverflow)
     }
@@ -931,18 +946,22 @@ fn datasize(engine: &mut Engine, name: &'static str, how: u8) -> Status {
     Ok(())
 }
 
+/// CDATASIZE (c n - x y z)
 pub(crate) fn execute_cdatasize(engine: &mut Engine) -> Status {
     datasize(engine, "CDATASIZE", CEL)
 }
 
+/// CDATASIZEQ (c n - x y z -1 or 0)
 pub(crate) fn execute_cdatasizeq(engine: &mut Engine) -> Status {
     datasize(engine, "CDATASIZEQ", QUIET | CEL)
 }
 
+/// SDATASIZEQ (s n - x y z -1 or 0)
 pub(crate) fn execute_sdatasize(engine: &mut Engine) -> Status {
     datasize(engine, "SDATASIZE", 0)
 }
 
+/// SDATASIZEQ (s n - x y z)
 pub(crate) fn execute_sdatasizeq(engine: &mut Engine) -> Status {
     datasize(engine, "SDATASIZEQ", QUIET)
 }
@@ -952,8 +971,13 @@ pub fn execute_ldcont(engine: &mut Engine) -> Status {
     engine.load_instruction(Instruction::new("LDCONT"))?;
     fetch_stack(engine, 1)?;
     let mut slice = engine.cmd.var(0).as_slice()?.clone();
-    let (cont, gas) = ContinuationData::deserialize(&mut slice)?;
-    engine.use_gas(gas);
+    let cont = if engine.check_capabilities(ton_block::GlobalCapabilities::CapStcontNewFormat as u64) {
+        ContinuationData::deserialize(&mut slice, engine)?
+    } else {
+        let (cont, gas) = ContinuationData::deserialize_old(&mut slice)?;
+        engine.use_gas(gas);
+        cont
+    };
     engine.cc.stack.push_cont(cont);
     engine.cc.stack.push(StackItem::Slice(slice));
     Ok(())

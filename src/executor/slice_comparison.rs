@@ -15,7 +15,6 @@ use crate::{
     executor::{engine::{Engine, storage::fetch_stack}, types::Instruction},
     stack::{StackItem, integer::IntegerData}, types::Status,
 };
-use std::sync::Arc;
 use ton_types::SliceData;
 
 fn unary<F>(engine: &mut Engine, name: &'static str, operation: F) -> Status

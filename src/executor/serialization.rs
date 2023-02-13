@@ -32,7 +32,6 @@ use crate::{
     types::{Exception, Status}
 };
 use ton_types::{BuilderData, CellType, GasConsumer, error, IBitstring, Result, ExceptionCode, MAX_LEVEL};
-use std::sync::Arc;
 
 const QUIET: u8 = 0x01; // quiet variant
 const STACK: u8 = 0x02; // length of int in stack
@@ -124,8 +123,10 @@ pub fn execute_endxc(engine: &mut Engine) -> Status {
             engine.use_gas(Gas::finalize_price());
             return err!(ExceptionCode::CellOverflow, "Not enough data for a special cell")
         }
-        let cell_type = CellType::from(b.data()[0]);
-        b.set_type(cell_type);
+        match CellType::try_from(b.data()[0]) {
+            Ok(cell_type) => b.set_type(cell_type),
+            Err(err) => return err!(ExceptionCode::CellOverflow, "{}", err)
+        }
     }
     let cell = engine.finalize_cell(b)?;
     engine.cc.stack.push(StackItem::Cell(cell));
@@ -150,7 +151,7 @@ fn store_data(engine: &mut Engine, var: usize, x: Result<BuilderData>, quiet: bo
                 let mut b = engine.cmd.var_mut(var).as_builder_mut()?;
                 b.append_builder(&x)?;
                 if finalize {
-                    engine.use_gas(Gas::finalize_price());
+                    engine.try_use_gas(Gas::finalize_price())?;
                 }
                 engine.cc.stack.push_builder(b);
                 0
@@ -710,7 +711,14 @@ pub fn execute_stcont(engine: &mut Engine) -> Status {
     engine.load_instruction(Instruction::new("STCONT"))?;
     fetch_stack(engine, 2)?;
     engine.cmd.var(0).as_builder()?;
-    let (cont, gas) = engine.cmd.var(1).as_continuation()?.serialize()?;
-    engine.use_gas(gas);
+    engine.cmd.var(1).as_continuation()?;
+    let cont = engine.cmd.var_mut(1).withdraw();
+    let cont = if engine.check_capabilities(ton_block::GlobalCapabilities::CapStcontNewFormat as u64) {
+        cont.as_continuation()?.serialize(engine)?
+    } else {
+        let (cont, gas) = cont.as_continuation()?.serialize_old()?;
+        engine.use_gas(gas);
+        cont
+    };
     store_data(engine, 0, Ok(cont), false, false)
 }

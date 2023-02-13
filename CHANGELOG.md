@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version: 1.8.97
+### Fixed
+ - Fix DATASIZE primitives with GlobalCapability
+
+## Version: 1.8.94
+### Fixed
+ - Put new code under Capability
+
+## Version: 1.8.93
+### Fixed
+ - Removed recursion in STCONT/LDCONT primitives
+
+## Version: 1.8.82
+### Fixed
+ - Fixed STCONT/LDCONT primitives for tuples and continuations
+
+## Version: 1.8.79
+
+### Fixed
+ - Adapt some functions (CDATASIZE, XCTOS, XLOAD, CTOS) to library cells
+
+## Version: 1.8.78
+### Fixed
+ - Fixed debug output
+
+## Version: 1.8.77
+
+### Fixed
+ - Stack overflow during load library cell
+
+## Version: 1.8.71
+
+### New
+- Add common as submodule
+
+### Fixed
+- Some minor fixes
+
+## Version: 1.8.60
+
+### Fixed
+ - Fix for cells loading
+ - Some refactoring for remove direct usage of Arcs
+ - Bumped versions of some creates
+
 ## Version: 1.8.40
 
 ### Fixed

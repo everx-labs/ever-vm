@@ -302,7 +302,7 @@ fn calculate_elections(
         let mut leftover_stake = validator.key.stake.as_u128() - validator.true_stake;
         if leftover_stake > 0 {
             // non-zero unused part of the stake, credit to the source address
-            let key = SliceData::from(validator.addr.serialize()?);
+            let key = SliceData::load_cell(validator.addr.serialize()?)?;
             if let Some(mut data) = result.credits.get_with_gas(key.clone(), gas_consumer)? {
                 leftover_stake += data.get_next_u128()?
             }
@@ -431,7 +431,7 @@ fn process_validator(
 fn process_staker(shard_acc: &ShardAccount, gas_consumer: &mut dyn GasConsumer) -> Result<(MsgAddressInt, Staker)> {
     let account = shard_acc.read_account()?;
     let mut data = match account.get_data() {
-        Some(data) => SliceData::from(data),
+        Some(data) => SliceData::load_cell(data)?,
         None => fail!("account has no data"),
     };
     let (_, stake) = process_depool(&account, &mut data, gas_consumer)?;
