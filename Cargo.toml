@@ -2,7 +2,7 @@
 build = 'common/build/build.rs'
 edition = '2021'
 name = 'ton_vm'
-version = '1.8.121'
+version = '1.8.123'
 
 [dependencies]
 ed25519 = '1.2'
@@ -17,7 +17,7 @@ rand = '0.7'
 sha2 = '0.10'
 diffy = { optional = true, version = '0.2.2' }
 similar = { features = [ 'bytes' ], optional = true, version = '2.2.0' }
-ton_block = { git = 'https://github.com/tonlabs/ever-block.git', tag = '1.9.33' }
+ton_block = { git = 'https://github.com/tonlabs/ever-block.git', tag = '1.9.35' }
 ton_types = { git = 'https://github.com/tonlabs/ever-types.git', tag = '1.12.7' }
 zstd = { default-features = false, optional = true, version = '0.11' }
 

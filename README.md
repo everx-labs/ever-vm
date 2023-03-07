@@ -1,45 +1,11 @@
-# ever-vm
+# ton-labs-vm
 
-Everscale/Venom virtual machine implementation
+## Prerequisites
 
-## Table of Contents
+https://www.rust-lang.org/en-US/install.html
 
-- [About](#about)
-- [Getting Started](#getting-started)
-- [Usage](#usage)
-- [Contributing](#contributing)
-- [License](#license)
-
-## About
-
-Implementation of virtual machine for Everscale/Venom nodes in safe Rust.
-
-## Getting Started
-
-### Prerequisites
-
-Rust complier v1.65+.
-
-### Installing
+## To Build & Run:
 
 ```
-git clone --recurse-submodules https://github.com/tonlabs/ever-vm.git
-cd ever-vm
-cargo build --release
+cargo build
 ```
-
-## Usage
-
-This project output is the library which is used as a part of Everscale/Venom node. Also it can be used in standalone tools.
-
-## Contributing
-
-Contribution to the project is expected to be done via pull requests submission.
-
-## License
-
-See the [LICENSE](LICENSE) file for details.
-
-## Tags
-
-`blockchain` `everscale` `rust` `venom-blockchain` `venom-developer-program` `venom-tvm` 
