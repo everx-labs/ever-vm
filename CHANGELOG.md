@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.8.128
+- Supported ever-types version 2.0
+
 ## Version: 1.8.97
 ### Fixed
  - Fix DATASIZE primitives with GlobalCapability
