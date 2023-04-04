@@ -625,7 +625,7 @@ impl StackItem {
             }
             0x03 => StackItem::cell(slice.checked_drain_reference()?),
             0x04 => StackItem::slice(slice_deserialize(slice)?),
-            0x05 => StackItem::builder(BuilderData::from(slice.checked_drain_reference()?)),
+            0x05 => StackItem::builder(BuilderData::from_cell(&slice.checked_drain_reference()?)?),
             0x06 => {
                 let mut slice = gas_consumer.load_cell(slice.checked_drain_reference()?)?;
                 ContinuationData::deserialize_internal(list, &mut slice, gas_consumer)?;
@@ -727,7 +727,7 @@ impl StackItem {
                 gas += Gas::load_cell_price(true);
                 Ok((StackItem::slice(slice_deserialize(slice)?), gas))
             },
-            0x05 => Ok((StackItem::builder(BuilderData::from(slice.checked_drain_reference()?)), gas)),
+            0x05 => Ok((StackItem::builder(BuilderData::from_cell(&slice.checked_drain_reference()?)?), gas)),
             0x06 => {
                 let (cont, gas2) = ContinuationData::deserialize_old(slice)?;
                 gas += gas2;
