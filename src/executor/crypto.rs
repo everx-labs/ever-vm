@@ -128,16 +128,32 @@ fn check_signature(engine: &mut Engine, name: &'static str, hash: bool) -> Statu
         }
         DataForSignature::Slice(engine.cmd.var(2).as_slice()?.get_bytestring(0))
     };
-    let pub_key = ed25519_dalek::PublicKey::from_bytes(pub_key.data())
-        .map_err(|err| exception!(ExceptionCode::FatalError, "cannot load public key {}", err))?;
+    let pub_key = match ed25519_dalek::PublicKey::from_bytes(pub_key.data()) {
+        Ok(pub_key) => pub_key,
+        Err(err) => if engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+                engine.cc.stack.push(boolean!(false));
+                return Ok(())
+            } else {
+                return err!(ExceptionCode::FatalError, "cannot load public key {}", err)
+            }
+    };
     let signature = engine.cmd.var(1).as_slice()?.get_bytestring(0);
     let signature = match ed25519::signature::Signature::from_bytes(&signature[..SIGNATURE_BYTES]) {
         Ok(signature) => signature,
-        Err(_) if hash && !engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) => {
-            engine.cc.stack.push(boolean!(false));
-            return Ok(())
+        Err(err) => {
+            #[allow(clippy::collapsible_else_if)]
+            if engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+                engine.cc.stack.push(boolean!(false));
+                return Ok(())    
+            } else {
+                if hash {
+                    engine.cc.stack.push(boolean!(false));
+                    return Ok(())        
+                } else {
+                    return err!(ExceptionCode::FatalError, "cannot load signature {}", err)
+                }
+            }
         }
-        Err(err ) => return err!(ExceptionCode::FatalError, "cannot load signature {}", err)
     };
     let data = preprocess_signed_data(engine, data.as_ref());
     #[cfg(feature = "signature_no_check")]

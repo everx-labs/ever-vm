@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version: 1.8.131
+### Fixed
+ - check_signature: on bad pubkey/signature return false
+
 ## Version 1.8.128
 - Supported ever-types version 2.0
 

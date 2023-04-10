@@ -685,12 +685,10 @@ impl Engine {
     }
 
     fn discharge_nargs(&mut self) {
-        if self.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
-            if self.cc.nargs != -1 {
-                let depth = self.cc.stack.depth();
-                let _ = self.cc.stack.drop_range_straight((depth - self.cc.nargs as usize)..depth);
-                self.cc.nargs = -1;
-            }
+        if self.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) && self.cc.nargs != -1 {
+            let depth = self.cc.stack.depth();
+            let _ = self.cc.stack.drop_range_straight((depth - self.cc.nargs as usize)..depth);
+            self.cc.nargs = -1;
         }
     }
 
