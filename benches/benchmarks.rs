@@ -18,16 +18,16 @@ use std::{sync::Arc, time::Duration};
 
 static DEFAULT_CAPABILITIES: u64 = 0x572e;
 
-fn read_boc(filename: &str) -> std::io::Cursor<Vec<u8>> {
+fn read_boc(filename: &str) -> Vec<u8> {
     let mut bytes = Vec::new();
     let mut file = std::fs::File::open(filename).unwrap();
     std::io::Read::read_to_end(&mut file, &mut bytes).unwrap();
-    std::io::Cursor::new(bytes)
+    bytes
 }
 
 fn load_boc(filename: &str) -> ton_types::Cell {
-    let mut cur = read_boc(filename);
-    ton_types::deserialize_tree_of_cells(&mut cur).unwrap()
+    let bytes = read_boc(filename);
+    ton_types::read_single_root_boc(bytes).unwrap()
 }
 
 fn criterion_bench_elector_algo_1000_vtors(c: &mut Criterion) {
@@ -239,9 +239,9 @@ fn criterion_bench_num_bigint(c: &mut Criterion) {
 // }
 
 fn criterion_bench_load_boc(c: &mut Criterion) {
-    let cur = read_boc("benches/elector-data.boc");
+    let bytes = read_boc("benches/elector-data.boc");
     c.bench_function("load-boc", |b| b.iter( || {
-        ton_types::deserialize_tree_of_cells(&mut cur.clone()).unwrap()
+        ton_types::read_single_root_boc(bytes.clone()).unwrap()
     }));
 }
 

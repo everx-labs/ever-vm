@@ -1,7 +1,6 @@
 use adnl::node::{AdnlNodeConfig, AdnlNodeConfigJson};
-use ever_crypto::sha256_digest;
 use std::{fs::{File, read_to_string}, io::Write, net::{IpAddr, SocketAddr}, path::Path};
-use ton_types::{fail, Result};
+use ton_types::{fail, sha256_digest, Result};
 
 pub async fn resolve_ip(ip: &str) -> Result<SocketAddr> {
     let mut ret = ip.parse::<SocketAddr>()?;
@@ -44,9 +43,9 @@ pub fn generate_adnl_configs(
         let addr = addr.to_string();
         for tag in tags {
             let mut data = Vec::new();
-            data.extend_from_slice(&addr.as_bytes());
+            data.extend_from_slice(addr.as_bytes());
             data.extend_from_slice(&tag.to_be_bytes());
-            let key: [u8; 32] = sha256_digest(&data);
+            let key = sha256_digest(&data);
             keys.push((key, tag));
         }
         AdnlNodeConfig::from_ip_address_and_private_keys(ip, keys)
