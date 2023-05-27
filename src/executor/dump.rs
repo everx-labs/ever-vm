@@ -44,9 +44,9 @@ fn dump_var_impl(item: &StackItem, how: u8, in_tuple: bool) -> String {
             StackItem::None            => String::new(),
             StackItem::Builder(x)      => format!("BC<{:X}>", Arc::as_ref(x)),
             StackItem::Cell(x)         => format!("C<{:X}>", x),
-            StackItem::Continuation(x) => format!("R<{:X}>", x.code().cell()),
+            StackItem::Continuation(x) => x.code().cell_opt().map_or(String::new(), |cell| format!("R<{:X}>", cell)),
             StackItem::Integer(x)      => format!("{:X}", Arc::as_ref(x)),
-            StackItem::Slice(x)        => format!("CS<{:X}>({}..{})", &x.cell(), x.pos(), x.pos() + x.remaining_bits()),
+            StackItem::Slice(x)        => format!("CS<{:X}>({}..{})", x, x.pos(), x.pos() + x.remaining_bits()),
             StackItem::Tuple(x)        => dump_tuple_impl(x, how, in_tuple),
         }
     } else if how.bit(BIN) {
@@ -54,9 +54,9 @@ fn dump_var_impl(item: &StackItem, how: u8, in_tuple: bool) -> String {
             StackItem::None            => String::new(),
             StackItem::Builder(x)      => format!("BC<{:b}>", Arc::as_ref(x)),
             StackItem::Cell(x)         => format!("C<{:b}>", x),
-            StackItem::Continuation(x) => format!("R<{:b}>", x.code().cell()),
+            StackItem::Continuation(x) => x.code().cell_opt().map_or(String::new(), |cell| format!("R<{:b}>", cell)),
             StackItem::Integer(x)      => format!("{:b}", Arc::as_ref(x)),
-            StackItem::Slice(x)        => format!("CS<{:b}>({}..{})", x.cell(), x.pos(), x.pos() + x.remaining_bits()),
+            StackItem::Slice(x)        => x.cell_opt().map_or(String::new(), |cell| format!("CS<{:b}>({}..{})", cell, x.pos(), x.pos() + x.remaining_bits())),
             StackItem::Tuple(x)        => dump_tuple_impl(x, how, in_tuple),
         }
     } else if how.bit(STR) {
@@ -78,9 +78,9 @@ fn dump_var_impl(item: &StackItem, how: u8, in_tuple: bool) -> String {
             StackItem::None            => String::new(),
             StackItem::Builder(x)      => format!("BC<{:X}>", Arc::as_ref(x)),
             StackItem::Cell(x)         => format!("C<{:X}>", x),
-            StackItem::Continuation(x) => format!("R<{:X}>", x.code().cell()),
+            StackItem::Continuation(x) => x.code().cell_opt().map_or(String::new(), |cell| format!("R<{:X}>", cell)),
             StackItem::Integer(x)      => format!("{}", Arc::as_ref(x)),
-            StackItem::Slice(x)        => format!("CS<{:X}>({}..{})", x.cell(), x.pos(), x.pos() + x.remaining_bits()),
+            StackItem::Slice(x)        => x.cell_opt().map_or(String::new(), |cell| format!("CS<{:X}>({}..{})", cell, x.pos(), x.pos() + x.remaining_bits())),
             StackItem::Tuple(x)        => dump_tuple_impl(x, how, in_tuple),
         }
     }

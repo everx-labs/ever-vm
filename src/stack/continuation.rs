@@ -131,10 +131,6 @@ impl ContinuationData {
         mem::replace(self, ContinuationData::new_empty())
     }
 
-    pub fn undrain_reference(&mut self) {
-        self.code.undrain_reference();
-    }
-
     pub fn drain_reference(&mut self) -> Result<Cell> {
         self.code.checked_drain_reference()
             .map_err(|_| exception!(ExceptionCode::InvalidOpcode))

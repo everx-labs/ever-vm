@@ -60,7 +60,7 @@ macro_rules! boolean {
     };
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum StackItem {
     #[default]
     None,
@@ -82,7 +82,11 @@ pub(crate) enum SerializeItem<'a> {
 
 fn slice_serialize(slice: &SliceData) -> Result<BuilderData> {
     let mut builder = BuilderData::new();
-    builder.checked_append_reference(slice.cell().clone())?;
+    let cell = match slice.cell_opt() {
+        Some(cell) => cell.clone(),
+        None => slice.as_builder().into_cell()?
+    };
+    builder.checked_append_reference(cell)?;
     builder.append_bits(slice.pos(), 10)?;
     builder.append_bits(slice.pos() + slice.remaining_bits(), 10)?;
     builder.append_bits(slice.get_references().start, 3)?;
@@ -154,7 +158,7 @@ fn items_serialize(mut items: Vec<SerializeItem>, gas_consumer: &mut dyn GasCons
                     if let Some(savelist) = savelist.as_mut() {
                         let mut builder = BuilderData::new();
                         builder.append_bits(index, 4)?;
-                        let key = SliceData::load_builder(builder)?;
+                        let key = SliceData::load_bitstring(builder)?;
                         savelist.set_builder(key, &value)?; // TODO: gas here?
                     } else {
                         panic!("savelist is None {}", index)
@@ -521,13 +525,14 @@ impl StackItem {
                 let start = data.pos();
                 let end = start + data.remaining_bits();
                 let refs = data.get_references();
-                let data = match SliceData::load_cell_ref(data.cell()) {
+                let cell = data.cell_opt().unwrap();
+                let data = match SliceData::load_cell_ref(cell) {
                     Ok(data) => data,
                     Err(err) => return err.to_string()
                 };
                 let mut bytes = vec![];
-                let is_special = data.cell().cell_type() != CellType::Ordinary;
-                bytes.push(d1(data.cell().level_mask().mask(), data.cell().references_count() as u8, is_special as u8));
+                let is_special = cell.cell_type() != CellType::Ordinary;
+                bytes.push(d1(cell.level_mask().mask(), cell.references_count() as u8, is_special as u8));
                 bytes.push(d2(data.remaining_bits() as u32));
                 bytes.extend_from_slice(data.storage());
                 if bytes.last() == Some(&0x80) {
@@ -758,28 +763,13 @@ impl StackItem {
 }
 
 #[rustfmt::skip]
-impl Clone for StackItem {
-    fn clone(&self) -> StackItem {
-        match self {
-            StackItem::None            => StackItem::None,
-            StackItem::Builder(x)      => StackItem::Builder(x.clone()),
-            StackItem::Cell(x)         => StackItem::Cell(x.clone()),
-            StackItem::Continuation(x) => StackItem::Continuation(x.clone()),
-            StackItem::Integer(x)      => StackItem::Integer(x.clone()),
-            StackItem::Slice(x)        => StackItem::Slice(x.clone()),
-            StackItem::Tuple(x)        => StackItem::Tuple(x.clone()),
-        }
-    }
-}
-
-#[rustfmt::skip]
 impl fmt::Display for StackItem {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             StackItem::None            => write!(f, "Null"),
             StackItem::Builder(x)      => write!(f, "Builder {}", Arc::as_ref(x)),
             StackItem::Cell(x)         => write!(f, "Cell x{:x} x{:x}", x.repr_hash(), x),
-            StackItem::Continuation(x) => write!(f, "Continuation x{:x}", x.code().cell().repr_hash()),
+            StackItem::Continuation(x) => write!(f, "Continuation x{:x}", x.code().repr_hash()),
             StackItem::Integer(x)      => write!(f, "{}", Arc::as_ref(x)),
             StackItem::Slice(x)        => write!(f, "Slice x{:x}", x),
             StackItem::Tuple(x)        => {

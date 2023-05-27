@@ -310,7 +310,7 @@ fn store_s(engine: &mut Engine, name: &'static str, how: u8) -> Status {
         x = engine.cmd.var(1).as_slice()?;
         0
     };
-    let x = Ok(BuilderData::from_slice(x));
+    let x = Ok(x.as_builder());
     store_data(engine, b, x, how.bit(QUIET), false)
 }
 
