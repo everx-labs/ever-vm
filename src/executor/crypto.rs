@@ -55,7 +55,7 @@ pub(super) fn execute_hashcu(engine: &mut Engine) -> Status {
 pub(super) fn execute_hashsu(engine: &mut Engine) -> Status {
     engine.load_instruction(Instruction::new("HASHSU"))?;
     fetch_stack(engine, 1)?;
-    let builder = BuilderData::from_slice(engine.cmd.var(0).as_slice()?);
+    let builder = engine.cmd.var(0).as_slice()?.as_builder();
     let cell = engine.finalize_cell(builder)?;
     let hash_int = hash_to_uint(cell.repr_hash());
     engine.cc.stack.push(StackItem::integer(hash_int));

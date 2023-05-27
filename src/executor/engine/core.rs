@@ -103,11 +103,15 @@ pub struct Engine {
     signature_id: i32,
 }
 
+#[cfg(feature = "signature_no_check")]
 #[derive(Debug, Clone, Default)]
 pub struct BehaviorModifiers {
-    #[cfg(feature = "signature_no_check")]
     pub chksig_always_succeed: bool
 }
+
+#[cfg(not(feature = "signature_no_check"))]
+#[derive(Debug, Clone, Default)]
+pub struct BehaviorModifiers;
 
 #[derive(Eq, Debug, PartialEq)]
 pub enum EngineTraceInfoType {
@@ -1493,7 +1497,10 @@ impl Engine {
         }
     }
     fn cmd_code(&self) -> Result<SliceData> {
-        let mut code = SliceData::load_cell_ref(self.cc.code().cell())?;
+        let mut code = match self.cc.code().cell_opt() {
+            Some(cell) => SliceData::load_cell_ref(cell)?,
+            None => SliceData::load_cell(self.cc.code().clone().into_cell())?, // or error
+        };
         let data = &self.cmd_code.data_window;
         code.shrink_data(data.start..data.end);
         let refs = &self.cmd_code.references_window;

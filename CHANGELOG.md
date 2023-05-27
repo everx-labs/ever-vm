@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version: 1.8.159
+
+- Minor fix for support changes in types
+
 ## Version: 1.8.131
 ### Fixed
  - check_signature: on bad pubkey/signature return false
