@@ -21,6 +21,7 @@ use crate::{
     types::{Exception, Status}
 };
 use std::ops::Range;
+use ton_block::GlobalCapabilities;
 use ton_types::{error, fail, types::ExceptionCode};
 
 //Utilities **********************************************************************************
@@ -35,9 +36,12 @@ fn init_try_catch(engine: &mut Engine) -> Status {
         return err!(ExceptionCode::StackUnderflow)
     }
     engine.cmd.var(1).as_continuation()?;
+    let bugfix = engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64);
     engine.cmd.var_mut(0).as_continuation_mut().map(|catch_cont| {
         catch_cont.type_of = ContinuationType::TryCatch;
-        catch_cont.nargs = catch_cont.stack.depth() as isize + 2
+        if !bugfix {
+            catch_cont.nargs = catch_cont.stack.depth() as isize + 2
+        }
     })?;
     engine.cmd.var_mut(1).as_continuation_mut().map(|try_cont|
         try_cont.remove_from_savelist(0)

@@ -581,7 +581,11 @@ impl Engine {
             self.trace_info(EngineTraceInfoType::Normal, gas, None);
             self.cmd.clear();
             if let Some(err) = execution_result {
-                self.raise_exception(err)?;
+                if self.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+                    self.raise_exception_bugfix0(err)?;
+                } else {
+                    self.raise_exception(err)?;
+                }
             }
         };
         self.trace_info(EngineTraceInfoType::Finish, self.gas_used(), Some("NORMAL TERMINATION".to_string()));
