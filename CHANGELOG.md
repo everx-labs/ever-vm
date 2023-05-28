@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.8.161
+
+- Fix TRY nargs bogus modification
+
 ## Version 1.8.160
 
 - Use SHA algos from ever-types
