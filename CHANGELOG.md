@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.8.160
+
+- Use SHA algos from ever-types
+
 ## Version: 1.8.159
 
 - Minor fix for support changes in types
