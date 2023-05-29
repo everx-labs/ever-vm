@@ -657,6 +657,7 @@ impl Handlers {
                 .set(0xF3, execute_throwarganyif)
                 .set(0xF4, execute_throwanyifnot)
                 .set(0xF5, execute_throwarganyifnot)
+                .set(0xFE, execute_trykeep)
                 .set(0xFF, execute_try)
             )
             .set(0xF3, execute_tryargs)
