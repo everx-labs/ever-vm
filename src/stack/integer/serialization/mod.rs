@@ -31,4 +31,3 @@ pub use self::unsigned_big_endian::UnsignedIntegerBigEndianEncoding;
 pub use self::signed_big_endian::SignedIntegerBigEndianEncoding;
 pub use self::signed_little_endian::SignedIntegerLittleEndianEncoding;
 
-
