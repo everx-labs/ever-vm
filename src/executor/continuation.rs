@@ -1001,7 +1001,6 @@ pub(super) fn execute_retva(engine: &mut Engine) -> Status {
     switch(engine, ctrl!(0))
 }
 
-
 // (condition - ), if condition != 0 then RET else RETALT
 pub(super) fn execute_retbool(engine: &mut Engine) -> Status {
     engine.load_instruction(
@@ -1053,7 +1052,6 @@ pub(super) fn execute_returnva(engine: &mut Engine) -> Status {
         pop_range(engine, drop, ctrl!(0))
     }
 }
-
 
 // ( - ), c[1] = c[0]
 pub(super) fn execute_samealt(engine: &mut Engine) -> Status {

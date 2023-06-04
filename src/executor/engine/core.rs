@@ -761,7 +761,6 @@ impl Engine {
         Ok(None)
     }
 
-
     pub fn load_library_cell(&mut self, cell: Cell) -> Result<Cell> {
         self.check_capability(GlobalCapabilities::CapSetLibCode)?;
         let mut hash = SliceData::load_cell(cell)?;
