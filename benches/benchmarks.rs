@@ -14,7 +14,7 @@
 use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 use ton_types::SliceData;
 use ton_vm::{executor::Engine, stack::{savelist::SaveList, Stack, StackItem}};
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 static DEFAULT_CAPABILITIES: u64 = 0x572e;
 
@@ -79,74 +79,6 @@ fn criterion_bench_elector_algo_1000_vtors(c: &mut Criterion) {
             vec!());
         engine.execute().unwrap();
         assert_eq!(engine.gas_used(), 82386791);
-        let output = engine.ctrl(4).unwrap().as_cell().unwrap();
-        assert_eq!(output, &elector_data_output);
-        let actions = engine.ctrl(5).unwrap().as_cell().unwrap();
-        assert_eq!(actions, &elector_actions);
-    }));
-    group.finish();
-}
-
-use ton_vm::executor::IndexProvider;
-#[path = "../src/tests/common.rs"]
-mod common;
-
-fn criterion_bench_try_elect_new_1000_vtors(c: &mut Criterion) {
-    // common::logger_init();
-    let elector_code = common::NEW_ELECTOR_CODE.clone();
-    let elector_data = load_boc("benches/elector-data.boc");
-    let config_data = load_boc("benches/config-data-try-elect.boc");
-
-    let index_provider = Arc::new(common::FakeIndexProvider::new(elector_data.clone(), true).unwrap());
-
-    let elector_data_output = load_boc("benches/try-elect-data-output.boc");
-    let elector_actions = load_boc("benches/try-elect-actions.boc");
-
-    let mut ctrls = SaveList::default();
-    ctrls.put(4, &mut StackItem::Cell(elector_data)).unwrap();
-    let params = vec!(
-        StackItem::int(0x76ef1ea),
-        StackItem::int(0),
-        StackItem::int(0),
-        StackItem::int(1633458077),
-        StackItem::int(0),
-        StackItem::int(0),
-        StackItem::int(0),
-        StackItem::tuple(vec!(
-            StackItem::int(1000000000),
-            StackItem::None
-        )),
-        StackItem::slice(SliceData::from_string("9fe6666666666666666666666666666666666666666666666666666666666666667_").unwrap()),
-        StackItem::cell(config_data.reference(0).unwrap()),
-        StackItem::None,
-        StackItem::int(0),
-        StackItem::int(0),
-        StackItem::int(1000),
-    );
-    ctrls.put(7, &mut StackItem::tuple(vec!(StackItem::tuple(params)))).unwrap();
-
-    let mut stack = Stack::new();
-    stack.push(StackItem::int(1000000000));
-    stack.push(StackItem::int(0));
-    stack.push(StackItem::int(0));
-    stack.push(StackItem::int(-2));
-
-    let mut group = c.benchmark_group("flat-sampling");
-    group.measurement_time(Duration::from_secs(10));
-    group.noise_threshold(0.03);
-    group.sample_size(10);
-    group.sampling_mode(SamplingMode::Flat);
-    group.bench_function("try-elect-algo-1000-vtors", |b| b.iter(|| {
-        let mut engine = Engine::with_capabilities(DEFAULT_CAPABILITIES).setup_with_libraries(
-            SliceData::load_cell_ref(&elector_code).unwrap(),
-            Some(ctrls.clone()),
-            Some(stack.clone()),
-            None,
-            vec!());
-        engine.set_index_provider(index_provider.clone());
-        engine.execute().unwrap();
-        assert_eq!(engine.gas_used(), 17015317);
-
         let output = engine.ctrl(4).unwrap().as_cell().unwrap();
         assert_eq!(output, &elector_data_output);
         let actions = engine.ctrl(5).unwrap().as_cell().unwrap();
@@ -300,7 +232,6 @@ criterion_group!(benches,
 //    criterion_bench_rug_bigint,
     criterion_bench_load_boc,
     criterion_bench_elector_algo_1000_vtors,
-    criterion_bench_try_elect_new_1000_vtors,
     criterion_bench_tiny_loop_200000_iters,
     criterion_bench_deep_stack_switch,
 );
