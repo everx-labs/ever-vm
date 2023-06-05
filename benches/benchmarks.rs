@@ -177,62 +177,12 @@ fn criterion_bench_load_boc(c: &mut Criterion) {
     }));
 }
 
-fn criterion_bench_deep_stack_switch(c: &mut Criterion) {
-    let code = ton_labs_assembler::compile_code("
-        NULL
-        PUSHINT 10000
-        PUSHCONT {
-            BLKPUSH 15, 0
-        }
-        REPEAT
-        ZERO
-        ONLYX
-    ").unwrap().into_cell();
-
-    let mut ctrls = SaveList::default();
-    let params = vec!(
-        StackItem::int(0x76ef1ea),
-        StackItem::int(0),
-        StackItem::int(0),
-        StackItem::int(0),
-        StackItem::int(0),
-        StackItem::int(0),
-        StackItem::int(0),
-        StackItem::tuple(vec!(
-            StackItem::int(1000000000),
-            StackItem::None
-        )),
-        StackItem::default(),
-        StackItem::None,
-        StackItem::None,
-        StackItem::int(0),
-    );
-    ctrls.put(7, &mut StackItem::tuple(vec!(StackItem::tuple(params)))).unwrap();
-
-    let mut stack = Stack::new();
-    stack.push(StackItem::int(1000000000));
-    stack.push(StackItem::int(0));
-    stack.push(StackItem::int(0));
-    stack.push(StackItem::int(-2));
-
-    c.bench_function("deep-cell-switch", |b| b.iter(|| {
-        let mut engine = Engine::with_capabilities(DEFAULT_CAPABILITIES).setup_with_libraries(
-            SliceData::load_cell_ref(&code).unwrap(),
-            Some(ctrls.clone()),
-            None,
-            None,
-            vec!());
-        engine.execute().unwrap();
-        assert_eq!(engine.gas_used(), 310129);
-    }));
-}
-
-criterion_group!(benches,
+criterion_group!(
+    benches,
     criterion_bench_num_bigint,
 //    criterion_bench_rug_bigint,
     criterion_bench_load_boc,
     criterion_bench_elector_algo_1000_vtors,
-    criterion_bench_tiny_loop_200000_iters,
-    criterion_bench_deep_stack_switch,
+    criterion_bench_tiny_loop_200000_iters
 );
 criterion_main!(benches);
