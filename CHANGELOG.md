@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.8.170
+
+- Disable debug symbols by default
+
 ## Version 1.8.161
 
 - Fix TRY nargs bogus modification
