@@ -852,6 +852,7 @@ impl Handlers {
                 .set(0x02, execute_buygas)
                 .set(0x04, execute_gramtogas)
                 .set(0x05, execute_gastogram)
+                .set(0x06, execute_gas_remaining)
                 .set(0x0F, execute_commit)
                 .set(0x10, execute_randu256)
                 .set(0x11, execute_rand)

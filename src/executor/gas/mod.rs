@@ -94,3 +94,10 @@ pub fn execute_commit(engine: &mut Engine) -> Status {
     engine.commit();
     Ok(())
 }
+
+pub fn execute_gas_remaining(engine: &mut Engine) -> Status {
+    // engine.check_capability(GlobalCapabilities::CapGasRemainingInsn)?;
+    engine.load_instruction(Instruction::new("GASREMAINING"))?;
+    engine.cc.stack.push(StackItem::int(engine.gas_remaining()));
+    Ok(())
+}
