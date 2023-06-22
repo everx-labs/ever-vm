@@ -23,6 +23,7 @@ pub fn calc_excess_bits(length_in_bits: usize) -> usize {
     length_in_bits & 0b111
 }
 
+
 #[inline]
 fn get_fill(is_negative: bool) -> u8 {
     if is_negative {

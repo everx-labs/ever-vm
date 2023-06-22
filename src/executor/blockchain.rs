@@ -47,6 +47,7 @@ fn get_bigint(slice: &SliceData) -> BigInt {
     }
 }
 
+
 // Blockchain related instructions ********************************************
 
 fn add_action(engine: &mut Engine, action_id: u32, cell: Option<Cell>, suffix: BuilderData) -> Status {
