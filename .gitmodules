@@ -1,3 +1,4 @@
 [submodule "common"]
 	path = common
-	url = https://github.com/tonlabs/common
+	url = https://github.com/tonlabs/common.git
+	branch = master
