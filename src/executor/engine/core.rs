@@ -626,6 +626,24 @@ impl Engine {
         switch(self, ctrl!(0))?;
         Ok(None)
     }
+    fn step_catch_revert(&mut self, depth: u32) -> Result<Option<i32>> {
+        self.step += 1;
+        self.log_string = Some("IMPLICIT CATCH REVERT");
+        // save exception pair
+        let exc_pair = self.cc.stack.drop_range_straight(0..2)?;
+        // revert stack depth to the state before try-catch
+        let cur_depth = self.cc.stack.depth();
+        if cur_depth < depth as usize {
+            return err!(ExceptionCode::StackUnderflow)
+        }
+        self.cc.stack.drop_top(cur_depth - depth as usize);
+        // restore exception pair
+        for item in exc_pair {
+            self.cc.stack.push(item);
+        }
+        switch(self, ctrl!(0))?;
+        Ok(None)
+    }
     fn step_while_loop(&mut self, body: SliceData, cond: SliceData) -> Result<Option<i32>> {
         match self.check_while_loop_condition() {
             Ok(true) => {
@@ -735,6 +753,7 @@ impl Engine {
                     ContinuationType::UntilLoopCondition(body) => self.step_until_loop(body),
                     ContinuationType::AgainLoopBody(slice) => self.step_again_loop(slice),
                     ContinuationType::ExcQuit => Ok(self.make_external_error()?),
+                    ContinuationType::CatchRevert(depth) => self.step_catch_revert(depth),
                 }
             };
             if self.is_trace_enabled() {
@@ -1471,7 +1490,14 @@ impl Engine {
         self.cmd.push_var(c2);
         self.cc.stack.push(exception.value.clone());
         self.cc.stack.push(int!(exception.exception_or_custom_code()));
-        self.cmd.vars[n].as_continuation_mut()?.nargs = 2;
+        let target = self.cmd.vars[n].as_continuation_mut()?;
+        match target.type_of {
+            ContinuationType::CatchRevert(_depth) => {
+                // Pass the entire cc stack. CatchRevert cont will remove a range of slots
+                // under the exception pair so that the final stack depth is _depth + 2.
+            }
+            _ => target.nargs = 2
+        }
         switch(self, var!(n))?;
         Ok(None)
     }

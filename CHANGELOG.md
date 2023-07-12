@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.8.186
+
+- Add new TRYKEEP instruction
+
 ## Version 1.8.177
 
 - Supported changed interface of BocWriter::with_roots
