@@ -17,6 +17,7 @@ use crate::{
     stack::{StackItem, integer::{IntegerData, conversion::FromInt, behavior::Quiet, math::Round}},
     types::{Exception, Status}
 };
+use ton_block::GlobalCapabilities;
 use ton_types::{error, types::ExceptionCode, Result};
 
 pub mod gas_state;
@@ -92,5 +93,12 @@ pub fn execute_gastogram(engine: &mut Engine) -> Status {
 pub fn execute_commit(engine: &mut Engine) -> Status {
     engine.load_instruction(Instruction::new("COMMIT"))?;
     engine.commit();
+    Ok(())
+}
+
+pub fn execute_gas_remaining(engine: &mut Engine) -> Status {
+    engine.check_capability(GlobalCapabilities::CapsTvmBugfixes2022)?;
+    engine.load_instruction(Instruction::new("GASREMAINING"))?;
+    engine.cc.stack.push(StackItem::int(engine.gas_remaining()));
     Ok(())
 }

@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.8.187
+
+- Add new GASREMAINING insn
+
 ## Version 1.8.186
 
 - Add new TRYKEEP instruction
