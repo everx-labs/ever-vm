@@ -29,6 +29,10 @@ use ed25519::signature::Verifier;
 use std::borrow::Cow;
 use ton_block::GlobalCapabilities;
 use ton_types::{BuilderData, error, GasConsumer, ExceptionCode, UInt256};
+use p256::ecdsa::{Signature as P256Signature, VerifyingKey};
+use p256::EncodedPoint;
+use std::convert::TryInto;
+
 
 const PUBLIC_KEY_BITS:  usize = PUBLIC_KEY_BYTES * 8;
 const SIGNATURE_BITS:   usize = SIGNATURE_BYTES * 8;
@@ -83,6 +87,18 @@ pub(super) fn execute_sha256u(engine: &mut Engine) -> Status {
 enum DataForSignature {
     Hash(BuilderData),
     Slice(Vec<u8>)
+}
+
+enum P256PublicKeyData {
+    Slice(Vec<u8>),
+}
+
+impl AsRef<[u8]> for P256PublicKeyData {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            P256PublicKeyData::Slice(vec) => vec.as_slice(),
+        }
+    }
 }
 
 impl AsRef<[u8]> for DataForSignature {
@@ -179,4 +195,66 @@ pub(super) fn execute_chksigns(engine: &mut Engine) -> Status {
 /// using public key k (256-bit unsigned integer).
 pub(super) fn execute_chksignu(engine: &mut Engine) -> Status {
     check_signature(engine, "CHKSIGNU", true)
+}
+
+fn check_p256_signature(engine: &mut Engine, name: &'static str,  hash: bool) -> Status {
+    engine.load_instruction(Instruction::new(name))?;    
+    fetch_stack(engine, 3)?;
+    let pub_key = P256PublicKeyData::Slice(engine.cmd.var(0).as_slice()?.get_bytestring(0));
+    engine.cmd.var(1).as_slice()?;
+    if hash {
+        engine.cmd.var(2).as_integer()?;
+    } else {
+        engine.cmd.var(2).as_slice()?;
+    }
+    if engine.cmd.var(1).as_slice()?.remaining_bits() < SIGNATURE_BITS {
+        return err!(ExceptionCode::CellUnderflow)
+    }
+    let data = if hash {
+        DataForSignature::Hash(engine.cmd.var(2).as_integer()?
+            .as_builder::<UnsignedIntegerBigEndianEncoding>(256)?)
+    } else {
+        if engine.cmd.var(2).as_slice()?.remaining_bits() % 8 != 0 {
+            return err!(ExceptionCode::CellUnderflow)
+        }
+        DataForSignature::Slice(engine.cmd.var(2).as_slice()?.get_bytestring(0))
+    };
+    let encoded_point = match EncodedPoint::from_bytes(pub_key.as_ref()) {
+        Ok(encoded_point) => encoded_point,
+        Err(err) => if engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+            engine.cc.stack.push(boolean!(false));
+            return Ok(())
+        } else {
+            return err!(ExceptionCode::FatalError, "cannot decode public key into encoded point {}", err)
+        }
+    };
+
+    let verify_key = match VerifyingKey::from_encoded_point(&encoded_point) {
+        Ok(verify_key) => verify_key,
+        Err(err) => if engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+            engine.cc.stack.push(boolean!(false));
+            return Ok(())
+        } else {
+            return err!(ExceptionCode::FatalError, "cannot load public key {}", err)
+        }
+    };
+    let signature = engine.cmd.var(1).as_slice()?.get_bytestring(0);
+    let signature: P256Signature = signature[..].try_into().unwrap();
+    
+    let data = preprocess_signed_data(engine, data.as_ref());
+    #[cfg(feature = "signature_no_check")]
+    let result = 
+        engine.modifiers.chksig_always_succeed || verify_key.verify(&data, &signature).is_ok();
+    #[cfg(not(feature = "signature_no_check"))]
+    let result = verify_key.verify(&data, &signature).is_ok();
+    engine.cc.stack.push(boolean!(result));
+    Ok(())
+}
+
+pub(super) fn execute_p256_chksignu(engine: &mut Engine) -> Status {
+    check_p256_signature(engine, "P256_CHKSIGNU", true)
+}
+
+pub(super) fn execute_p256_chksigns(engine: &mut Engine) -> Status {
+    check_p256_signature(engine, "P256_CHKSIGNS", false)
 }
