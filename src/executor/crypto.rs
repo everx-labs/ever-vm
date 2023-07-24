@@ -31,8 +31,6 @@ use ton_block::GlobalCapabilities;
 use ton_types::{BuilderData, error, GasConsumer, ExceptionCode, UInt256};
 use p256::ecdsa::{Signature as P256Signature, VerifyingKey};
 use p256::EncodedPoint;
-use std::convert::TryInto;
-
 
 const PUBLIC_KEY_BITS:  usize = PUBLIC_KEY_BYTES * 8;
 const SIGNATURE_BITS:   usize = SIGNATURE_BYTES * 8;
