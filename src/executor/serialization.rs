@@ -682,7 +682,7 @@ pub fn execute_cdepth(engine: &mut Engine) -> Status {
         0
     } else {
         let c = engine.cmd.var(0).as_cell()?;
-        if c.references_count() == 0 {
+        if !engine.check_capabilities(ton_block::GlobalCapabilities::CapResolveMerkleCell as u64) && c.references_count() == 0 {
             0
         } else {
             c.depth(MAX_LEVEL)
