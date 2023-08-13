@@ -90,18 +90,6 @@ enum DataForSignature {
     Slice(Vec<u8>)
 }
 
-enum P256PublicKeyData {
-    Slice(Vec<u8>),
-}
-
-impl AsRef<[u8]> for P256PublicKeyData {
-    fn as_ref(&self) -> &[u8] {
-        match self {
-            P256PublicKeyData::Slice(vec) => vec.as_slice(),
-        }
-    }
-}
-
 impl AsRef<[u8]> for DataForSignature {
     fn as_ref(&self) -> &[u8] {
         match self {
