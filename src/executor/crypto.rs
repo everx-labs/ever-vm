@@ -29,8 +29,11 @@ use ed25519::signature::Verifier;
 use std::borrow::Cow;
 use ton_block::GlobalCapabilities;
 use ton_types::{BuilderData, error, GasConsumer, ExceptionCode, UInt256};
-use p256::ecdsa::{Signature as P256Signature, VerifyingKey};
-use p256::EncodedPoint;
+use openssl::ec::{EcGroup, EcKey, EcPoint};
+use openssl::nid::Nid;
+use openssl::bn::BigNum;
+use openssl::hash::MessageDigest;
+use openssl::ecdsa::EcdsaSig;
 
 const PUBLIC_KEY_BITS:  usize = PUBLIC_KEY_BYTES * 8;
 const SIGNATURE_BITS:   usize = SIGNATURE_BYTES * 8;
@@ -195,19 +198,42 @@ pub(super) fn execute_chksignu(engine: &mut Engine) -> Status {
     check_signature(engine, "CHKSIGNU", true)
 }
 
-fn check_p256_signature(engine: &mut Engine, name: &'static str,  hash: bool) -> Status {
+fn check_p256_signature(engine: &mut Engine, name: &'static str, hash: bool) -> Status {
     engine.load_instruction(Instruction::new(name))?;    
     fetch_stack(engine, 3)?;
-    let pub_key = P256PublicKeyData::Slice(engine.cmd.var(0).as_slice()?.get_bytestring(0));
-    engine.cmd.var(1).as_slice()?;
+
+    let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap();
+    let pub_key_bytes = engine.cmd.var(0).as_slice()?.get_bytestring(0);
+    let pub_key_point = match EcPoint::from_bytes(&group, &pub_key_bytes, &mut openssl::bn::BigNumContext::new().unwrap()) {
+        Ok(pub_key_point) => pub_key_point,
+        Err(err) => if engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+            engine.cc.stack.push(boolean!(false));
+            return Ok(());
+        } else {
+            return err!(ExceptionCode::FatalError, "cannot decode public key into EcPoint {}", err);
+        }
+    };    
+    
+    let pub_key = match EcKey::from_public_key(&group, &pub_key_point) {
+        Ok(pub_key) => pub_key,
+        Err(err) => if engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+            engine.cc.stack.push(boolean!(false));
+            return Ok(());
+        } else {
+            return err!(ExceptionCode::FatalError, "cannot load public key {}", err);
+        }
+    };
+
     if hash {
         engine.cmd.var(2).as_integer()?;
     } else {
         engine.cmd.var(2).as_slice()?;
     }
+
     if engine.cmd.var(1).as_slice()?.remaining_bits() < SIGNATURE_BITS {
         return err!(ExceptionCode::CellUnderflow)
     }
+
     let data = if hash {
         DataForSignature::Hash(engine.cmd.var(2).as_integer()?
             .as_builder::<UnsignedIntegerBigEndianEncoding>(256)?)
@@ -217,34 +243,27 @@ fn check_p256_signature(engine: &mut Engine, name: &'static str,  hash: bool) ->
         }
         DataForSignature::Slice(engine.cmd.var(2).as_slice()?.get_bytestring(0))
     };
-    let encoded_point = match EncodedPoint::from_bytes(pub_key.as_ref()) {
-        Ok(encoded_point) => encoded_point,
-        Err(err) => if engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
-            engine.cc.stack.push(boolean!(false));
-            return Ok(())
-        } else {
-            return err!(ExceptionCode::FatalError, "cannot decode public key into encoded point {}", err)
-        }
-    };
-
-    let verify_key = match VerifyingKey::from_encoded_point(&encoded_point) {
-        Ok(verify_key) => verify_key,
-        Err(err) => if engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
-            engine.cc.stack.push(boolean!(false));
-            return Ok(())
-        } else {
-            return err!(ExceptionCode::FatalError, "cannot load public key {}", err)
-        }
-    };
-    let signature = engine.cmd.var(1).as_slice()?.get_bytestring(0);
-    let signature: P256Signature = signature[..].try_into().unwrap();
+    let signature_bytes = engine.cmd.var(1).as_slice()?.get_bytestring(0);
+    if signature_bytes.len() != 64 {
+        return err!(ExceptionCode::FatalError, "Invalid signature length");
+    }
     
+    let r_bytes = &signature_bytes[0..32];
+    let s_bytes = &signature_bytes[32..64];
+    
+    let r = BigNum::from_slice(r_bytes).unwrap();
+    let s = BigNum::from_slice(s_bytes).unwrap();
+    
+    let signature = EcdsaSig::from_private_components(r, s).unwrap();
+
+
     let data = preprocess_signed_data(engine, data.as_ref());
+    let md = openssl::hash::hash(MessageDigest::sha256(), &data).unwrap();
+
     #[cfg(feature = "signature_no_check")]
-    let result = 
-        engine.modifiers.chksig_always_succeed || verify_key.verify(&data, &signature).is_ok();
+    let result = engine.modifiers.chksig_always_succeed || signature.verify(&md, &pub_key).is_ok();
     #[cfg(not(feature = "signature_no_check"))]
-    let result = verify_key.verify(&data, &signature).is_ok();
+    let result = signature.verify(&md, &pub_key).is_ok();
     engine.cc.stack.push(boolean!(result));
     Ok(())
 }
