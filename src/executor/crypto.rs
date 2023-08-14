@@ -251,7 +251,11 @@ fn check_p256_signature(engine: &mut Engine, name: &'static str, hash: bool) -> 
     #[cfg(feature = "signature_no_check")]
     let result = engine.modifiers.chksig_always_succeed || signature.verify(&md, &pub_key).is_ok();
     #[cfg(not(feature = "signature_no_check"))]
-    let result = signature.verify(&md, &pub_key).is_ok();
+    let result = match signature.verify(&md, &pub_key) {
+        Ok(true) => true,
+        Ok(false) => false,
+        Err(_) => false,
+    };
     engine.cc.stack.push(boolean!(result));
     Ok(())
 }
