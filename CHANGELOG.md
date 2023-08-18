@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.8.192
+
+- Add cc() and ctrls() methods
+
 ## Version 1.8.190
 
 - Fix depth bug of exotic cell
