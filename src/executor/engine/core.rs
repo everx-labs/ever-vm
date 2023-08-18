@@ -902,6 +902,14 @@ impl Engine {
             .ok_or_else(|| exception!(ExceptionCode::RangeCheckError, "get ctrl {} failed", index))
     }
 
+    pub fn ctrls(&self) -> &SaveList {
+        &self.ctrls
+    }
+
+    pub fn cc(&self) -> &ContinuationData {
+        &self.cc
+    }
+
     fn dump_msg(message: &'static str, data: String) -> String {
         format!("--- {} {:-<4$}\n{}\n{:-<40}\n", message, "", data, "", 35-message.len())
     }
