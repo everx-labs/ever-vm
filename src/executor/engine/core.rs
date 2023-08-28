@@ -166,11 +166,11 @@ impl CommittedState {
             CommittedState::new_empty()
         }
     }
-    pub fn get_actions(&self) -> StackItem {
-        self.c5.clone()
+    pub fn get_actions(&self) -> &StackItem {
+        &self.c5
     }
-    pub fn get_root(&self) -> StackItem {
-        self.c4.clone()
+    pub fn get_root(&self) -> &StackItem {
+        &self.c4
     }
     pub fn is_committed(&self) -> bool {
         self.committed
@@ -239,7 +239,7 @@ impl Engine {
             ctrls: SaveList::new(),
             libraries: Vec::new(),
             index_provider: None,
-            modifiers: BehaviorModifiers::default(),
+            modifiers: BehaviorModifiers,
             visited_cells: HashMap::new(),
             visited_exotic_cells: HashMap::new(),
             cstate: CommittedState::new_empty(),

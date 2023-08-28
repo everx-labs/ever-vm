@@ -488,6 +488,12 @@ impl ContinuationData {
     }
 }
 
+impl Default for ContinuationData {
+    fn default() -> Self {
+        Self::new_empty()
+    }
+}
+
 impl fmt::Display for ContinuationData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{{\n    type: {}\n    code: {}    nargs: {}\n    stack: ", self.type_of, self.code, self.nargs)?;
