@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.8.194
+
+- Drop trees of StackItem::Tuple iteratively
+
 ## Version 1.8.192
 
 - Add cc() and ctrls() methods
