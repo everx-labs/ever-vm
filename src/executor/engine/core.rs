@@ -239,7 +239,10 @@ impl Engine {
             ctrls: SaveList::new(),
             libraries: Vec::new(),
             index_provider: None,
+            #[cfg(not(feature = "signature_no_check"))]
             modifiers: BehaviorModifiers,
+            #[cfg(feature = "signature_no_check")]
+            modifiers: BehaviorModifiers::default(),
             visited_cells: HashMap::new(),
             visited_exotic_cells: HashMap::new(),
             cstate: CommittedState::new_empty(),
