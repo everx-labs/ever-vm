@@ -26,17 +26,24 @@ use crate::{
     types::{Exception, Status}
 };
 
-use crusty3_zk::create_random_proof;
 use ed25519::signature::Verifier;
 use std::borrow::Cow;
 use ton_block::GlobalCapabilities;
-use sha2::Digest;
-use ed25519::signature::{Signature, Verifier};
-use std::sync::Arc;
-use ton_types::{BuilderData, Cell, error, GasConsumer, ExceptionCode, UInt256};
-
-use crusty3_zk::{groth16::{verify_proof, prepare_verifying_key, Parameters, verify_groth16_proof_from_byteblob, verify_encrypted_input_groth16_proof_from_byteblob},
-                 bls::{Bls12, Fr},
+use ton_types::{
+    BuilderData,
+    Cell,
+    error,
+    GasConsumer,
+    ExceptionCode,
+    UInt256,
+    Result,
+};
+use crusty3_zk::{
+    groth16::{
+        verify_groth16_proof_from_byteblob,
+        verify_encrypted_input_groth16_proof_from_byteblob,
+    },
+    bls::{Bls12},
 };
 
 const PUBLIC_KEY_BITS:  usize = PUBLIC_KEY_BYTES * 8;
@@ -89,7 +96,7 @@ pub(super) fn execute_sha256u(engine: &mut Engine) -> Status {
     }
 }
 
-pub fn obtain_cells_data(cl: Cell) -> Result<Vec<u8>, Failure> {
+pub fn obtain_cells_data(cl: Cell) -> Result<Vec<u8>> {
 	let mut byte_blob = Vec::new();
     let mut queue = vec!(cl.clone());
     while let Some(cell) = queue.pop() {
@@ -106,33 +113,24 @@ pub fn obtain_cells_data(cl: Cell) -> Result<Vec<u8>, Failure> {
     Ok(byte_blob)
 }
 
-pub(super) fn execute_vergrth16(engine: &mut Engine) -> Failure {
-    engine.load_instruction(Instruction::new("VERGRTH16"))
-        .and_then(|ctx| fetch_stack(ctx, 1))
-        .and_then(|ctx| {
-            let builder = BuilderData::from(ctx.engine.cmd.var(0).as_cell()?);
-            let cell_proof_data_length = builder.length_in_bits();
-
-            let cell_proof = ctx.engine.finalize_cell(builder)?;
-
-            let mut cell_proof_data = obtain_cells_data(cell_proof).unwrap();if cell_proof_data_length % 8 == 0 {
-        let mut result = false;
-        if cell_proof_data[0] == 0 {
-            result = verify_groth16_proof_from_byteblob::<Bls12>(&cell_proof_data[1..]).unwrap();
-        } else if cell_proof_data[0] == 1 {
-            result = verify_encrypted_input_groth16_proof_from_byteblob::<Bls12>(&cell_proof_data[1..]).unwrap();
-        }
-        else {
-            return err!(ExceptionCode::InvalidOpcode);
-        }
-
-                ctx.engine.cc.stack.push(boolean!(result));
-                Ok(ctx)
-            } else {
-                err!(ExceptionCode::CellUnderflow)
-            }
-        })
-        .err()
+pub(super) fn execute_vergrth16(engine: &mut Engine) -> Status {
+    engine.load_instruction(Instruction::new("VERGRTH16"))?;
+    fetch_stack(engine, 1)?;
+    let builder = engine.cmd.var(0).clone().as_builder_mut()?;
+    let cell_proof_data_length = builder.length_in_bits();
+    let cell_proof = engine.finalize_cell(builder.into())?;
+    let cell_proof_data = obtain_cells_data(cell_proof).unwrap();
+    if cell_proof_data_length % 8 == 0 {
+        let result = if cell_proof_data[0] == 0 {
+            verify_groth16_proof_from_byteblob::<Bls12>(&cell_proof_data[1..]).unwrap()
+        } else {
+            verify_encrypted_input_groth16_proof_from_byteblob::<Bls12>(&cell_proof_data[1..]).unwrap()
+        };
+        engine.cc.stack.push(boolean!(result));
+        return Ok(())
+    } else {
+        err!(ExceptionCode::CellUnderflow)
+    }
 }
 
 enum DataForSignature {
