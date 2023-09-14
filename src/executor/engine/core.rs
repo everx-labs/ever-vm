@@ -29,7 +29,7 @@ use crate::{
     types::{Exception, ResultMut, ResultOpt, ResultRef, Status}
 };
 use std::{sync::{Arc, Mutex}, ops::Range};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use ton_types::{
     BuilderData, Cell, CellType, error, GasConsumer, Result, SliceData, HashmapE,
     ExceptionCode, UInt256, IBitstring,
@@ -82,7 +82,9 @@ pub struct Engine {
     pub(in crate::executor) libraries: Vec<HashmapE>, // 256 bit dictionaries
     pub(in crate::executor) index_provider: Option<Arc<dyn IndexProvider>>,
     pub(in crate::executor) modifiers: BehaviorModifiers,
-    visited_cells: HashMap<UInt256, SliceData>,
+    // SliceData::load_cell() is faster than trying to cache SliceData for each
+    // visited cell with HashMap<UInt256, SliceData>
+    visited_cells: HashSet<UInt256>,
     visited_exotic_cells: HashMap<UInt256, SliceData>,
     cstate: CommittedState,
     time: u64,
@@ -243,7 +245,7 @@ impl Engine {
             modifiers: BehaviorModifiers,
             #[cfg(feature = "signature_no_check")]
             modifiers: BehaviorModifiers::default(),
-            visited_cells: HashMap::new(),
+            visited_cells: HashSet::new(),
             visited_exotic_cells: HashMap::new(),
             cstate: CommittedState::new_empty(),
             time: 0,
@@ -806,14 +808,13 @@ impl Engine {
         let slice = loop {
             let hash = cell.repr_hash();
             if !resolve_special || cell.cell_type() == CellType::Ordinary {
-                if let Some(slice) = self.visited_cells.get(&hash).cloned() {
+                if self.visited_cells.contains(&hash) {
                     self.try_use_gas(Gas::load_cell_price(false))?;
-                    break slice;
+                    break SliceData::load_cell(cell)?;
                 } else {
                     self.try_use_gas(Gas::load_cell_price(true))?;
-                    let slice = SliceData::load_cell(cell)?;
-                    self.visited_cells.insert(hash, slice.clone());
-                    break slice;
+                    self.visited_cells.insert(hash);
+                    break SliceData::load_cell(cell)?;
                 }
             }
             if let Some(slice) = self.visited_exotic_cells.get(&hash).cloned() {
