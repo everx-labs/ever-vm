@@ -2,9 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.8.207
+
+- Add a tuples benchmark
+
 ## Version 1.8.206
 
-- Recovered perf degradation in load_hashed_cell()
+- Recover load_hashed_cell() perf
 
 ## Version 1.8.194
 

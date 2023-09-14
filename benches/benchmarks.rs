@@ -12,8 +12,12 @@
  */
 
 use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
+use pprof::criterion::{PProfProfiler, Output};
 use ton_types::SliceData;
-use ton_vm::{executor::Engine, stack::{savelist::SaveList, Stack, StackItem}};
+use ton_vm::{
+    executor::Engine,
+    stack::{savelist::SaveList, Stack, StackItem, continuation::ContinuationData}
+};
 use std::time::Duration;
 
 static DEFAULT_CAPABILITIES: u64 = 0x572e;
@@ -30,7 +34,7 @@ fn load_boc(filename: &str) -> ton_types::Cell {
     ton_types::read_single_root_boc(bytes).unwrap()
 }
 
-fn criterion_bench_elector_algo_1000_vtors(c: &mut Criterion) {
+fn bench_elector_algo_1000_vtors(c: &mut Criterion) {
     let elector_code = load_boc("benches/elector-code.boc");
     let elector_data = load_boc("benches/elector-data.boc");
     let config_data = load_boc("benches/config-data.boc");
@@ -87,7 +91,7 @@ fn criterion_bench_elector_algo_1000_vtors(c: &mut Criterion) {
     group.finish();
 }
 
-fn criterion_bench_tiny_loop_200000_iters(c: &mut Criterion) {
+fn bench_tiny_loop_200000_iters(c: &mut Criterion) {
     let tiny_code = load_boc("benches/tiny-code.boc");
     let tiny_data = load_boc("benches/tiny-data.boc");
 
@@ -136,7 +140,7 @@ fn criterion_bench_tiny_loop_200000_iters(c: &mut Criterion) {
     }));
 }
 
-fn criterion_bench_num_bigint(c: &mut Criterion) {
+fn bench_num_bigint(c: &mut Criterion) {
     c.bench_function("num-bigint", |b| b.iter( || {
         let n = num::BigInt::from(1000000);
         let mut accum = num::BigInt::from(0);
@@ -154,7 +158,7 @@ fn criterion_bench_num_bigint(c: &mut Criterion) {
 
 // Note: the gmp-mpfr-based rug crate shows almost the same perf as num-bigint
 
-// fn criterion_bench_rug_bigint(c: &mut Criterion) {
+// fn bench_rug_bigint(c: &mut Criterion) {
 //     c.bench_function("rug-bigint", |b| b.iter( || {
 //         let n = rug::Integer::from(1000000);
 //         let mut accum = rug::Integer::from(0);
@@ -170,19 +174,87 @@ fn criterion_bench_num_bigint(c: &mut Criterion) {
 //     }));
 // }
 
-fn criterion_bench_load_boc(c: &mut Criterion) {
+fn bench_load_boc(c: &mut Criterion) {
     let bytes = read_boc("benches/elector-data.boc");
     c.bench_function("load-boc", |b| b.iter( || {
         ton_types::read_single_root_boc(bytes.clone()).unwrap()
     }));
 }
 
+const MAX_TUPLE_SIZE: usize = 255;
+
+// array = [row1, row2, ...], array.len() <= MAX_TUPLE_SIZE
+// row_i = [v1, v2, ...], row_i.len() <= row_size
+
+fn make_array(input: &[i64], row_size: usize) -> StackItem {
+    assert!(0 < row_size && row_size <= MAX_TUPLE_SIZE);
+    assert!(input.len() <= row_size * MAX_TUPLE_SIZE);
+    let mut row = Vec::new();
+    let mut rows = Vec::new();
+    for i in 0..input.len() {
+        row.push(StackItem::int(input[i]));
+        if (i + 1) % row_size == 0 {
+            assert_eq!(row.len(), row_size);
+            rows.push(StackItem::tuple(row));
+            row = Vec::new();
+        }
+    }
+    if row.len() > 0 {
+        rows.push(StackItem::tuple(row));
+    }
+    StackItem::tuple(rows)
+}
+
+fn bench_mergesort_tuple(c: &mut Criterion) {
+    let code = load_boc("benches/mergesort/mergesort.boc");
+    let code_slice = SliceData::load_cell_ref(&code).unwrap();
+
+    const ROW_SIZE: usize = 32; // size() function in the code
+    const COUNT: usize = 1000; // total elements count
+
+    let mut input = Vec::with_capacity(COUNT);
+    for i in 0..COUNT {
+        input.push((COUNT - i - 1) as i64);
+    }
+    let array = make_array(&input, ROW_SIZE);
+    input.sort();
+    let expected = make_array(&input, ROW_SIZE);
+
+    // runvmx mode: +1 = same_c3
+    let mut ctrls = SaveList::default();
+    ctrls.put(3, &mut StackItem::continuation(
+        ContinuationData::with_code(code_slice.clone())
+    )).unwrap();
+
+    let mut stack = Stack::new();
+    stack.push(StackItem::int(-1));
+    stack.push(array);
+    // runvmx mode: +2 = push_0
+    stack.push(StackItem::int(0));
+
+    c.bench_function("mergesort-tuple", |b| b.iter(|| {
+        let mut engine = Engine::with_capabilities(DEFAULT_CAPABILITIES).setup_with_libraries(
+            code_slice.clone(),
+            Some(ctrls.clone()),
+            Some(stack.clone()),
+            None,
+            vec!());
+        engine.execute().unwrap();
+        assert_eq!(engine.gas_used(), 51_216_096);
+        assert_eq!(engine.stack().depth(), 1);
+        assert_eq!(engine.stack().get(0), &expected);
+    }));
+}
+
 criterion_group!(
-    benches,
-    criterion_bench_num_bigint,
-//    criterion_bench_rug_bigint,
-    criterion_bench_load_boc,
-    criterion_bench_elector_algo_1000_vtors,
-    criterion_bench_tiny_loop_200000_iters
+    name = benches;
+    config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
+    targets =
+        bench_num_bigint,
+        // bench_rug_bigint,
+        bench_load_boc,
+        bench_elector_algo_1000_vtors,
+        bench_tiny_loop_200000_iters,
+        bench_mergesort_tuple,
 );
 criterion_main!(benches);
