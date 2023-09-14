@@ -212,7 +212,7 @@ impl IntegerData {
     }
 
     pub fn as_slice<T: Encoding>(&self, bits: usize) -> Result<SliceData> {
-        SliceData::load_builder(self.as_builder::<T>(bits)?)
+        SliceData::load_bitstring(self.as_builder::<T>(bits)?)
     }
 
     pub fn as_builder<T: Encoding>(&self, bits: usize) -> Result<BuilderData> {
