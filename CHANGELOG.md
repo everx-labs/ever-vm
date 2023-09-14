@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.8.208
+
+- Optimize IntegerData::as_slice()
+
 ## Version 1.8.207
 
 - Add a tuples benchmark
