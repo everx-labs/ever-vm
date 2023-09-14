@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 TON Labs. All Rights Reserved.
+ * Copyright (C) 2021-2023 TON Labs. All Rights Reserved.
  *
  * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
  * this file except in compliance with the License.
@@ -13,6 +13,7 @@
 
 use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 use pprof::criterion::{PProfProfiler, Output};
+use ton_block::{StateInit, Deserializable};
 use ton_types::SliceData;
 use ton_vm::{
     executor::Engine,
@@ -32,6 +33,10 @@ fn read_boc(filename: &str) -> Vec<u8> {
 fn load_boc(filename: &str) -> ton_types::Cell {
     let bytes = read_boc(filename);
     ton_types::read_single_root_boc(bytes).unwrap()
+}
+
+fn load_stateinit(filename: &str) -> StateInit {
+    StateInit::construct_from_file(filename).unwrap()
 }
 
 fn bench_elector_algo_1000_vtors(c: &mut Criterion) {
@@ -246,6 +251,98 @@ fn bench_mergesort_tuple(c: &mut Criterion) {
     }));
 }
 
+fn bench_massive_cell_upload(c: &mut Criterion) {
+    let stateinit = load_stateinit("benches/massive/cell-upload.tvc");
+    let mut ctrls = SaveList::default();
+    ctrls.put(4, &mut StackItem::cell(stateinit.data().unwrap().clone())).unwrap();
+    let params = vec!(
+        StackItem::int(0x76ef1ea),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(1678299227),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::tuple(vec!(
+            StackItem::int(1000000000),
+            StackItem::None
+        )),
+        StackItem::default(),
+        StackItem::None,
+        StackItem::None,
+        StackItem::int(0),
+    );
+    ctrls.put(7, &mut StackItem::tuple(vec!(StackItem::tuple(params)))).unwrap();
+
+    let msg = load_boc("benches/massive/cell-upload-msg.boc");
+    let mut body = SliceData::load_cell_ref(&msg).unwrap();
+    body.move_by(366).unwrap();
+
+    let mut stack = Stack::new();
+    stack.push(StackItem::int(1000000000));
+    stack.push(StackItem::int(0));
+    stack.push(StackItem::cell(msg));
+    stack.push(StackItem::slice(body));
+    stack.push(StackItem::int(-1));
+
+    c.bench_function("massive-cell-upload", |b| b.iter(|| {
+        let mut engine = Engine::with_capabilities(DEFAULT_CAPABILITIES).setup_with_libraries(
+            SliceData::load_cell_ref(&stateinit.code().unwrap()).unwrap(),
+            Some(ctrls.clone()),
+            Some(stack.clone()),
+            None,
+            vec!());
+        engine.execute().unwrap();
+        assert_eq!(engine.gas_used(), 5479);
+    }));
+}
+
+fn bench_massive_cell_finalize(c: &mut Criterion) {
+    let stateinit = load_stateinit("benches/massive/cell-finalize.tvc");
+    let mut ctrls = SaveList::default();
+    ctrls.put(4, &mut StackItem::cell(stateinit.data().unwrap().clone())).unwrap();
+    let params = vec!(
+        StackItem::int(0x76ef1ea),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(1678296619),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::int(0),
+        StackItem::tuple(vec!(
+            StackItem::int(1000000000),
+            StackItem::None
+        )),
+        StackItem::default(),
+        StackItem::None,
+        StackItem::None,
+        StackItem::int(0),
+    );
+    ctrls.put(7, &mut StackItem::tuple(vec!(StackItem::tuple(params)))).unwrap();
+
+    let msg = load_boc("benches/massive/cell-finalize-msg.boc");
+    let mut body = SliceData::load_cell_ref(&msg).unwrap();
+    body.move_by(366).unwrap();
+
+    let mut stack = Stack::new();
+    stack.push(StackItem::int(1000000000));
+    stack.push(StackItem::int(0));
+    stack.push(StackItem::cell(msg));
+    stack.push(StackItem::slice(body));
+    stack.push(StackItem::int(-1));
+
+    c.bench_function("massive-cell-finalize", |b| b.iter(|| {
+        let mut engine = Engine::with_capabilities(DEFAULT_CAPABILITIES).setup_with_libraries(
+            SliceData::load_cell_ref(&stateinit.code().unwrap()).unwrap(),
+            Some(ctrls.clone()),
+            Some(stack.clone()),
+            None,
+            vec!());
+        engine.execute().unwrap();
+        assert_eq!(engine.gas_used(), 203585);
+    }));
+}
+
 criterion_group!(
     name = benches;
     config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
@@ -256,5 +353,7 @@ criterion_group!(
         bench_elector_algo_1000_vtors,
         bench_tiny_loop_200000_iters,
         bench_mergesort_tuple,
+        bench_massive_cell_upload,
+        bench_massive_cell_finalize,
 );
 criterion_main!(benches);
