@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.8.206
+
+- Recovered perf degradation in load_hashed_cell()
+
 ## Version 1.8.194
 
 - Drop trees of StackItem::Tuple iteratively
