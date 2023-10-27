@@ -123,7 +123,7 @@ pub(crate) enum SerializeItem<'a> {
     SaveListItem(usize),
 }
 
-fn slice_serialize(slice: &SliceData) -> Result<BuilderData> {
+pub fn slice_serialize(slice: &SliceData) -> Result<BuilderData> {
     let mut builder = BuilderData::new();
     let cell = match slice.cell_opt() {
         Some(cell) => cell.clone(),
@@ -137,7 +137,7 @@ fn slice_serialize(slice: &SliceData) -> Result<BuilderData> {
     Ok(builder)
 }
 
-fn slice_deserialize(slice: &mut SliceData) -> Result<SliceData> {
+pub fn slice_deserialize(slice: &mut SliceData) -> Result<SliceData> {
     let cell = slice.checked_drain_reference()?;
     let data_start = slice.get_next_int(10)? as usize;
     let data_end = slice.get_next_int(10)? as usize;
