@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.8.217
+
+- BLS pubkey dummy
+
 ## Version 1.8.212
 
 - Public slice_serialize and slice_deserialize functions
