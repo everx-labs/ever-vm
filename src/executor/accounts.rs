@@ -323,6 +323,7 @@ fn calculate_elections(
                 SigPubKey::from_bytes(validator.key.pub_key.as_slice())?,
                 weight,
                 Some(validator.adnl_addr),
+                None,
             ));
             let key = SliceData::from_raw(validator.key.pub_key.as_array().to_vec(), 256);
             let mut value = validator.addr.write_to_new_cell()?;
