@@ -41,6 +41,10 @@ mod diff;
 pub use engine::*;
 use ton_types::{BuilderData, Cell, IBitstring, Result};
 
+#[cfg(test)]
+#[path = "../tests/test_executor.rs"]
+mod tests;
+
 pub trait Mask {
     fn bit(&self, bits: Self) -> bool;
     fn mask(&self, mask: Self) -> Self;

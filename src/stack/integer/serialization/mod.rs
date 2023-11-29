@@ -31,3 +31,10 @@ pub use self::unsigned_big_endian::UnsignedIntegerBigEndianEncoding;
 pub use self::signed_big_endian::SignedIntegerBigEndianEncoding;
 pub use self::signed_little_endian::SignedIntegerLittleEndianEncoding;
 
+#[cfg(test)]
+#[path = "tests/test_integer_encoding.rs"]
+mod test_integer_encoding;
+
+#[cfg(test)]
+#[path = "tests/test_ser_deser.rs"]
+mod test_ser_deser;

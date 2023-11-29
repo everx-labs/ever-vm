@@ -393,3 +393,14 @@ pub mod serialization;
 pub mod math;
 pub mod bitlogics;
 
+#[cfg(test)]
+#[path = "tests/test_integer.rs"]
+mod test_integer;
+
+#[cfg(test)]
+#[path = "tests/test_conversion.rs"]
+mod test_conversion;
+
+#[cfg(test)]
+#[path = "tests/test_formatting.rs"]
+mod test_formatting;
