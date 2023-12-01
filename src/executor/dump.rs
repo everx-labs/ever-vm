@@ -266,3 +266,6 @@ pub(crate) fn execute_dump_string(engine: &mut Engine) -> Status {
     }
 }
 
+#[cfg(test)]
+#[path = "../tests/test_dump.rs"]
+mod tests;

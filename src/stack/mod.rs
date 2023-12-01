@@ -1095,3 +1095,6 @@ impl fmt::Display for Stack {
     }
 }
 
+#[cfg(test)]
+#[path = "../tests/test_stack.rs"]
+mod tests;

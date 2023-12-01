@@ -215,3 +215,6 @@ impl SmartContractInfo{
     }
 }
 
+#[cfg(test)]
+#[path = "tests/test_smart_contract_info.rs"]
+mod tests;

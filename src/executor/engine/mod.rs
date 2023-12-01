@@ -19,3 +19,6 @@ pub(in crate::executor) mod storage;
 
 pub use self::core::*;
 
+#[cfg(test)]
+#[path = "../../tests/test_microfunctions.rs"]
+mod tests;
