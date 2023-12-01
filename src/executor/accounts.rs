@@ -548,3 +548,6 @@ pub(crate) fn execute_find_by_data_hash(engine: &mut Engine) -> Status {
     })
 }
 
+#[cfg(test)]
+#[path = "../tests/test_accounts.rs"]
+mod tests;

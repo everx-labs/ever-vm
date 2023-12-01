@@ -90,3 +90,6 @@ pub fn update_error_description(mut err: failure::Error, f: impl FnOnce(&str) ->
     err
 }
 
+#[cfg(test)]
+#[path = "tests/test_error.rs"]
+mod tests;
