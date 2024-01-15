@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.9.0
+
+- Fix ENDS insn: account for refs too
+
 ## Version 1.8.217
 
 - BLS pubkey dummy
