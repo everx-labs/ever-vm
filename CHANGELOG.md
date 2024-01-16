@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.9.2
+
+- Revise the price of signature checking instructions
+
 ## Version 1.9.1
 
 - Fix a gas computation bug in stack moving

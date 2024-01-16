@@ -2,7 +2,7 @@
 build = 'common/build/build.rs'
 edition = '2021'
 name = 'ton_vm'
-version = '1.9.1'
+version = '1.9.2'
 
 [dependencies]
 ed25519 = '1.2'

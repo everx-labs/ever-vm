@@ -14,7 +14,7 @@
 use crate::{
     error::TvmError,
     executor::{
-        engine::{Engine, storage::fetch_stack}, types::Instruction
+        engine::{Engine, storage::fetch_stack}, gas::gas_state::Gas, types::Instruction
     },
     stack::{
         StackItem,
@@ -106,6 +106,10 @@ fn preprocess_signed_data<'a>(_engine: &Engine, data: &'a [u8]) -> Cow<'a, [u8]>
 }
 
 fn check_signature(engine: &mut Engine, name: &'static str, hash: bool) -> Status {
+    if engine.check_capabilities(GlobalCapabilities::CapTvmV19 as u64) {
+        engine.checked_signatures_count = engine.checked_signatures_count.saturating_add(1);
+        engine.try_use_gas(Gas::check_signature_price(engine.checked_signatures_count))?;
+    }
     engine.load_instruction(Instruction::new(name))?;
     fetch_stack(engine, 3)?;
     let pub_key = engine.cmd.var(0).as_integer()?
