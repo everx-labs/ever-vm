@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.9.1
+
+- Fix a gas computation bug in stack moving
+
 ## Version 1.9.0
 
 - Fix ENDS insn: account for refs too
