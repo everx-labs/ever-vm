@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.9.3
+
+- Check the type of exotic cell for ENDXC insn
+
 ## Version 1.9.2
 
 - Revise the price of signature checking instructions
