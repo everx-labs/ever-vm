@@ -222,7 +222,13 @@ pub fn execute_ends(engine: &mut Engine) -> Status {
         Instruction::new("ENDS")
     )?;
     fetch_stack(engine, 1)?;
-    if !engine.cmd.var(0).as_slice()?.is_empty() {
+    let slice = engine.cmd.var(0).as_slice()?;
+    let is_empty = if engine.check_capabilities(GlobalCapabilities::CapTvmV19 as u64) {
+        slice.remaining_bits() == 0 && slice.remaining_references() == 0
+    } else {
+        slice.is_empty()
+    };
+    if !is_empty {
         err!(ExceptionCode::CellUnderflow)
     } else {
         Ok(())
