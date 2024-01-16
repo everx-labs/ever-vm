@@ -31,6 +31,7 @@ use crate::{
     },
     types::{Exception, Status}
 };
+use ton_block::GlobalCapabilities;
 use ton_types::{BuilderData, CellType, GasConsumer, error, IBitstring, Result, ExceptionCode, MAX_LEVEL};
 
 const QUIET: u8 = 0x01; // quiet variant
@@ -123,10 +124,18 @@ pub fn execute_endxc(engine: &mut Engine) -> Status {
             engine.use_gas(Gas::finalize_price());
             return err!(ExceptionCode::CellOverflow, "Not enough data for a special cell")
         }
-        match CellType::try_from(b.data()[0]) {
-            Ok(cell_type) => b.set_type(cell_type),
-            Err(err) => return err!(ExceptionCode::CellOverflow, "{}", err)
+        let cell_type = CellType::try_from(b.data()[0])
+            .map_err(|err| exception!(ExceptionCode::CellOverflow, "{}", err))?;
+        if engine.check_capabilities(GlobalCapabilities::CapTvmV19 as u64) {
+            match cell_type {
+                // allow the following known types
+                CellType::PrunedBranch | CellType::LibraryReference |
+                CellType::MerkleProof | CellType::MerkleUpdate |
+                // deny all other types (incl. BigCell b/c it can't be created from builder anyway)
+                _ => return err!(ExceptionCode::CellOverflow, "Incorrect type of exotic cell: {}", cell_type)
+            }
         }
+        b.set_type(cell_type)
     }
     let cell = engine.finalize_cell(b)?;
     engine.cc.stack.push(StackItem::Cell(cell));
