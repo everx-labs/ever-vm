@@ -35,6 +35,8 @@ const IMPLICIT_JMPREF_GAS_PRICE: i64 = 10;
 const IMPLICIT_RET_GAS_PRICE: i64 = 5;
 const FREE_STACK_DEPTH: usize = 32;
 const STACK_ENTRY_GAS_PRICE: i64 = 1;
+const CHECK_SIGNATURE_THRESHOLD: usize = 5;
+const CHECK_SIGNATURE_GAS_PRICE: i64 = 6500 - 26; // minus original price
 #[cfg(feature = "gosh")]
 const DIFF_DURATION_FOR_LINE: i64 = 60;
 #[cfg(feature = "gosh")]
@@ -169,6 +171,14 @@ impl Gas {
     }
     pub fn consume_tuple_gas(&mut self, tuple_length: usize) -> i64 {
         self.use_gas(TUPLE_ENTRY_GAS_PRICE * tuple_length as i64)
+    }
+
+    pub const fn check_signature_price(count: usize) -> i64 {
+        if count > CHECK_SIGNATURE_THRESHOLD {
+            CHECK_SIGNATURE_GAS_PRICE
+        } else {
+            0
+        }
     }
 
     #[cfg(feature = "gosh")]

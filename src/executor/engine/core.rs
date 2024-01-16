@@ -82,6 +82,7 @@ pub struct Engine {
     pub(in crate::executor) libraries: Vec<HashmapE>, // 256 bit dictionaries
     pub(in crate::executor) index_provider: Option<Arc<dyn IndexProvider>>,
     pub(in crate::executor) modifiers: BehaviorModifiers,
+    pub(in crate::executor) checked_signatures_count: usize,
     // SliceData::load_cell() is faster than trying to cache SliceData for each
     // visited cell with HashMap<UInt256, SliceData>
     visited_cells: HashSet<UInt256>,
@@ -245,6 +246,7 @@ impl Engine {
             modifiers: BehaviorModifiers,
             #[cfg(feature = "signature_no_check")]
             modifiers: BehaviorModifiers::default(),
+            checked_signatures_count: 0,
             visited_cells: HashSet::new(),
             visited_exotic_cells: HashMap::new(),
             cstate: CommittedState::new_empty(),
