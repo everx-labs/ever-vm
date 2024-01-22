@@ -130,7 +130,7 @@ pub fn execute_endxc(engine: &mut Engine) -> Status {
             match cell_type {
                 // allow the following known types
                 CellType::PrunedBranch | CellType::LibraryReference |
-                CellType::MerkleProof | CellType::MerkleUpdate |
+                CellType::MerkleProof | CellType::MerkleUpdate => (),
                 // deny all other types (incl. BigCell b/c it can't be created from builder anyway)
                 _ => return err!(ExceptionCode::CellOverflow, "Incorrect type of exotic cell: {}", cell_type)
             }
