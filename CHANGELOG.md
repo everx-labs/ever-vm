@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 1.9.7
+
+- Changed exception type when storing NaN integer on stack
+
 ## Version 1.9.5
 
 - Bugfixes
