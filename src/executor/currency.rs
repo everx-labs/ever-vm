@@ -56,7 +56,7 @@ fn store_var(engine: &mut Engine, name: &'static str, max_bits: usize, sign: boo
     fetch_stack(engine, 2)?;
     let x = engine.cmd.var(0).as_integer()?;
     if engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) && x.is_nan() {
-        return err!(ExceptionCode::IntegerOverflow);
+        return err!(ExceptionCode::RangeCheckError);
     }
     let b = engine.cmd.var(1).as_builder()?;
     let (bits, vec) = match sign {
