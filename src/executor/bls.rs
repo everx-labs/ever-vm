@@ -27,8 +27,8 @@ use crate::{
     },
     types::{Exception, Status}
 };
-use ton_block::GlobalCapabilities;
-use ton_types::{
+use ever_block::GlobalCapabilities;
+use ever_block::{
     aggregate_and_verify, aggregate_public_keys_and_verify, 
     aggregate_pure_bls_signatures, error, g1_add, g1_in_group, g1_mul, 
     g1_multiexp, g1_neg, g1_sub, g1_zero, g2_add, g2_in_group, g2_mul, g2_multiexp, g2_neg, g2_sub, 

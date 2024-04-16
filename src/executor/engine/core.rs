@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2023 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -30,11 +30,11 @@ use crate::{
 };
 use std::{sync::{Arc, Mutex}, ops::Range};
 use std::collections::{HashMap, HashSet};
-use ton_types::{
+use ever_block::{
     BuilderData, Cell, CellType, error, GasConsumer, Result, SliceData, HashmapE,
     ExceptionCode, UInt256, IBitstring,
 };
-use ton_block::{ShardAccount, Deserializable, GlobalCapabilities};
+use ever_block::{ShardAccount, Deserializable, GlobalCapabilities};
 
 pub(super) type ExecuteHandler = fn(&mut Engine) -> Status;
 

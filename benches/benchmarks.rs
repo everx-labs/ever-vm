@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021-2023 TON Labs. All Rights Reserved.
+ * Copyright (C) 2019-2024 EverX. All Rights Reserved.
  *
  * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
  * this file except in compliance with the License.
@@ -7,16 +7,16 @@
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific TON DEV software governing permissions and
+ * See the License for the specific EVERX DEV software governing permissions and
  * limitations under the License.
  */
 
 use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 use pprof::criterion::{PProfProfiler, Output};
-use ton_block::{StateInit, Deserializable, GlobalCapabilities};
-use ton_labs_assembler::compile_code_to_cell;
-use ton_types::SliceData;
-use ton_vm::{
+use ever_block::{StateInit, Deserializable, GlobalCapabilities};
+use ever_assembler::compile_code_to_cell;
+use ever_block::SliceData;
+use ever_vm::{
     executor::{Engine, gas::gas_state::Gas},
     stack::{savelist::SaveList, Stack, StackItem, continuation::ContinuationData, integer::IntegerData}
 };
@@ -31,9 +31,9 @@ fn read_boc(filename: &str) -> Vec<u8> {
     bytes
 }
 
-fn load_boc(filename: &str) -> ton_types::Cell {
+fn load_boc(filename: &str) -> ever_block::Cell {
     let bytes = read_boc(filename);
-    ton_types::read_single_root_boc(bytes).unwrap()
+    ever_block::read_single_root_boc(bytes).unwrap()
 }
 
 fn load_stateinit(filename: &str) -> StateInit {
@@ -183,7 +183,7 @@ fn bench_num_bigint(c: &mut Criterion) {
 fn bench_load_boc(c: &mut Criterion) {
     let bytes = read_boc("benches/elector-data.boc");
     c.bench_function("load-boc", |b| b.iter( || {
-        ton_types::read_single_root_boc(bytes.clone()).unwrap()
+        ever_block::read_single_root_boc(bytes.clone()).unwrap()
     }));
 }
 
@@ -354,14 +354,14 @@ fn bench_ed25519_verify(c: &mut Criterion) {
     for size in [1, 2, 4, 8, 16, 32, 48, 64, 96, 128] {
         let mut data = data.clone();
         data.truncate(size);
-        let signature = ton_types::ed25519_sign_with_secret(&secret, &data).unwrap();
+        let signature = ever_block::ed25519_sign_with_secret(&secret, &data).unwrap();
         signed.push((data, signature));
     }
 
     let mut g = c.benchmark_group("ed25519_verify");
     for input in &signed {
         g.bench_with_input(format!("{}", input.0.len()), input, |b, input| {
-            b.iter(|| ton_types::ed25519_verify(&public, &input.0, &input.1).unwrap())
+            b.iter(|| ever_block::ed25519_verify(&public, &input.0, &input.1).unwrap())
         });
     }
     g.finish();
@@ -433,7 +433,7 @@ fn bench_chksignu(c: &mut Criterion) {
 
     c.bench_function("chksignu/empty", |b| b.iter(|| {
         let mut engine = Engine::with_capabilities(DEFAULT_CAPABILITIES).setup_with_libraries(
-            SliceData::load_cell(ton_types::Cell::default()).unwrap(),
+            SliceData::load_cell(ever_block::Cell::default()).unwrap(),
             None,
             Some(stack.clone()),
             None,
@@ -460,8 +460,8 @@ fn bench_chksignu(c: &mut Criterion) {
             vec!());
         let res = engine.execute();
         assert_eq!(
-            ton_vm::error::tvm_exception_code(&res.unwrap_err()).unwrap(),
-            ton_types::ExceptionCode::OutOfGas
+            ever_vm::error::tvm_exception_code(&res.unwrap_err()).unwrap(),
+            ever_block::ExceptionCode::OutOfGas
         );
     }));
 }

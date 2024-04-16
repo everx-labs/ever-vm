@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 2.1.0
+
+- the crate was renamed from `ton_vm` to `ever_vm`
+- supported renaming of other crates
+
 ## Version 2.0.0
 
 - Added BLS commands set
