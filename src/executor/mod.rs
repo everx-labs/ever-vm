@@ -35,6 +35,7 @@ mod dump;
 mod null;
 mod config;
 mod rand;
+mod bls;
 #[cfg(feature = "gosh")]
 mod diff;
 

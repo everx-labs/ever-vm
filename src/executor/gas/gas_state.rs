@@ -55,6 +55,32 @@ const ZIP_DURATION_FOR_BYTE: i64 = 4;
 const UNZIP_DURATION_FOR_BYTE: i64 = 1;
 // const MAX_DATA_DEPTH: usize = 512;
 
+const BLS_VERIFY_GAS_PRICE: i64 = 61000;
+const BLS_AGGREGATE_GAS_A: i64 = 4350;
+const BLS_AGGREGATE_GAS_B: i64 = 2650;
+const BLS_FASTAGGREGATEVERIFY_GAS_A: i64 = 58000;
+const BLS_FASTAGGREGATEVERIFY_GAS_B: i64 = 3000;
+const BLS_AGGREGATEVERIFY_GAS_A: i64 = 38500;
+const BLS_AGGREGATEVERIFY_GAS_B: i64 = 22500;
+const BLS_G1_ADD_SUB_GAS_PRICE: i64 = 3900;
+const BLS_G1_NEG_GAS_PRICE: i64 = 750;
+const BLS_G1_MUL_GAS_PRICE: i64 = 5200;
+const BLS_G1_MULTIEXP_GAS_BASE: i64 = 11375;
+const BLS_G1_MULTIEXP_GAS_A: i64 = 630;
+const BLS_G1_MULTIEXP_GAS_B: i64 = 8820;
+const BLS_MAP_TO_G1_GAS_PRICE: i64 = 2350;
+const BLS_G1_INGROUP_GAS_PRICE: i64 = 2950;
+const BLS_G2_ADD_SUB_GAS_PRICE: i64 = 6100;
+const BLS_G2_NEG_GAS_PRICE: i64 = 1550;
+const BLS_G2_MUL_GAS_PRICE: i64 = 10550;
+const BLS_G2_MULTIEXP_GAS_BASE: i64 = 30338;
+const BLS_G2_MULTIEXP_GAS_A: i64 = 1280;
+const BLS_G2_MULTIEXP_GAS_B: i64 = 22840;
+const BLS_MAP_TO_G2_GAS_PRICE: i64 = 7950;
+const BLS_G2_INGROUP_GAS_PRICE: i64 = 4250;
+const BLS_PAIRING_GAS_BASE: i64 = 20000;
+const BLS_PAIRING_GAS_ELEM: i64 = 11800;
+
 impl Gas {
     /// Instance for constructors. Empty fields
     pub const fn empty() -> Gas {
@@ -226,6 +252,85 @@ impl Gas {
     /// byte cost for unzip
     pub fn unzip_fee_for_byte(bytes: i64) -> i64 {
         (UNZIP_DURATION_FOR_BYTE * bytes) / DURATION_TO_GAS_COEFFICIENT
+    }
+
+    pub fn bls_verify_gas_price() -> i64 {
+        BLS_VERIFY_GAS_PRICE
+    }
+
+    pub fn bls_aggregate_gas_price(n: i64) -> i64 {
+        n * BLS_AGGREGATE_GAS_A - BLS_AGGREGATE_GAS_B
+    }
+
+    pub fn bls_fastaggregateverify_gas_price(n: i64) -> i64 {
+        BLS_FASTAGGREGATEVERIFY_GAS_A + n * BLS_FASTAGGREGATEVERIFY_GAS_B
+    }
+
+    pub fn bls_aggregateverify_gas_price(n: i64) -> i64 {
+        BLS_AGGREGATEVERIFY_GAS_A + n * BLS_AGGREGATEVERIFY_GAS_B
+    }
+
+    pub fn bls_g1_add_sub_gas_price() -> i64 {
+        BLS_G1_ADD_SUB_GAS_PRICE
+    }
+
+    pub fn bls_g1_neg_gas_price() -> i64 {
+        BLS_G1_NEG_GAS_PRICE
+    }
+
+    pub fn bls_g1_mul_gas_price() -> i64 {
+        BLS_G1_MUL_GAS_PRICE
+    }
+
+    pub fn bls_g1_multiexp_gas_price(n: i64) -> i64 {
+        Self::bls_multiexp_gas_price(BLS_G1_MULTIEXP_GAS_BASE, n,
+            BLS_G1_MULTIEXP_GAS_A, BLS_G1_MULTIEXP_GAS_B)
+    }
+    
+    fn bls_multiexp_gas_price(base: i64, n: i64, a: i64, b: i64) -> i64 {
+        // gas = BASE + n * A + n / floor(max(log2(n), 4)) * B
+        let mut l = 4;
+        while (1 << (l + 1)) <= n {
+            l += 1;
+        }
+        base + n * a + n * b / l
+    }
+
+    pub fn bls_map_to_g1_gas_price() -> i64 {
+        BLS_MAP_TO_G1_GAS_PRICE
+    }
+
+    pub fn bls_g1_ingroup_gas_price() -> i64 {
+        BLS_G1_INGROUP_GAS_PRICE
+    }
+
+    pub fn bls_g2_add_sub_gas_price() -> i64 {
+        BLS_G2_ADD_SUB_GAS_PRICE
+    }
+
+    pub fn bls_g2_neg_gas_price() -> i64 {
+        BLS_G2_NEG_GAS_PRICE
+    }
+
+    pub fn bls_g2_mul_gas_price() -> i64 {
+        BLS_G2_MUL_GAS_PRICE
+    }
+
+    pub fn bls_g2_multiexp_gas_price(n: i64) -> i64 {
+        Self::bls_multiexp_gas_price(BLS_G2_MULTIEXP_GAS_BASE, n,
+            BLS_G2_MULTIEXP_GAS_A, BLS_G2_MULTIEXP_GAS_B)
+    }
+
+    pub fn bls_map_to_g2_gas_price() -> i64 {
+        BLS_MAP_TO_G2_GAS_PRICE
+    }
+
+    pub fn bls_g2_ingroup_gas_price() -> i64 {
+        BLS_G2_INGROUP_GAS_PRICE
+    }
+
+    pub fn bls_pairing_gas_price(n: i64) -> i64 {
+        BLS_PAIRING_GAS_BASE + n * BLS_PAIRING_GAS_ELEM
     }
 
     /// Set input gas to gas limit
