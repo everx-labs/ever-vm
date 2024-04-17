@@ -2,7 +2,7 @@
 build = 'common/build/build.rs'
 edition = '2021'
 name = 'ever_vm'
-version = '2.1.1'
+version = '2.1.2'
 
 [dependencies]
 diffy = { optional = true, version = '0.2.2' }
