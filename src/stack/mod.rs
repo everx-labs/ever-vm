@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2023 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -20,7 +20,7 @@ use self::{savelist::SaveList, continuation::ContinuationData, integer::IntegerD
 use std::{fmt, mem, ops::Range, slice::Iter, sync::Arc, cmp::Ordering};
 use integer::serialization::{Encoding, SignedIntegerBigEndianEncoding};
 use serialization::Deserializer;
-use ton_types::{
+use ever_block::{
     MAX_DATA_BITS, MAX_REFERENCES_COUNT,
     error,
     BuilderData, Cell, CellType, ExceptionCode, HashmapType, IBitstring,
@@ -123,7 +123,7 @@ pub(crate) enum SerializeItem<'a> {
     SaveListItem(usize),
 }
 
-fn slice_serialize(slice: &SliceData) -> Result<BuilderData> {
+pub fn slice_serialize(slice: &SliceData) -> Result<BuilderData> {
     let mut builder = BuilderData::new();
     let cell = match slice.cell_opt() {
         Some(cell) => cell.clone(),
@@ -137,7 +137,7 @@ fn slice_serialize(slice: &SliceData) -> Result<BuilderData> {
     Ok(builder)
 }
 
-fn slice_deserialize(slice: &mut SliceData) -> Result<SliceData> {
+pub fn slice_deserialize(slice: &mut SliceData) -> Result<SliceData> {
     let cell = slice.checked_drain_reference()?;
     let data_start = slice.get_next_int(10)? as usize;
     let data_end = slice.get_next_int(10)? as usize;
@@ -1095,3 +1095,6 @@ impl fmt::Display for Stack {
     }
 }
 
+#[cfg(test)]
+#[path = "../tests/test_stack.rs"]
+mod tests;

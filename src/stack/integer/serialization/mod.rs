@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -31,3 +31,10 @@ pub use self::unsigned_big_endian::UnsignedIntegerBigEndianEncoding;
 pub use self::signed_big_endian::SignedIntegerBigEndianEncoding;
 pub use self::signed_little_endian::SignedIntegerLittleEndianEncoding;
 
+#[cfg(test)]
+#[path = "tests/test_integer_encoding.rs"]
+mod test_integer_encoding;
+
+#[cfg(test)]
+#[path = "tests/test_ser_deser.rs"]
+mod test_ser_deser;

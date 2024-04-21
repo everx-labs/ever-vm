@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2023 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -31,8 +31,8 @@ use crate::{
     },
     types::{Exception, Status}
 };
-use ton_block::GlobalCapabilities;
-use ton_types::{
+use ever_block::GlobalCapabilities;
+use ever_block::{
     error, CellType, GasConsumer, Result, SliceData, ExceptionCode
 };
 use std::collections::HashSet;
@@ -222,7 +222,13 @@ pub fn execute_ends(engine: &mut Engine) -> Status {
         Instruction::new("ENDS")
     )?;
     fetch_stack(engine, 1)?;
-    if !engine.cmd.var(0).as_slice()?.is_empty() {
+    let slice = engine.cmd.var(0).as_slice()?;
+    let is_empty = if engine.check_capabilities(GlobalCapabilities::CapTvmV19 as u64) {
+        slice.remaining_bits() == 0 && slice.remaining_references() == 0
+    } else {
+        slice.is_empty()
+    };
+    if !is_empty {
         err!(ExceptionCode::CellUnderflow)
     } else {
         Ok(())
@@ -971,7 +977,7 @@ pub fn execute_ldcont(engine: &mut Engine) -> Status {
     engine.load_instruction(Instruction::new("LDCONT"))?;
     fetch_stack(engine, 1)?;
     let mut slice = engine.cmd.var(0).as_slice()?.clone();
-    let cont = if engine.check_capabilities(ton_block::GlobalCapabilities::CapStcontNewFormat as u64) {
+    let cont = if engine.check_capabilities(ever_block::GlobalCapabilities::CapStcontNewFormat as u64) {
         ContinuationData::deserialize(&mut slice, engine)?
     } else {
         let (cont, gas) = ContinuationData::deserialize_old(&mut slice)?;

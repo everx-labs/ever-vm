@@ -1,6 +1,6 @@
 
 /*
-* Copyright (C) 2019-2023 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -8,7 +8,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -20,7 +20,7 @@ use crate::{
     },
     types::{ResultOpt, Exception},
 };
-use ton_types::{error, BuilderData, ExceptionCode, Result, SliceData};
+use ever_block::{error, BuilderData, ExceptionCode, Result, SliceData};
 
 use core::mem;
 use num_traits::{One, Signed, Zero};
@@ -212,7 +212,7 @@ impl IntegerData {
     }
 
     pub fn as_slice<T: Encoding>(&self, bits: usize) -> Result<SliceData> {
-        SliceData::load_builder(self.as_builder::<T>(bits)?)
+        SliceData::load_bitstring(self.as_builder::<T>(bits)?)
     }
 
     pub fn as_builder<T: Encoding>(&self, bits: usize) -> Result<BuilderData> {
@@ -393,3 +393,14 @@ pub mod serialization;
 pub mod math;
 pub mod bitlogics;
 
+#[cfg(test)]
+#[path = "tests/test_integer.rs"]
+mod test_integer;
+
+#[cfg(test)]
+#[path = "tests/test_conversion.rs"]
+mod test_conversion;
+
+#[cfg(test)]
+#[path = "tests/test_formatting.rs"]
+mod test_formatting;

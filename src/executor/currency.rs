@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2023 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -17,8 +17,8 @@ use crate::{
     stack::{StackItem, integer::IntegerData},
     types::{Exception, Status}
 };
-use ton_block::GlobalCapabilities;
-use ton_types::{BuilderData, error, IBitstring, types::ExceptionCode};
+use ever_block::GlobalCapabilities;
+use ever_block::{BuilderData, error, IBitstring, types::ExceptionCode};
 
 // slice - uint slice'
 fn load_var(engine: &mut Engine, name: &'static str, max_bytes: u8, sign: bool) -> Status {
@@ -56,7 +56,7 @@ fn store_var(engine: &mut Engine, name: &'static str, max_bits: usize, sign: boo
     fetch_stack(engine, 2)?;
     let x = engine.cmd.var(0).as_integer()?;
     if engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) && x.is_nan() {
-        return err!(ExceptionCode::IntegerOverflow);
+        return err!(ExceptionCode::RangeCheckError);
     }
     let b = engine.cmd.var(1).as_builder()?;
     let (bits, vec) = match sign {
