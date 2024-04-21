@@ -1,6 +1,6 @@
 
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -8,7 +8,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -20,7 +20,7 @@ use crate::{
     },
     types::{ResultOpt, Exception},
 };
-use ton_types::{error, BuilderData, ExceptionCode, Result, SliceData};
+use ever_block::{error, BuilderData, ExceptionCode, Result, SliceData};
 
 use core::mem;
 use num_traits::{One, Signed, Zero};
@@ -184,35 +184,35 @@ impl IntegerData {
 
     /// Returns true if signed value fits into a given bits size; otherwise false.
     #[inline]
-    pub fn fits_in(&self, bits: usize) -> bool {
-        self.bitsize() <= bits
+    pub fn fits_in(&self, bits: usize) -> Result<bool> {
+        Ok(self.bitsize()? <= bits)
     }
 
     /// Returns true if unsigned value fits into a given bits size; otherwise false.
     #[inline]
-    pub fn ufits_in(&self, bits: usize) -> bool {
-        !self.is_neg() && self.ubitsize() <= bits
+    pub fn ufits_in(&self, bits: usize) -> Result<bool> {
+        Ok(!self.is_neg() && self.ubitsize()? <= bits)
     }
 
     /// Determines a fewest bits necessary to express signed value.
     #[inline]
-    pub fn bitsize(&self) -> usize {
+    pub fn bitsize(&self) -> Result<usize> {
         utils::process_value(self, |value| {
-            utils::bitsize(value)
+            Ok(utils::bitsize(value))
         })
     }
 
     /// Determines a fewest bits necessary to express unsigned value.
     #[inline]
-    pub fn ubitsize(&self) -> usize {
+    pub fn ubitsize(&self) -> Result<usize> {
         utils::process_value(self, |value| {
             debug_assert!(!value.is_negative());
-            value.bits() as usize
+            Ok(value.bits() as usize)
         })
     }
 
     pub fn as_slice<T: Encoding>(&self, bits: usize) -> Result<SliceData> {
-        SliceData::load_builder(self.as_builder::<T>(bits)?)
+        SliceData::load_bitstring(self.as_builder::<T>(bits)?)
     }
 
     pub fn as_builder<T: Encoding>(&self, bits: usize) -> Result<BuilderData> {
@@ -239,12 +239,14 @@ pub mod utils {
     use std::ops::Not;
 
     #[inline]
-    pub fn process_value<F, R>(value: &IntegerData, call_on_valid: F) -> R
+    pub fn process_value<F, R>(value: &IntegerData, call_on_valid: F) -> Result<R>
     where
-        F: Fn(&Int) -> R,
+        F: Fn(&Int) -> Result<R>,
     {
         match value.value {
-            IntegerValue::NaN => panic!("IntegerData must be a valid number"),
+            IntegerValue::NaN => {
+                err!(ExceptionCode::IntegerOverflow)
+            }
             IntegerValue::Value(ref value) => call_on_valid(value),
         }
     }
@@ -391,5 +393,14 @@ pub mod serialization;
 pub mod math;
 pub mod bitlogics;
 
+#[cfg(test)]
+#[path = "tests/test_integer.rs"]
+mod test_integer;
 
+#[cfg(test)]
+#[path = "tests/test_conversion.rs"]
+mod test_conversion;
 
+#[cfg(test)]
+#[path = "tests/test_formatting.rs"]
+mod test_formatting;

@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -18,19 +18,21 @@ use crate::{
     types::{Exception, ResultOpt},
 };
 use std::{fmt, mem};
-use ton_types::{BuilderData, Cell, IBitstring, Result, error, ExceptionCode, GasConsumer, HashmapE, HashmapType};
+use ever_block::{BuilderData, Cell, IBitstring, Result, error, ExceptionCode, GasConsumer, HashmapE, HashmapType};
 use super::{slice_serialize, slice_deserialize, items_deserialize, items_serialize, prepare_cont_serialize_vars, DeserializeItem};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ContinuationType {
     AgainLoopBody(SliceData),
     TryCatch,
+    CatchRevert(u32),
     Ordinary,
     PushInt(i32),
     Quit(i32),
     RepeatLoopBody(SliceData, isize),
     UntilLoopCondition(SliceData),
     WhileLoopCondition(SliceData, SliceData),
+    ExcQuit,
 }
 
 impl Default for ContinuationType {
@@ -130,10 +132,6 @@ impl ContinuationData {
         mem::replace(self, ContinuationData::new_empty())
     }
 
-    pub fn undrain_reference(&mut self) {
-        self.code.undrain_reference();
-    }
-
     pub fn drain_reference(&mut self) -> Result<Cell> {
         self.code.checked_drain_reference()
             .map_err(|_| exception!(ExceptionCode::InvalidOpcode))
@@ -156,6 +154,10 @@ impl ContinuationData {
             ContinuationType::TryCatch => {
                 builder.append_bits(0x9, 4)?;
             }
+            ContinuationType::CatchRevert(depth) => {
+                builder.append_bits(0x7, 4)?;
+                builder.append_bits(*depth as usize, 32)?;
+            }
             ContinuationType::Ordinary => {
                 builder.append_bits(0x0, 2)?;
             }
@@ -166,6 +168,9 @@ impl ContinuationData {
             ContinuationType::Quit(exit_code) => {
                 builder.append_bits(0x8, 4)?;
                 builder.append_bits(*exit_code as usize, 32)?;
+            }
+            ContinuationType::ExcQuit => {
+                builder.append_bits(0xb, 4)?;
             }
             ContinuationType::RepeatLoopBody(body, counter) => {
                 builder.append_bits(0xe, 4)?;
@@ -220,18 +225,28 @@ impl ContinuationData {
         let mut new_list = Vec::new();
         let type_of = match slice.get_next_int(2)? {
             0 => ContinuationType::Ordinary,
-            1 => ContinuationType::TryCatch,
+            1 => {
+                match slice.get_next_int(2)? {
+                    3 => {
+                        let depth = slice.get_next_u32()?;
+                        ContinuationType::CatchRevert(depth)
+                    }
+                    typ => return err!(ExceptionCode::UnknownError, "wrong continuation type 01{:2b}", typ)
+                }
+            }
             2 => {
                 match slice.get_next_int(2)? {
                     0 => {
                         let exit_code = slice.get_next_int(32)? as i32;
                         ContinuationType::Quit(exit_code)
                     }
+                    1 => ContinuationType::TryCatch,
                     2 => {
                         let mut child_slice = gas_consumer.load_cell(slice.checked_drain_reference()?)?;
                         let body = slice_deserialize(&mut child_slice)?;
                         ContinuationType::UntilLoopCondition(body)
                     }
+                    3 => ContinuationType::ExcQuit,
                     typ => return err!(ExceptionCode::UnknownError, "wrong continuation type 10{:2b}", typ)
                 }
             }
@@ -339,6 +354,13 @@ impl ContinuationData {
                 builder.checked_append_reference(slice_serialize(cond)?.into_cell()?)?;
                 builder.checked_append_reference(slice_serialize(body)?.into_cell()?)?;
             }
+            ContinuationType::ExcQuit => {
+                builder.append_bits(0xb, 4)?;
+            }
+            ContinuationType::CatchRevert(_depth) => {
+                // old serialization knows nothing about CatchRevert
+                return err!(ExceptionCode::UnknownError)
+            }
         }
 
         let mut stack = BuilderData::new();
@@ -374,21 +396,24 @@ impl ContinuationData {
         let mut gas = 0;
         let cont_type = match slice.get_next_int(2)? {
             0 => Ok(ContinuationType::Ordinary),
-            1 => Ok(ContinuationType::TryCatch),
             2 => {
                 match slice.get_next_int(2)? {
                     0 => {
                         let exit_code = slice.get_next_int(32)? as i32;
                         Ok(ContinuationType::Quit(exit_code))
                     }
+                    1 => Ok(ContinuationType::TryCatch),
                     2 => {
                         let mut body_slice = SliceData::load_cell(slice.checked_drain_reference()?)?;
                         let body: SliceData = slice_deserialize(&mut body_slice)?;
                         Ok(ContinuationType::UntilLoopCondition(body))
                     }
+                    3 => {
+                        Ok(ContinuationType::ExcQuit)
+                    }
                     _ => err!(ExceptionCode::UnknownError)
                 }
-            },
+            }
             3 => {
                 match slice.get_next_int(2)? {
                     0 => {
@@ -463,6 +488,12 @@ impl ContinuationData {
     }
 }
 
+impl Default for ContinuationData {
+    fn default() -> Self {
+        Self::new_empty()
+    }
+}
+
 impl fmt::Display for ContinuationData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{{\n    type: {}\n    code: {}    nargs: {}\n    stack: ", self.type_of, self.code, self.nargs)?;
@@ -495,12 +526,14 @@ impl fmt::Display for ContinuationType {
         let name = match self {
             ContinuationType::AgainLoopBody(_) => "again",
             ContinuationType::TryCatch => "try-catch",
+            ContinuationType::CatchRevert(_) => "catch-revert",
             ContinuationType::Ordinary => "ordinary",
             ContinuationType::PushInt(_) => "pushint",
             ContinuationType::Quit(_) => "quit",
             ContinuationType::RepeatLoopBody(_, _) => "repeat",
             ContinuationType::UntilLoopCondition(_) => "until",
             ContinuationType::WhileLoopCondition(_, _) => "while",
+            ContinuationType::ExcQuit => "exception-quit",
         };
         write!(f, "{}", name)
     }

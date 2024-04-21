@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -28,7 +28,8 @@ use crate::{
     types::{Exception, Status}
 };
 use std::cmp;
-use ton_types::{error, fail, types::ExceptionCode};
+use ever_block::{error, fail, types::ExceptionCode};
+use ever_block::GlobalCapabilities;
 
 // Stack manipulation *********************************************************
 
@@ -265,7 +266,18 @@ pub(super) fn execute_popsave(engine: &mut Engine) -> Status {
     fetch_stack(engine, 1)?;
     let creg = engine.cmd.creg();
     swap(engine, var!(0), ctrl!(creg))?;
-    swap(engine, var!(0), savelist!(ctrl!(0), 0))
+    if engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+        if let Ok(c0) = engine.ctrl(0) {
+            if let Ok(c0) = c0.as_continuation() {
+                if c0.savelist.get(creg).is_some() {
+                    return Ok(())
+                }
+            }
+        }
+        swap(engine, var!(0), savelist!(ctrl!(0), creg))
+    } else {
+        swap(engine, var!(0), savelist!(ctrl!(0), 0))
+    }
 }
 
 // (x ... y ... z ... a - a... y ... z ... z y x)

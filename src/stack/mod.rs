@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2023 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -20,7 +20,7 @@ use self::{savelist::SaveList, continuation::ContinuationData, integer::IntegerD
 use std::{fmt, mem, ops::Range, slice::Iter, sync::Arc, cmp::Ordering};
 use integer::serialization::{Encoding, SignedIntegerBigEndianEncoding};
 use serialization::Deserializer;
-use ton_types::{
+use ever_block::{
     MAX_DATA_BITS, MAX_REFERENCES_COUNT,
     error,
     BuilderData, Cell, CellType, ExceptionCode, HashmapType, IBitstring,
@@ -60,7 +60,7 @@ macro_rules! boolean {
     };
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum StackItem {
     #[default]
     None,
@@ -72,6 +72,49 @@ pub enum StackItem {
     Tuple(Arc<Vec<StackItem>>)
 }
 
+impl Drop for StackItem {
+    fn drop(&mut self) {
+        if self.is_tuple() || self.is_continuation() {
+            let mut stack = vec!();
+            collect_items(&mut stack, self);
+            while let Some(ref mut item) = stack.pop() {
+                collect_items(&mut stack, item);
+            }
+        }
+    }
+}
+
+fn collect_items(stack: &mut Vec<StackItem>, item: &mut StackItem) {
+    match item {
+        StackItem::Tuple(data) => {
+            match Arc::try_unwrap(std::mem::take(data)) {
+                Ok(ref mut tuple) => {
+                    for item in tuple {
+                        stack.push(std::mem::take(item))
+                    }
+                }
+                Err(data) => drop(data)
+            }
+        }
+        StackItem::Continuation(data) => {
+            match Arc::try_unwrap(std::mem::take(data)) {
+                Ok(ref mut cont) => {
+                    for creg in [0, 1, 2, 3, 7] {
+                        if let Some(item) = cont.savelist.get_mut(creg) {
+                            stack.push(std::mem::take(item))
+                        }
+                    }
+                    for item in &mut cont.stack.storage {
+                        stack.push(std::mem::take(item))
+                    }
+                }
+                Err(data) => drop(data)
+            }
+        }
+        _ => ()
+    }
+}
+
 pub(crate) enum SerializeItem<'a> {
     Item(&'a StackItem),
     Tuple(BuilderData),
@@ -80,9 +123,13 @@ pub(crate) enum SerializeItem<'a> {
     SaveListItem(usize),
 }
 
-fn slice_serialize(slice: &SliceData) -> Result<BuilderData> {
+pub fn slice_serialize(slice: &SliceData) -> Result<BuilderData> {
     let mut builder = BuilderData::new();
-    builder.checked_append_reference(slice.cell().clone())?;
+    let cell = match slice.cell_opt() {
+        Some(cell) => cell.clone(),
+        None => slice.as_builder().into_cell()?
+    };
+    builder.checked_append_reference(cell)?;
     builder.append_bits(slice.pos(), 10)?;
     builder.append_bits(slice.pos() + slice.remaining_bits(), 10)?;
     builder.append_bits(slice.get_references().start, 3)?;
@@ -90,7 +137,7 @@ fn slice_serialize(slice: &SliceData) -> Result<BuilderData> {
     Ok(builder)
 }
 
-fn slice_deserialize(slice: &mut SliceData) -> Result<SliceData> {
+pub fn slice_deserialize(slice: &mut SliceData) -> Result<SliceData> {
     let cell = slice.checked_drain_reference()?;
     let data_start = slice.get_next_int(10)? as usize;
     let data_end = slice.get_next_int(10)? as usize;
@@ -154,7 +201,7 @@ fn items_serialize(mut items: Vec<SerializeItem>, gas_consumer: &mut dyn GasCons
                     if let Some(savelist) = savelist.as_mut() {
                         let mut builder = BuilderData::new();
                         builder.append_bits(index, 4)?;
-                        let key = SliceData::load_builder(builder)?;
+                        let key = SliceData::load_bitstring(builder)?;
                         savelist.set_builder(key, &value)?; // TODO: gas here?
                     } else {
                         panic!("savelist is None {}", index)
@@ -358,10 +405,8 @@ impl StackItem {
     /// Extracts builder to modify, exceptions should not be after
     /// If is single reference it will not clone on write
     pub fn as_builder_mut(&mut self) -> Result<BuilderData> {
-        self.as_builder()?;
-        match self.withdraw() {
-            StackItem::Builder(ref mut data) =>
-                Ok(mem::replace(Arc::make_mut(data), BuilderData::default())),
+        match self {
+            StackItem::Builder(data) => Ok(mem::take(Arc::make_mut(data))),
             _ => err!(ExceptionCode::TypeCheckError, "item is not a builder")
         }
     }
@@ -382,7 +427,7 @@ impl StackItem {
 
     pub fn as_continuation_mut(&mut self) -> ResultMut<ContinuationData> {
         match self {
-            StackItem::Continuation(ref mut data) => Ok(Arc::make_mut(data)),
+            StackItem::Continuation(data) => Ok(Arc::make_mut(data)),
             _ => err!(ExceptionCode::TypeCheckError, "item {} is not a continuation", self)
         }
     }
@@ -409,7 +454,7 @@ impl StackItem {
 
     pub fn as_integer_mut(&mut self) -> ResultMut<IntegerData> {
         match self {
-            StackItem::Integer(ref mut data) => Ok(Arc::make_mut(data)),
+            StackItem::Integer(data) => Ok(Arc::make_mut(data)),
             _ => err!(ExceptionCode::TypeCheckError, "item is not an integer")
         }
     }
@@ -417,7 +462,7 @@ impl StackItem {
     pub fn as_slice(&self) -> ResultRef<SliceData> {
         match self {
             StackItem::Slice(data) => Ok(data),
-            _ => err!(ExceptionCode::TypeCheckError, "item {} is not an slice", self)
+            _ => err!(ExceptionCode::TypeCheckError, "item {} is not a slice", self)
         }
     }
 
@@ -456,9 +501,9 @@ impl StackItem {
 
     // Extracts tuple items
     pub fn withdraw_tuple_part(&mut self, length: usize) -> ResultVec<StackItem> {
-        match self.withdraw() {
+        match self {
             StackItem::Tuple(arc) => {
-                match Arc::try_unwrap(arc) {
+                match Arc::try_unwrap(mem::take(arc)) {
                     Ok(mut tuple) => {
                         tuple.truncate(length);
                         Ok(tuple)
@@ -483,6 +528,14 @@ impl StackItem {
 
     pub fn is_slice(&self) -> bool {
         matches!(self, StackItem::Slice(_))
+    }
+
+    pub fn is_tuple(&self) -> bool {
+        matches!(self, StackItem::Tuple(_))
+    }
+
+    pub fn is_continuation(&self) -> bool {
+        matches!(self, StackItem::Continuation(_))
     }
 
     pub fn withdraw(&mut self) -> StackItem {
@@ -512,7 +565,7 @@ impl StackItem {
             }
             StackItem::Slice(data) => {
                 let d1 = |level_mask : u8, refs_count : u8, is_special: u8| {
-                    (refs_count + 8 * is_special + 32 * level_mask) as u8
+                    refs_count + 8 * is_special + 32 * level_mask
                 };
                 let d2 = |bits : u32| {
                     let res = ((bits / 8) * 2) as u8;
@@ -521,13 +574,14 @@ impl StackItem {
                 let start = data.pos();
                 let end = start + data.remaining_bits();
                 let refs = data.get_references();
-                let data = match SliceData::load_cell_ref(data.cell()) {
+                let cell = data.cell_opt().unwrap();
+                let data = match SliceData::load_cell_ref(cell) {
                     Ok(data) => data,
                     Err(err) => return err.to_string()
                 };
                 let mut bytes = vec![];
-                let is_special = data.cell().cell_type() != CellType::Ordinary;
-                bytes.push(d1(data.cell().level_mask().mask(), data.cell().references_count() as u8, is_special as u8));
+                let is_special = cell.cell_type() != CellType::Ordinary;
+                bytes.push(d1(cell.level_mask().mask(), cell.references_count() as u8, is_special as u8));
                 bytes.push(d2(data.remaining_bits() as u32));
                 bytes.extend_from_slice(data.storage());
                 if bytes.last() == Some(&0x80) {
@@ -625,7 +679,7 @@ impl StackItem {
             }
             0x03 => StackItem::cell(slice.checked_drain_reference()?),
             0x04 => StackItem::slice(slice_deserialize(slice)?),
-            0x05 => StackItem::builder(BuilderData::from(slice.checked_drain_reference()?)),
+            0x05 => StackItem::builder(BuilderData::from_cell(&slice.checked_drain_reference()?)?),
             0x06 => {
                 let mut slice = gas_consumer.load_cell(slice.checked_drain_reference()?)?;
                 ContinuationData::deserialize_internal(list, &mut slice, gas_consumer)?;
@@ -727,7 +781,7 @@ impl StackItem {
                 gas += Gas::load_cell_price(true);
                 Ok((StackItem::slice(slice_deserialize(slice)?), gas))
             },
-            0x05 => Ok((StackItem::builder(BuilderData::from(slice.checked_drain_reference()?)), gas)),
+            0x05 => Ok((StackItem::builder(BuilderData::from_cell(&slice.checked_drain_reference()?)?), gas)),
             0x06 => {
                 let (cont, gas2) = ContinuationData::deserialize_old(slice)?;
                 gas += gas2;
@@ -758,28 +812,13 @@ impl StackItem {
 }
 
 #[rustfmt::skip]
-impl Clone for StackItem {
-    fn clone(&self) -> StackItem {
-        match self {
-            StackItem::None            => StackItem::None,
-            StackItem::Builder(x)      => StackItem::Builder(x.clone()),
-            StackItem::Cell(x)         => StackItem::Cell(x.clone()),
-            StackItem::Continuation(x) => StackItem::Continuation(x.clone()),
-            StackItem::Integer(x)      => StackItem::Integer(x.clone()),
-            StackItem::Slice(x)        => StackItem::Slice(x.clone()),
-            StackItem::Tuple(x)        => StackItem::Tuple(x.clone()),
-        }
-    }
-}
-
-#[rustfmt::skip]
 impl fmt::Display for StackItem {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             StackItem::None            => write!(f, "Null"),
             StackItem::Builder(x)      => write!(f, "Builder {}", Arc::as_ref(x)),
             StackItem::Cell(x)         => write!(f, "Cell x{:x} x{:x}", x.repr_hash(), x),
-            StackItem::Continuation(x) => write!(f, "Continuation x{:x}", x.code().cell().repr_hash()),
+            StackItem::Continuation(x) => write!(f, "Continuation x{:x}", x.code().repr_hash()),
             StackItem::Integer(x)      => write!(f, "{}", Arc::as_ref(x)),
             StackItem::Slice(x)        => write!(f, "Slice x{:x}", x),
             StackItem::Tuple(x)        => {
@@ -1056,3 +1095,6 @@ impl fmt::Display for Stack {
     }
 }
 
+#[cfg(test)]
+#[path = "../tests/test_stack.rs"]
+mod tests;

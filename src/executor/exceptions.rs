@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -17,11 +17,12 @@ use crate::{
         continuation::callx, engine::{Engine, storage::{fetch_stack, swap, copy_to_var}},
         microcode::{CTRL, VAR, SAVELIST, CC}, types::{Instruction, InstructionOptions}
     },
-    stack::{StackItem, continuation::ContinuationType, integer::IntegerData},
+    stack::{StackItem, continuation::{ContinuationType, ContinuationData}, integer::IntegerData},
     types::{Exception, Status}
 };
 use std::ops::Range;
-use ton_types::{error, fail, types::ExceptionCode};
+use ever_block::GlobalCapabilities;
+use ever_block::{error, fail, types::ExceptionCode};
 
 //Utilities **********************************************************************************
 //(c c' -)
@@ -29,15 +30,19 @@ use ton_types::{error, fail, types::ExceptionCode};
 //c'.savelist[2] = c2, cc.savelist[2] = c2
 //c'.savelist[0] = cc, c.savelist[0] = cc
 //callx c
-fn init_try_catch(engine: &mut Engine) -> Status {
+fn init_try_catch(engine: &mut Engine, keep: bool) -> Status {
     fetch_stack(engine, 2)?;
     if engine.cc.stack.depth() < engine.cmd.pargs() {
         return err!(ExceptionCode::StackUnderflow)
     }
+    let depth: u32 = engine.cc.stack.depth().try_into()?;
     engine.cmd.var(1).as_continuation()?;
+    let bugfix = engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64);
     engine.cmd.var_mut(0).as_continuation_mut().map(|catch_cont| {
         catch_cont.type_of = ContinuationType::TryCatch;
-        catch_cont.nargs = catch_cont.stack.depth() as isize + 2
+        if !bugfix {
+            catch_cont.nargs = catch_cont.stack.depth() as isize + 2
+        }
     })?;
     engine.cmd.var_mut(1).as_continuation_mut().map(|try_cont|
         try_cont.remove_from_savelist(0)
@@ -48,13 +53,22 @@ fn init_try_catch(engine: &mut Engine) -> Status {
         copy_to_var(engine, ctrl!(2))?;
         swap(engine, savelist!(CC, 2), var!(3))?;
     }
-     // special swaping for callx - it calls cont from var0, but now in var0 - catch cont
+    // special swapping for callx: it calls a cont from var0, but at this point var0 holds catch cont
     swap(engine, var!(0), var!(1))?;
     swap(engine, ctrl!(2), var!(1))?;
     callx(engine, 0, false)?;
     copy_to_var(engine, ctrl!(0))?;
     let length = engine.cmd.var_count();
-    swap(engine, savelist!(ctrl!(2), 0), var!(length - 1))
+    swap(engine, savelist!(ctrl!(2), 0), var!(length - 1))?;
+    if keep {
+        // envelope catch cont c2 into catch revert cont
+        let revert_cont = ContinuationData::with_type(ContinuationType::CatchRevert(depth));
+        engine.cmd.push_var(StackItem::continuation(revert_cont));
+        let n = engine.cmd.var_count();
+        swap(engine, savelist!(var!(n - 1), 0), ctrl!(2))?;
+        swap(engine, ctrl!(2), var!(n - 1))?;
+    }
+    Ok(())
 }
 
 fn do_throw(engine: &mut Engine, number_index: isize, value_index: isize) -> Status {
@@ -234,7 +248,7 @@ pub(super) fn execute_try(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("TRY")
     )?;
-    init_try_catch(engine)
+    init_try_catch(engine, false)
 }
 
 // (c c' - )
@@ -243,5 +257,15 @@ pub(super) fn execute_tryargs(engine: &mut Engine) -> Status {
     engine.load_instruction(
         Instruction::new("TRYARGS").set_opts(InstructionOptions::ArgumentAndReturnConstraints)
     )?;
-    init_try_catch(engine)
+    init_try_catch(engine, false)
+}
+
+pub(super) fn execute_trykeep(engine: &mut Engine) -> Status {
+    if !engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+        return Status::Err(ExceptionCode::InvalidOpcode.into());
+    }
+    engine.load_instruction(
+        Instruction::new("TRYKEEP")
+    )?;
+    init_try_catch(engine, true)
 }

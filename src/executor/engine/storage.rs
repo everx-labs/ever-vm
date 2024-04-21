@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -21,7 +21,7 @@ use crate::{
     types::{Exception, ResultMut, ResultRef, Status}
 };
 use std::{mem, ops::Range};
-use ton_types::{error, fail, Result, types::ExceptionCode};
+use ever_block::{error, fail, Result, types::ExceptionCode};
 use crate::executor::gas::gas_state::Gas;
 
 // Utilities ******************************************************************
@@ -266,10 +266,11 @@ pub(in crate::executor) fn copy_to_var(engine: &mut Engine, src: u16) -> Status 
             let copy = engine.cc.copy_without_stack();
             StackItem::continuation(copy)
         }
-        CTRL => match engine.ctrls.get(storage_index!(src)) {
-            Some(ctrl) => ctrl.clone(),
-            None => return err!(ExceptionCode::TypeCheckError)
-        },
+        CTRL => engine.ctrls.get(storage_index!(src)).cloned().unwrap_or_default(),
+        // CTRL => match engine.ctrls.get(storage_index!(src)) {
+        //     Some(ctrl) => ctrl.clone(),
+        //     None => return err!(ExceptionCode::TypeCheckError, "read empty control register {}", storage_index!(src))
+        // }
         STACK => engine.cc.stack.get(stack_index!(src)).clone(),
         VAR => engine.cmd.var(storage_index!(src)).clone(),
         _ => fail!("copy_to_var: {}", src)
@@ -314,10 +315,16 @@ pub(in crate::executor) fn pop_all(engine: &mut Engine, dst: u16) -> Status {
     } else {
         nargs as usize
     };
-    if drop > 0 {
+    if engine.check_capabilities(ever_block::GlobalCapabilities::CapTvmV19 as u64) {
         pop_range(engine, 0..drop, dst)
     } else {
-        Ok(())
+        // This branch is incorrect because the gas may still be consumed when drop is zero.
+        // The bug was introduced in the hotspot optimizations pack of patches.
+        if drop > 0 {
+            pop_range(engine, 0..drop, dst)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -325,15 +332,23 @@ pub(in crate::executor) fn pop_all(engine: &mut Engine, dst: u16) -> Status {
 // dst addressing is described in executor/microcode.rs
 pub(in crate::executor) fn pop_range(engine: &mut Engine, drop: Range<usize>, dst: u16) -> Status {
     let save = drop.len();
-    // pay for spliting stack
-    if engine.cc.stack.depth() > save {
+    let src_depth = engine.cc.stack.depth();
+    let dst_depth = continuation_by_address(engine, dst)?.stack.depth();
+    // pay for stack splitting
+    if src_depth > save {
         engine.try_use_gas(Gas::stack_price(save))?;
     }
-    // pay for concatination of stack
-    let depth = continuation_by_address(engine, dst)?.stack.depth();
-    if depth != 0 && save != 0 {
-        engine.try_use_gas(Gas::stack_price(save + depth))?;
+    // pay for stack concatenation
+    if engine.check_capabilities(ever_block::GlobalCapabilities::CapTvmV19 as u64) {
+        if dst_depth != 0 {
+            engine.try_use_gas(Gas::stack_price(save + dst_depth))?;
+        }
+    } else {
+        // According to the original implementation, the gas must still be consumed when save is zero.
+        // The bug slipped in with PR #118.
+        if dst_depth != 0 && save != 0 {
+            engine.try_use_gas(Gas::stack_price(save + dst_depth))?;
+        }
     }
-    move_stack_from_cc(engine, dst, drop)?;
-    Ok(())
+    move_stack_from_cc(engine, dst, drop)
 }

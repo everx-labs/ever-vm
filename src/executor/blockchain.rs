@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -28,11 +28,11 @@ use crate::{
     types::{Exception, Status},
 };
 use num::{bigint::Sign, BigInt};
-use ton_block::{
+use ever_block::{
     Deserializable, GlobalCapabilities, MsgAddressInt, ACTION_CHANGE_LIB, ACTION_COPYLEFT,
     ACTION_RESERVE, ACTION_SEND_MSG, ACTION_SET_CODE,
 };
-use ton_types::{
+use ever_block::{
     error, types::ExceptionCode, BuilderData, Cell, GasConsumer, IBitstring, Result, SliceData,
 };
 
@@ -243,7 +243,7 @@ pub(super) fn execute_rewrite_var_addr<T: OperationBehavior>(engine: &mut Engine
                 if bits > addr.remaining_bits() {
                     return err!(ExceptionCode::CellUnderflow)
                 } else if bits > 0 {
-                    let mut b = BuilderData::from_slice(rewrite_pfx);
+                    let mut b = rewrite_pfx.as_builder();
                     addr.shrink_data(bits..);
                     b.append_bytestring(&addr)?;
                     addr = gas_consumer.finalize_cell_and_load(b)?;

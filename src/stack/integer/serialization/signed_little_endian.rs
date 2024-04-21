@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -26,7 +26,7 @@ use crate::{
     types::Exception,
 };
 use num::{bigint::ToBigInt, Signed};
-use ton_types::{error, BuilderData, ExceptionCode, Result};
+use ever_block::{error, BuilderData, ExceptionCode, Result};
 
 pub struct SignedIntegerLittleEndianEncoding {
     length_in_bits: usize
@@ -40,7 +40,7 @@ impl Encoding for SignedIntegerLittleEndianEncoding {
 
 impl Serializer<IntegerData> for SignedIntegerLittleEndianEncoding {
     fn try_serialize(&self, value: &IntegerData) -> Result<BuilderData> {
-        if !value.fits_in(self.length_in_bits) {
+        if !value.fits_in(self.length_in_bits)? {
             // Spec. 3.2.7
             // * If the integer x to be serialized is not in the range
             //   −2^(n−1) <= x < 2^(n−1) (for signed integer serialization)

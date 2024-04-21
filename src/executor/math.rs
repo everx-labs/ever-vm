@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -27,7 +27,7 @@ use crate::{
     types::{Exception, Status}
 };
 use std::{cmp::Ordering, mem};
-use ton_types::{error, Result, types::{Bitmask, ExceptionCode}};
+use ever_block::{error, Result, types::{Bitmask, ExceptionCode}};
 
 // Common definitions *********************************************************
 
@@ -36,7 +36,7 @@ type BinaryAssign = fn(&IntegerData, &mut IntegerData) -> Status;
 type BinaryConst = fn(isize, &IntegerData) -> Result<IntegerData>;
 type Unary = fn(&IntegerData) -> Result<IntegerData>;
 type UnaryWithLen = fn(&IntegerData, usize) -> Result<IntegerData>;
-type FnFits = fn(&IntegerData, usize) -> bool;
+type FnFits = fn(&IntegerData, usize) -> Result<bool>;
 
 // Implementation of binary operation which takes both arguments from stack
 fn binary<T>(engine: &mut Engine, name: &'static str, handler: Binary) -> Status
@@ -138,7 +138,7 @@ where
     if x.is_nan() {
         on_nan_parameter!(T)?;
         *engine.cc.stack.get_mut(0) = int!(nan);
-    } else if !op_fit(x, length) {
+    } else if !op_fit(x, length)? {
         on_integer_overflow!(T)?;
         *engine.cc.stack.get_mut(0) = int!(nan);
     }
@@ -415,7 +415,7 @@ where
         } else if x.is_zero() {
             Ok(IntegerData::zero())
         } else {
-            Ok(IntegerData::from_u32(x.bitsize() as u32))
+            Ok(IntegerData::from_u32(x.bitsize()? as u32))
         }
     )
 }
@@ -862,7 +862,7 @@ where
             on_range_check_error!(T)?;
             Ok(IntegerData::nan())
         } else {
-            Ok(IntegerData::from_u32(x.ubitsize() as u32))
+            Ok(IntegerData::from_u32(x.ubitsize()? as u32))
         }
     )
 }

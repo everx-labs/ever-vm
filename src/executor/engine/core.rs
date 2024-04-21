@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -29,12 +29,12 @@ use crate::{
     types::{Exception, ResultMut, ResultOpt, ResultRef, Status}
 };
 use std::{sync::{Arc, Mutex}, ops::Range};
-use std::collections::HashMap;
-use ton_types::{
+use std::collections::{HashMap, HashSet};
+use ever_block::{
     BuilderData, Cell, CellType, error, GasConsumer, Result, SliceData, HashmapE,
-    types::{ExceptionCode, UInt256}, IBitstring,
+    ExceptionCode, UInt256, IBitstring,
 };
-use ton_block::{ShardAccount, Deserializable, GlobalCapabilities};
+use ever_block::{ShardAccount, Deserializable, GlobalCapabilities};
 
 pub(super) type ExecuteHandler = fn(&mut Engine) -> Status;
 
@@ -82,7 +82,10 @@ pub struct Engine {
     pub(in crate::executor) libraries: Vec<HashmapE>, // 256 bit dictionaries
     pub(in crate::executor) index_provider: Option<Arc<dyn IndexProvider>>,
     pub(in crate::executor) modifiers: BehaviorModifiers,
-    visited_cells: HashMap<UInt256, SliceData>,
+    pub(in crate::executor) checked_signatures_count: usize,
+    // SliceData::load_cell() is faster than trying to cache SliceData for each
+    // visited cell with HashMap<UInt256, SliceData>
+    visited_cells: HashSet<UInt256>,
     visited_exotic_cells: HashMap<UInt256, SliceData>,
     cstate: CommittedState,
     time: u64,
@@ -99,13 +102,19 @@ pub struct Engine {
     flags: u64,
     capabilities: u64,
     block_version: u32,
+    #[cfg(feature = "signature_with_id")]
     signature_id: i32,
 }
 
+#[cfg(feature = "signature_no_check")]
 #[derive(Debug, Clone, Default)]
 pub struct BehaviorModifiers {
     pub chksig_always_succeed: bool
 }
+
+#[cfg(not(feature = "signature_no_check"))]
+#[derive(Debug, Clone, Default)]
+pub struct BehaviorModifiers;
 
 #[derive(Eq, Debug, PartialEq)]
 pub enum EngineTraceInfoType {
@@ -160,11 +169,11 @@ impl CommittedState {
             CommittedState::new_empty()
         }
     }
-    pub fn get_actions(&self) -> StackItem {
-        self.c5.clone()
+    pub fn get_actions(&self) -> &StackItem {
+        &self.c5
     }
-    pub fn get_root(&self) -> StackItem {
-        self.c4.clone()
+    pub fn get_root(&self) -> &StackItem {
+        &self.c4
     }
     pub fn is_committed(&self) -> bool {
         self.committed
@@ -176,7 +185,7 @@ impl GasConsumer for Engine {
         self.use_gas(Gas::finalize_price());
         builder
             .finalize(1024)
-            .map_err(|err| exception!(ExceptionCode::CellOverflow, "too deep cell creation: {}", err))
+            .map_err(|err| exception!(ExceptionCode::CellOverflow, "finalize cell error: {}", err))
     }
     fn load_cell(&mut self, cell: Cell) -> Result<SliceData> {
         self.load_hashed_cell(cell, true)
@@ -233,8 +242,12 @@ impl Engine {
             ctrls: SaveList::new(),
             libraries: Vec::new(),
             index_provider: None,
+            #[cfg(not(feature = "signature_no_check"))]
+            modifiers: BehaviorModifiers,
+            #[cfg(feature = "signature_no_check")]
             modifiers: BehaviorModifiers::default(),
-            visited_cells: HashMap::new(),
+            checked_signatures_count: 0,
+            visited_cells: HashSet::new(),
             visited_exotic_cells: HashMap::new(),
             cstate: CommittedState::new_empty(),
             time: 0,
@@ -251,6 +264,7 @@ impl Engine {
             flags: 0,
             capabilities,
             block_version: 0,
+            #[cfg(feature = "signature_with_id")]
             signature_id: 0,
         }
     }
@@ -259,6 +273,7 @@ impl Engine {
         self.block_version = block_version
     }
 
+    #[cfg(feature = "signature_with_id")]
     pub fn set_signature_id(&mut self, signature_id: i32) {
         self.signature_id = signature_id;
     }
@@ -292,6 +307,7 @@ impl Engine {
         self.block_version
     }
 
+    #[cfg(feature = "signature_with_id")]
     pub fn signature_id(&self) -> i32 {
         self.signature_id
     }
@@ -476,8 +492,9 @@ impl Engine {
             let string = match item {
                 StackItem::None => "N".to_string(),
                 StackItem::Integer(data) => match data.bitsize() {
-                    0..=230 => data.to_string(),
-                    bitsize => format!("I{}", bitsize),
+                    Ok(0..=230) => data.to_string(),
+                    Ok(bitsize) => format!("I{}", bitsize),
+                    Err(err) => err.to_string()
                 },
                 StackItem::Cell(data) => {
                     format!("C{}-{}", data.bit_length(), data.references_count())
@@ -571,7 +588,11 @@ impl Engine {
             self.trace_info(EngineTraceInfoType::Normal, gas, None);
             self.cmd.clear();
             if let Some(err) = execution_result {
-                self.raise_exception(err)?;
+                if self.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+                    self.raise_exception_bugfix0(err)?;
+                } else {
+                    self.raise_exception(err)?;
+                }
             }
         };
         self.trace_info(EngineTraceInfoType::Finish, self.gas_used(), Some("NORMAL TERMINATION".to_string()));
@@ -612,10 +633,29 @@ impl Engine {
         switch(self, ctrl!(0))?;
         Ok(None)
     }
+    fn step_catch_revert(&mut self, depth: u32) -> Result<Option<i32>> {
+        self.step += 1;
+        self.log_string = Some("IMPLICIT CATCH REVERT");
+        // save exception pair
+        let exc_pair = self.cc.stack.drop_range_straight(0..2)?;
+        // revert stack depth to the state before try-catch
+        let cur_depth = self.cc.stack.depth();
+        if cur_depth < depth as usize {
+            return err!(ExceptionCode::StackUnderflow)
+        }
+        self.cc.stack.drop_top(cur_depth - depth as usize);
+        // restore exception pair
+        for item in exc_pair {
+            self.cc.stack.push(item);
+        }
+        switch(self, ctrl!(0))?;
+        Ok(None)
+    }
     fn step_while_loop(&mut self, body: SliceData, cond: SliceData) -> Result<Option<i32>> {
         match self.check_while_loop_condition() {
             Ok(true) => {
                 self.log_string = Some("NEXT WHILE ITERATION");
+                self.discharge_nargs();
                 let mut cond = ContinuationData::with_code(cond);
                 let mut while_ = ContinuationData::move_without_stack(&mut self.cc, body);
                 while_.savelist.put_opt(0, self.ctrl_mut(0)?);
@@ -626,7 +666,13 @@ impl Engine {
                 self.log_string = Some("RET FROM WHILE");
                 switch(self, ctrl!(0))?;
             }
-            Err(err) => return Err(err)
+            Err(err) => {
+                if self.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+                    let quit = ContinuationType::Quit(ExceptionCode::NormalTermination as i32);
+                    self.ctrls.put(0, &mut StackItem::continuation(ContinuationData::with_type(quit)))?;
+                }
+                return Err(err)
+            }
         }
         Ok(None)
     }
@@ -635,6 +681,7 @@ impl Engine {
             if *counter > 1 {
                 *counter -= 1;
                 self.log_string = Some("NEXT REPEAT ITERATION");
+                self.discharge_nargs();
                 let mut repeat = ContinuationData::move_without_stack(&mut self.cc, body);
                 repeat.savelist.put_opt(0, self.ctrl_mut(0)?);
                 self.ctrls.put_opt(0, &mut StackItem::continuation(repeat));
@@ -649,6 +696,7 @@ impl Engine {
         match self.check_until_loop_condition() {
             Ok(true) => {
                 self.log_string = Some("NEXT UNTIL ITERATION");
+                self.discharge_nargs();
                 let mut until = ContinuationData::move_without_stack(&mut self.cc, body);
                 until.savelist.put_opt(0, self.ctrl_mut(0)?);
                 self.ctrls.put_opt(0, &mut StackItem::continuation(until));
@@ -663,9 +711,35 @@ impl Engine {
     }
     fn step_again_loop(&mut self, body: SliceData) -> Result<Option<i32>> {
         self.log_string = Some("NEXT AGAIN ITERATION");
+        self.discharge_nargs();
         let again = ContinuationData::move_without_stack(&mut self.cc, body);
         self.ctrls.put_opt(0, &mut StackItem::continuation(again));
         Ok(None)
+    }
+
+    fn discharge_nargs(&mut self) {
+        if self.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) && self.cc.nargs != -1 {
+            let depth = self.cc.stack.depth();
+            let _ = self.cc.stack.drop_range_straight((depth - self.cc.nargs as usize)..depth);
+            self.cc.nargs = -1;
+        }
+    }
+
+    fn make_external_error(&mut self) -> Result<Option<i32>> {
+        let number = self.cc.stack.drop(0)?.as_integer()?.into(0..=0xffff)?;
+        if number == ExceptionCode::NormalTermination as usize ||
+            number == ExceptionCode::AlternativeTermination as usize {
+            return Ok(Some(number as i32))
+        }
+        let value = match self.cc.stack.drop(0) {
+            Ok(item) => item.as_integer().cloned().unwrap_or_default(),
+            Err(_) => IntegerData::zero()
+        };
+        let exception = match ExceptionCode::from_usize(number) {
+            Some(code) => Exception::from_code_and_value(code, value, file!(), line!()),
+            None => Exception::from_number_and_value(number, StackItem::int(value), file!(), line!())
+        };
+        Err(error!(TvmError::TvmExceptionFull(exception, String::new())))
     }
 
     // return Ok(Some(exit_code)) - if you want to stop execution
@@ -685,6 +759,8 @@ impl Engine {
                     ContinuationType::RepeatLoopBody(code, _counter) => self.step_repeat_loop(code),
                     ContinuationType::UntilLoopCondition(body) => self.step_until_loop(body),
                     ContinuationType::AgainLoopBody(slice) => self.step_again_loop(slice),
+                    ContinuationType::ExcQuit => Ok(self.make_external_error()?),
+                    ContinuationType::CatchRevert(depth) => self.step_catch_revert(depth),
                 }
             };
             if self.is_trace_enabled() {
@@ -695,7 +771,17 @@ impl Engine {
             match self.gas.check_gas_remaining().and(result) {
                 Ok(None) => (),
                 Ok(Some(exit_code)) => return Ok(Some(exit_code)),
-                Err(err) => self.raise_exception(err)?
+                Err(err) => {
+                    if self.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+                        match self.raise_exception_bugfix0(err) {
+                            Ok(Some(exit_code)) => return Ok(Some(exit_code)),
+                            Ok(None) => (),
+                            Err(err) => return Err(err)
+                        }
+                    } else {
+                        self.raise_exception(err)?
+                    }
+                }
             }
         }
         Ok(None)
@@ -724,14 +810,13 @@ impl Engine {
         let slice = loop {
             let hash = cell.repr_hash();
             if !resolve_special || cell.cell_type() == CellType::Ordinary {
-                if let Some(slice) = self.visited_cells.get(&hash).cloned() {
+                if self.visited_cells.contains(&hash) {
                     self.try_use_gas(Gas::load_cell_price(false))?;
-                    break slice;
+                    break SliceData::load_cell(cell)?;
                 } else {
                     self.try_use_gas(Gas::load_cell_price(true))?;
-                    let slice = SliceData::load_cell(cell)?;
-                    self.visited_cells.insert(hash, slice.clone());
-                    break slice;
+                    self.visited_cells.insert(hash);
+                    break SliceData::load_cell(cell)?;
                 }
             }
             if let Some(slice) = self.visited_exotic_cells.get(&hash).cloned() {
@@ -823,6 +908,14 @@ impl Engine {
             .ok_or_else(|| exception!(ExceptionCode::RangeCheckError, "get ctrl {} failed", index))
     }
 
+    pub fn ctrls(&self) -> &SaveList {
+        &self.ctrls
+    }
+
+    pub fn cc(&self) -> &ContinuationData {
+        &self.cc
+    }
+
     fn dump_msg(message: &'static str, data: String) -> String {
         format!("--- {} {:-<4$}\n{}\n{:-<40}\n", message, "", data, "", 35-message.len())
     }
@@ -909,6 +1002,9 @@ impl Engine {
         self.ctrls.put(0, &mut StackItem::continuation(ContinuationData::with_type(cont))).unwrap();
         let cont = ContinuationType::Quit(ExceptionCode::AlternativeTermination as i32);
         self.ctrls.put(1, &mut StackItem::continuation(ContinuationData::with_type(cont))).unwrap();
+        if self.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+            self.ctrls.put(2, &mut StackItem::continuation(ContinuationData::with_type(ContinuationType::ExcQuit))).unwrap();
+        }
         self.ctrls.put(3, &mut StackItem::continuation(ContinuationData::with_code(code.clone()))).unwrap();
         self.ctrls.put(4, &mut StackItem::cell(Cell::default())).unwrap();
         self.ctrls.put(5, &mut StackItem::cell(Cell::default())).unwrap();
@@ -1364,6 +1460,62 @@ impl Engine {
         Ok(())
     }
 
+    // raises the exception and tries to dispatch it via c(2).
+    // If c(2) is not set, returns that exception, otherwise, returns None
+    fn raise_exception_bugfix0(&mut self, err: failure::Error) -> Result<Option<i32>> {
+        let exception = match tvm_exception_full(&err) {
+            Some(exception) => exception,
+            None => {
+                log::trace!(target: "tvm", "BAD CODE: {}\n", self.cmd_code_string());
+                return Err(err)
+            }
+        };
+        if exception.exception_code().is_some() {
+            self.step += 1;
+        }
+        if exception.exception_code() == Some(ExceptionCode::OutOfGas) {
+            log::trace!(target: "tvm", "OUT OF GAS CODE: {}\n", self.cmd_code_string());
+            return Err(err)
+        }
+        if let Err(err) = self.gas.try_use_gas(Gas::exception_price()) {
+            self.step += 1;
+            return Err(err);
+        }
+        let n = self.cmd.vars.len();
+        // self.trace_info(EngineTraceInfoType::Exception, self.gas_used(), Some(format!("EXCEPTION: {}", err)));
+        let c2 = self.ctrls.remove(2).ok_or(err)?;
+        if let Ok(c2) = c2.as_continuation() {
+            if c2.type_of == ContinuationType::ExcQuit {
+                if let Some(exit_code) = exception.is_normal_termination() {
+                    let cont = ContinuationData::with_type(ContinuationType::Quit(exit_code));
+                    self.cmd.push_var(StackItem::Continuation(Arc::new(cont)));
+                    self.cc.stack.push(exception.value);
+                    self.cmd.vars[n].as_continuation_mut()?.nargs = 1;
+                    switch(self, var!(n))?;
+                    return Ok(None)
+                } else {
+                    self.cc.stack = Stack::new();
+                    self.cc.stack.push(exception.value.clone());
+                    self.cc.stack.push(int!(exception.exception_or_custom_code()));
+                    return Err(error!(TvmError::TvmExceptionFull(exception, String::new())))
+                }
+            }
+        }
+        self.cmd.push_var(c2);
+        self.cc.stack.push(exception.value.clone());
+        self.cc.stack.push(int!(exception.exception_or_custom_code()));
+        let target = self.cmd.vars[n].as_continuation_mut()?;
+        match target.type_of {
+            ContinuationType::CatchRevert(_depth) => {
+                // Pass the entire cc stack. CatchRevert cont will remove a range of slots
+                // under the exception pair so that the final stack depth is _depth + 2.
+            }
+            _ => target.nargs = 2
+        }
+        switch(self, var!(n))?;
+        Ok(None)
+    }
+
     pub(in crate::executor) fn last_cmd(&self) -> u8 {
         self.last_cmd
     }
@@ -1389,7 +1541,10 @@ impl Engine {
         }
     }
     fn cmd_code(&self) -> Result<SliceData> {
-        let mut code = SliceData::load_cell_ref(self.cc.code().cell())?;
+        let mut code = match self.cc.code().cell_opt() {
+            Some(cell) => SliceData::load_cell_ref(cell)?,
+            None => SliceData::load_cell(self.cc.code().clone().into_cell())?, // or error
+        };
         let data = &self.cmd_code.data_window;
         code.shrink_data(data.start..data.end);
         let refs = &self.cmd_code.references_window;

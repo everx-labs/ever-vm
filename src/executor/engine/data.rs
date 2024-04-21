@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -15,7 +15,7 @@ use crate::{
     executor::{engine::Engine, microcode::{VAR, CELL, SLICE, BUILDER, CONTINUATION}},
     stack::{StackItem, continuation::ContinuationData}, types::Status
 };
-use ton_types::{fail, GasConsumer};
+use ever_block::{fail, GasConsumer};
 
 // Utilities ******************************************************************
 
@@ -31,9 +31,10 @@ fn convert_any(engine: &mut Engine, x: u16, to: u16, from: u16) -> Status {
                     let builder = var.as_builder_mut()?;
                     let cell = engine.finalize_cell(builder)?;
                     match to {
+                        CONTINUATION => StackItem::continuation(ContinuationData::with_code(engine.load_cell(cell)?)),
                         CELL => StackItem::Cell(cell),
                         SLICE => StackItem::Slice(engine.load_cell(cell)?),
-                        _ => StackItem::None
+                        _ => fail!("can convert builder only to cell, to slice or to continuation")
                     }
                 }
                 CELL => {
@@ -43,7 +44,7 @@ fn convert_any(engine: &mut Engine, x: u16, to: u16, from: u16) -> Status {
                     match to {
                         CONTINUATION => StackItem::continuation(ContinuationData::with_code(slice)),
                         SLICE => StackItem::Slice(slice),
-                        _ => StackItem::None
+                        _ => fail!("can convert cell only to slice or to continuation")
                     }
                 }
                 SLICE => {
@@ -51,21 +52,10 @@ fn convert_any(engine: &mut Engine, x: u16, to: u16, from: u16) -> Status {
                     let slice = var.as_slice()?.clone();
                     match to {
                         CONTINUATION => StackItem::continuation(ContinuationData::with_code(slice)),
-                        SLICE => StackItem::Slice(slice),
-                        CELL => StackItem::Cell(slice.cell().clone()),
-                        _ => StackItem::None
+                        _ => fail!("can convert slice only to continuation")
                     }
                 }
-                CONTINUATION => { // it only for undo
-                    let var = engine.cmd.var(storage_index!(x));
-                    let slice = var.as_continuation()?.code();
-                    match to {
-                        CELL => StackItem::Cell(slice.cell().clone()),
-                        SLICE => StackItem::Slice(slice.clone()),
-                        _ => StackItem::None
-                    }
-                }
-                _ => StackItem::None
+                _ => fail!("cannot convert")
             }
         }
         _ => StackItem::None
