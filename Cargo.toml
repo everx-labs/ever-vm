@@ -5,6 +5,7 @@ name = 'ever_vm'
 version = '2.1.2'
 
 [dependencies]
+crusty3_zk = { git = 'https://github.com/nilfoundation/crusty3-zk.git', branch = '6-extended-vk-encrypted-input-verification' }
 diffy = { optional = true, version = '0.2.2' }
 ed25519 = '1.2'
 ed25519-dalek = '1.0'
