@@ -2278,6 +2278,31 @@ The ``global variables'' may be helpful in implementing some high-level smart-co
 \item {\tt F910} --- {\tt CHKSIGNU} ($h$ $s$ $k$ -- $?$), checks the Ed25519-signature $s$ of a hash $h$ (a 256-bit unsigned integer, usually computed as the hash of some data) using public key $k$ (also represented by a 256-bit unsigned integer). The signature $s$ must be a {\em Slice\/} containing at least 512 data bits; only the first 512 bits are used. The result is $-1$ if the signature is valid, $0$ otherwise. Notice that {\tt CHKSIGNU} is equivalent to {\tt ROT}; {\tt NEWB}; {\tt STU 256}; {\tt ENDB}; {\tt NEWC}; {\tt ROTREV}; {\tt CHKSIGNS}, i.e., to {\tt CHKSIGNS} with the first argument $d$ set to 256-bit {\em Slice} containing~$h$. Therefore, if $h$ is computed as the hash of some data, these data are hashed {\em twice}, the second hashing occurring inside {\tt CHKSIGNS}. 
 \item {\tt F911} --- {\tt CHKSIGNS} ($d$ $s$ $k$ -- $?$), checks whether $s$ is a valid Ed25519-signature of the data portion of {\em Slice\/}~$d$ using public key~$k$, similarly to {\tt CHKSIGNU}. If the bit length of {\em Slice\/}~$d$ is not divisible by eight, throws a cell underflow exception. The verification of Ed25519 signatures is the standard one, with $\Sha$ used to reduce $d$ to the 256-bit number that is actually signed. 
 \item {\tt F912}--{\tt F93F} --- Reserved for hashing and cryptography primitives.
+\item {\tt F93000} --- {\tt BLS_VERIFY} ( $pk$ $msg$ $sgn$ -- $?$) Checks BLS signature, return true on success, false otherwise.
+\item {\tt F93001} --- {\tt BLS_AGGREGATE} (sig_1 ... sig_n n - sig) Aggregates signatures. $n>0$. Throw exception if $n=0$ or if some $sig_i$ is not a valid signature.
+\item {\tt F93002} --- {\tt BLS_FASTAGGREGATEVERIFY} ($pk_1$ ... $pk_n$ $n$ $msg$ $sig$ -- $?$) Checks aggregated BLS signature for keys $pk_1...pk_n$ and message $msg$. Return true on success, false otherwise. Return false if $n=0$
+\item {\tt F93003} --- {\tt BLS_AGGREGATEVERIFY} ($pk_1$ $msg_1$ ... $pk_n$ $msg_n$ $n$ $sgn$ -- $?$) Checks aggregated BLS signature for key-message pairs $pk_1 msg_1...pk_n msg_n$. Return true on success, false otherwise. Return false if $n=0$
+\item {\tt F93010} --- {\tt BLS_G1_ADD} ( $x$ $y$ -- $x$+$y$) Addition on G1.
+\item {\tt F93011} --- {\tt BLS_G1_SUB} ( $x$ $y$ -- $x$-$y$) Subtraction on G1.
+\item {\tt F93012} --- {\tt BLS_G1_NEG} ( $x$ -- $-x$) Negation on G1.
+\item {\tt F93013} --- {\tt BLS_G1_MUL} ( $x$ $s$ -- $x$*s) Multiplies G1 point $x$ by scalar $s$. Any $s$ is valid, including negative.
+\item {\tt F93014} --- {\tt BLS_G1_MULTIEXP} ( $x_1$ $s_1$ ... $x_n$ $s_n$ $n$ - $x_1$*$s_1$+...+$x_n$*$s_n$) Calculates $x_1*s_1+...+x_n*s_n$ for G1 points $x_i$ and scalars $s_i$. Returns zero point if $n=0$. Any $s_i$ is valid, including negative.
+\item {\tt F93015} --- {\tt BLS_G1_ZERO} BLS_G1_ZERO ( -- $zero$) Pushes zero point in G1.
+\item {\tt F93016} --- {\tt BLS_MAP_TO_G1} BLS_MAP_TO_G1 ( $f$ -- $x$) Converts FP element $f$ to a G1 point.
+\item {\tt F93017} --- {\tt BLS_G1_INGROUP} BLS_G1_INGROUP ( $x$ -- $?$) Checks that slice $x$ represents a valid element of G1.
+\item {\tt F93018} --- {\tt BLS_G1_ISZERO} BLS_G1_ISZERO ( $x$ -- bool) Checks that G1 point $x$ is equal to zero.
+\item {\tt F93020} --- {\tt BLS_G2_ADD} ( $x$ $y$ -- $x$+$y$) Addition on G2.
+\item {\tt F93021} --- {\tt BLS_G2_SUB} ( $x$ $y$ -- $x$-$y$) Subtraction on G2.
+\item {\tt F93022} --- {\tt BLS_G2_NEG} ( $x$ -- $-x$) Negation on G2.
+\item {\tt F93023} --- {\tt BLS_G2_MUL} ( $x$ $s$ -- $x$*s) Multiplies G2 point $x$ by scalar $s$. Any $s$ is valid, including negative.
+\item {\tt F93024} --- {\tt BLS_G2_MULTIEXP} ( $x_1$ $s_1$ ... $x_n$ $s_n$ $n$ - $x_1$*$s_1$+...+$x_n$*$s_n$) Calculates $x_1*s_1+...+x_n*s_n$ for G2 points $x_i$ and scalars $s_i$. Returns zero point if $n=0$. Any $s_i$ is valid, including negative.
+\item {\tt F93025} --- {\tt BLS_G2_ZERO} BLS_G2_ZERO ( -- $zero$) Pushes zero point in G2.
+\item {\tt F93026} --- {\tt BLS_MAP_TO_G2} BLS_MAP_TO_G2 ( $f$ -- $x$) Converts FP element $f$ to a G2 point.
+\item {\tt F93027} --- {\tt BLS_G2_INGROUP} BLS_G2_INGROUP ( $x$ -- $?$) Checks that slice $x$ represents a valid element of G2.
+\item {\tt F93028} --- {\tt BLS_G2_ISZERO} BLS_G2_ISZERO ( $x$ -- bool) Checks that G2 point $x$ is equal to zero.
+
+\item {\tt F93030} --- {\tt BLS_PAIRING} ( $x_1$ $y_1$ ... $x_n$ $y_n$ $n$ -- $bool$) Given G1 points $x_i$ and G2 points $y_i$, calculates and multiply pairings of $x_i, y_i$. Returns true if the result is the multiplicative identity in FP12, false otherwise. Returns false if $n=0$.
+\item {\tt F93031} --- {\tt BLS_PUSHR} ( -- $r$) Pushes the order of G1 and G2 (approx. `2^255`).
 \end{itemize}
 
 \nxsubpoint\emb{Miscellaneous primitives}
