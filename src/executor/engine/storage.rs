@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2022 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -21,7 +21,7 @@ use crate::{
     types::{Exception, ResultMut, ResultRef, Status}
 };
 use std::{mem, ops::Range};
-use ton_types::{error, fail, Result, types::ExceptionCode};
+use ever_block::{error, fail, Result, types::ExceptionCode};
 use crate::executor::gas::gas_state::Gas;
 
 // Utilities ******************************************************************
@@ -315,7 +315,7 @@ pub(in crate::executor) fn pop_all(engine: &mut Engine, dst: u16) -> Status {
     } else {
         nargs as usize
     };
-    if engine.check_capabilities(ton_block::GlobalCapabilities::CapTvmV19 as u64) {
+    if engine.check_capabilities(ever_block::GlobalCapabilities::CapTvmV19 as u64) {
         pop_range(engine, 0..drop, dst)
     } else {
         // This branch is incorrect because the gas may still be consumed when drop is zero.
@@ -339,7 +339,7 @@ pub(in crate::executor) fn pop_range(engine: &mut Engine, drop: Range<usize>, ds
         engine.try_use_gas(Gas::stack_price(save))?;
     }
     // pay for stack concatenation
-    if engine.check_capabilities(ton_block::GlobalCapabilities::CapTvmV19 as u64) {
+    if engine.check_capabilities(ever_block::GlobalCapabilities::CapTvmV19 as u64) {
         if dst_depth != 0 {
             engine.try_use_gas(Gas::stack_price(save + dst_depth))?;
         }

@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,27 +7,27 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
 use crate::{
     error::TvmError,
     executor::{
-        engine::{Engine, core::ExecuteHandler, storage::fetch_stack},
-        accounts::*,
-        blockchain::*, config::*, continuation::*, crypto::*, currency::*, deserialization::*,
-        dictionary::*, dump::*, exceptions::*, gas::*, globals::*, math::*, null::*,
-        rand::*, serialization::*, slice_comparison::*, stack::*, tuple::*,
-        types::{InstructionOptions, Instruction}
+        accounts::*, blockchain::*, bls::*, config::*, continuation::*, crypto::*, currency::*, 
+        deserialization::*, dictionary::*, dump::*, 
+        engine::{core::ExecuteHandler, storage::fetch_stack, Engine}, 
+        exceptions::*, gas::*, globals::*, math::*, null::*, rand::*, serialization::*,
+        slice_comparison::*, stack::*, tuple::*,
+        types::{Instruction, InstructionOptions}
     },
-    stack::integer::behavior::{Signaling, Quiet},
+    stack::integer::behavior::{Quiet, Signaling},
     types::{Exception, Status}
 };
 #[cfg(feature = "gosh")]
 use crate::executor::diff::*;
 use std::{fmt, ops::Range};
-use ton_types::{error, Result, types::ExceptionCode};
+use ever_block::{error, Result, types::ExceptionCode};
 
 // ( - )
 fn execute_nop(engine: &mut Engine) -> Status {
@@ -902,6 +902,32 @@ impl Handlers {
             .set(0x45, execute_find_by_code_hash)
             .set(0x46, execute_find_by_data_hash)
             .set(0x50, execute_try_elect)
+            .add_subset(0x30, Handlers::new()
+                .set(0x00, execute_bls_verify)
+                .set(0x01, execute_bls_aggregate)
+                .set(0x02, execute_bls_fast_aggregate_verify)
+                .set(0x03, execute_bls_aggregate_verify)
+                .set(0x10, execute_bls_g1_add)
+                .set(0x11, execute_bls_g1_sub)
+                .set(0x12, execute_bls_g1_neg)
+                .set(0x13, execute_bls_g1_mul)
+                .set(0x14, execute_bls_g1_multiexp)
+                .set(0x15, execute_g1_zero)
+                .set(0x16, execute_bls_map_to_g1)
+                .set(0x17, execute_bls_g1_ingroup)
+                .set(0x18, execute_bls_g1_iszero)
+                .set(0x20, execute_bls_g2_add)
+                .set(0x21, execute_bls_g2_sub)
+                .set(0x22, execute_bls_g2_neg)
+                .set(0x23, execute_bls_g2_mul)
+                .set(0x24, execute_bls_g2_multiexp)
+                .set(0x25, execute_g2_zero)
+                .set(0x26, execute_bls_map_to_g2)
+                .set(0x27, execute_bls_g2_ingroup)
+                .set(0x28, execute_bls_g2_iszero)
+                .set(0x30, execute_bls_pairing)
+                .set(0x31, execute_bls_pushr)
+            )
         )
     }
     /// Dumping functions
