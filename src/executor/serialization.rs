@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2021 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,7 +7,7 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
@@ -31,7 +31,8 @@ use crate::{
     },
     types::{Exception, Status}
 };
-use ton_types::{BuilderData, CellType, GasConsumer, error, IBitstring, Result, ExceptionCode, MAX_LEVEL};
+use ever_block::GlobalCapabilities;
+use ever_block::{BuilderData, CellType, GasConsumer, error, IBitstring, Result, ExceptionCode, MAX_LEVEL};
 
 const QUIET: u8 = 0x01; // quiet variant
 const STACK: u8 = 0x02; // length of int in stack
@@ -123,10 +124,18 @@ pub fn execute_endxc(engine: &mut Engine) -> Status {
             engine.use_gas(Gas::finalize_price());
             return err!(ExceptionCode::CellOverflow, "Not enough data for a special cell")
         }
-        match CellType::try_from(b.data()[0]) {
-            Ok(cell_type) => b.set_type(cell_type),
-            Err(err) => return err!(ExceptionCode::CellOverflow, "{}", err)
+        let cell_type = CellType::try_from(b.data()[0])
+            .map_err(|err| exception!(ExceptionCode::CellOverflow, "{}", err))?;
+        if engine.check_capabilities(GlobalCapabilities::CapTvmV19 as u64) {
+            match cell_type {
+                // allow the following known types
+                CellType::PrunedBranch | CellType::LibraryReference |
+                CellType::MerkleProof | CellType::MerkleUpdate => (),
+                // deny all other types (incl. BigCell b/c it can't be created from builder anyway)
+                _ => return err!(ExceptionCode::CellOverflow, "Incorrect type of exotic cell: {}", cell_type)
+            }
         }
+        b.set_type(cell_type)
     }
     let cell = engine.finalize_cell(b)?;
     engine.cc.stack.push(StackItem::Cell(cell));
@@ -682,7 +691,7 @@ pub fn execute_cdepth(engine: &mut Engine) -> Status {
         0
     } else {
         let c = engine.cmd.var(0).as_cell()?;
-        if !engine.check_capabilities(ton_block::GlobalCapabilities::CapResolveMerkleCell as u64) && c.references_count() == 0 {
+        if !engine.check_capabilities(ever_block::GlobalCapabilities::CapResolveMerkleCell as u64) && c.references_count() == 0 {
             0
         } else {
             c.depth(MAX_LEVEL)
@@ -713,7 +722,7 @@ pub fn execute_stcont(engine: &mut Engine) -> Status {
     engine.cmd.var(0).as_builder()?;
     engine.cmd.var(1).as_continuation()?;
     let cont = engine.cmd.var_mut(1).withdraw();
-    let cont = if engine.check_capabilities(ton_block::GlobalCapabilities::CapStcontNewFormat as u64) {
+    let cont = if engine.check_capabilities(ever_block::GlobalCapabilities::CapStcontNewFormat as u64) {
         cont.as_continuation()?.serialize(engine)?
     } else {
         let (cont, gas) = cont.as_continuation()?.serialize_old()?;

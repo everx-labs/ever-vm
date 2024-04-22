@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2019-2023 TON Labs. All Rights Reserved.
+* Copyright (C) 2019-2024 EverX. All Rights Reserved.
 *
 * Licensed under the SOFTWARE EVALUATION License (the "License"); you may not use
 * this file except in compliance with the License.
@@ -7,14 +7,14 @@
 * Unless required by applicable law or agreed to in writing, software
 * distributed under the License is distributed on an "AS IS" BASIS,
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific TON DEV software governing permissions and
+* See the License for the specific EVERX DEV software governing permissions and
 * limitations under the License.
 */
 
 use crate::{
     error::TvmError,
     executor::{
-        engine::{Engine, storage::fetch_stack}, types::Instruction
+        engine::{Engine, storage::fetch_stack}, gas::gas_state::Gas, types::Instruction
     },
     stack::{
         StackItem,
@@ -27,8 +27,8 @@ use crate::{
 };
 use ed25519::signature::Verifier;
 use std::borrow::Cow;
-use ton_block::GlobalCapabilities;
-use ton_types::{BuilderData, error, GasConsumer, ExceptionCode, UInt256};
+use ever_block::GlobalCapabilities;
+use ever_block::{BuilderData, error, GasConsumer, ExceptionCode, UInt256};
 
 const PUBLIC_KEY_BITS:  usize = PUBLIC_KEY_BYTES * 8;
 const SIGNATURE_BITS:   usize = SIGNATURE_BYTES * 8;
@@ -106,6 +106,10 @@ fn preprocess_signed_data<'a>(_engine: &Engine, data: &'a [u8]) -> Cow<'a, [u8]>
 }
 
 fn check_signature(engine: &mut Engine, name: &'static str, hash: bool) -> Status {
+    if engine.check_capabilities(GlobalCapabilities::CapTvmV19 as u64) {
+        engine.checked_signatures_count = engine.checked_signatures_count.saturating_add(1);
+        engine.try_use_gas(Gas::check_signature_price(engine.checked_signatures_count))?;
+    }
     engine.load_instruction(Instruction::new(name))?;
     fetch_stack(engine, 3)?;
     let pub_key = engine.cmd.var(0).as_integer()?
