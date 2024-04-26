@@ -11,7 +11,7 @@
 * limitations under the License.
 */
 
-use crate::{error::TvmError, types::{Exception, Status}};
+use crate::types::Status;
 use ever_block::{error, types::ExceptionCode};
 
 pub trait OperationBehavior {

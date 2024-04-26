@@ -12,9 +12,8 @@
 */
 
 use crate::{
-    error::TvmError,
     executor::{
-        Mask, continuation::{callx, switch}, engine::{Engine, storage::{fetch_stack}},
+        Mask, continuation::{callx, switch}, engine::{Engine, storage::fetch_stack},
         microcode::VAR, types::{Instruction, InstructionOptions}
     },
     stack::{
@@ -28,7 +27,7 @@ use crate::{
         },
         serialization::Deserializer
     },
-    types::{Exception, Status}
+    types::Status
 };
 use ever_block::{
     BuilderData, error, fail, GasConsumer, HashmapE, HashmapSubtree, PfxHashmapE, Result, SliceData,
@@ -1235,50 +1234,50 @@ pub(super) fn execute_plddictq(engine: &mut Engine) -> Status {
     load_dict(engine, "PLDDICTQ", DICT | QUIET)
 }
 
-type IntoSubtree = fn(&mut HashmapE, prefix: &SliceData, &mut dyn GasConsumer) -> Result<()>;
+type IntoSubtree = fn(&HashmapE, &SliceData, &mut dyn GasConsumer) -> Result<HashmapE>;
 fn subdict(engine: &mut Engine, name: &'static str, keyreader: KeyReader, into: IntoSubtree) -> Status {
-    engine.load_instruction(
-        Instruction::new(name)
-    )?;
+    engine.load_instruction(Instruction::new(name))?;
     fetch_stack(engine, 4)?;
     let nbits = engine.cmd.var(0).as_integer()?.into(0..=1023)?;
-    let mut dict = HashmapE::with_hashmap(nbits, engine.cmd.var(1).as_dict()?.cloned());
+    let dict = engine.cmd.var(1).as_dict()?.cloned();
+    let dict = HashmapE::with_hashmap(nbits, dict);
     let lbits = engine.cmd.var(2).as_integer()?.into(0..=nbits)?;
     let key = keyreader(engine.cmd.var(3), lbits)?;
-    into(&mut dict, &key, engine)?;
+    let dict = into(&dict, &key, engine)?;
     engine.cc.stack.push(StackItem::dict(&dict));
     Ok(())
 }
 
 // prefix lbits dict nbits - dict'
 pub(super) fn execute_subdictget(engine: &mut Engine) -> Status {
-    subdict(engine, "SUBDICTGET", keyreader_from_slice, HashmapSubtree::into_subtree_with_prefix)
+    subdict(engine, "SUBDICTGET", keyreader_from_slice, HashmapSubtree::subtree_with_prefix)
 }
 
 // prefix lbits dict nbits - dict'
 pub(super) fn execute_subdictiget(engine: &mut Engine) -> Status {
-    subdict(engine, "SUBDICTIGET", keyreader_from_int, HashmapSubtree::into_subtree_with_prefix)
+    subdict(engine, "SUBDICTIGET", keyreader_from_int, HashmapSubtree::subtree_with_prefix)
 }
 
 // prefix lbits dict nbits - dict'
 pub(super) fn execute_subdictuget(engine: &mut Engine) -> Status {
-    subdict(engine, "SUBDICTUGET", keyreader_from_uint, HashmapSubtree::into_subtree_with_prefix)
+    subdict(engine, "SUBDICTUGET", keyreader_from_uint, HashmapSubtree::subtree_with_prefix)
 }
 
 // prefix lbits dict nbits - dict'
 pub(super) fn execute_subdictrpget(engine: &mut Engine) -> Status {
-    subdict(engine, "SUBDICTRPGET", keyreader_from_slice, HashmapSubtree::into_subtree_without_prefix)
+    subdict(engine, "SUBDICTRPGET", keyreader_from_slice, HashmapE::subtree_without_prefix)
 }
 
 // prefix lbits dict nbits - dict'
 pub(super) fn execute_subdictirpget(engine: &mut Engine) -> Status {
-    subdict(engine, "SUBDICTIRPGET", keyreader_from_int, HashmapSubtree::into_subtree_without_prefix)
+    subdict(engine, "SUBDICTIRPGET", keyreader_from_int, HashmapE::subtree_without_prefix)
 }
 
 // prefix lbits dict nbits - dict'
 pub(super) fn execute_subdicturpget(engine: &mut Engine) -> Status {
-    subdict(engine, "SUBDICTURPGET", keyreader_from_uint, HashmapSubtree::into_subtree_without_prefix)
+    subdict(engine, "SUBDICTURPGET", keyreader_from_uint, HashmapE::subtree_without_prefix)
 }
+
 pub(super) fn execute_dictgetoptref(engine: &mut Engine) -> Status {
     dict(engine, "DICTGETOPTREF", keyreader_from_slice, GET, valreader_from_refopt)
 }

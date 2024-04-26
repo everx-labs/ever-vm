@@ -12,7 +12,7 @@
 */
 
 use crate::{
-    error::{tvm_exception_code, TvmError},
+    error::tvm_exception_code,
     executor::{
         engine::{Engine, storage::fetch_stack}, types::{InstructionOptions, Instruction}
     },
@@ -24,7 +24,7 @@ use crate::{
             utils::{unary_op, binary_op, process_double_result, construct_double_nan}
         }
     },
-    types::{Exception, Status}
+    types::Status
 };
 use std::{cmp::Ordering, mem};
 use ever_block::{error, Result, types::{Bitmask, ExceptionCode}};

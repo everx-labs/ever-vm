@@ -12,7 +12,6 @@
 */
 
 use crate::{
-    error::TvmError,
     executor::{
         engine::{
             Engine, data::convert,
@@ -25,7 +24,7 @@ use crate::{
         StackItem, continuation::ContinuationData,
         integer::{IntegerData, behavior::Signaling}, savelist::SaveList
     },
-    types::{Exception, Status}
+    types::Status
 };
 use std::cmp;
 use ever_block::{error, fail, types::ExceptionCode};

@@ -12,7 +12,6 @@
 */
 
 use crate::{
-    error::TvmError,
     executor::{
         Mask, engine::{Engine, data::convert, storage::fetch_stack},
         microcode::{SLICE, CELL, VAR}, types::{InstructionOptions, Instruction}
@@ -29,7 +28,7 @@ use crate::{
         },
         serialization::Deserializer
     },
-    types::{Exception, Status}
+    types::Status
 };
 use ever_block::GlobalCapabilities;
 use ever_block::{

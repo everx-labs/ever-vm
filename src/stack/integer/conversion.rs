@@ -11,13 +11,9 @@
 * limitations under the License.
 */
 
-use crate::{
-    error::TvmError,
-    stack::integer::{
-        Int, IntegerData, IntegerValue,
-        utils::{check_overflow, twos_complement}
-    },
-    types::Exception
+use crate::stack::integer::{
+    Int, IntegerData, IntegerValue,
+    utils::{check_overflow, twos_complement}
 };
 use num_traits::Num;
 use std::ops::RangeInclusive;

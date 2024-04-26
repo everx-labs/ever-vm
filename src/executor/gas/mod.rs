@@ -12,10 +12,9 @@
 */
 
 use crate::{
-    error::TvmError,
     executor::{engine::{Engine, storage::fetch_stack}, types::Instruction},
     stack::{StackItem, integer::{IntegerData, conversion::FromInt, behavior::Quiet, math::Round}},
-    types::{Exception, Status}
+    types::Status
 };
 use ever_block::GlobalCapabilities;
 use ever_block::{error, types::ExceptionCode, Result};

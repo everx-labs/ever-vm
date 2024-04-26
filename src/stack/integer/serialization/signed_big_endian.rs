@@ -12,7 +12,6 @@
 */
 
 use crate::{
-    error::TvmError,
     stack::{
         integer::{
             serialization::{
@@ -23,7 +22,6 @@ use crate::{
         },
         serialization::{Deserializer, Serializer},
     },
-    types::Exception,
 };
 use num::bigint::ToBigInt;
 use num_traits::Signed;
