@@ -12,10 +12,9 @@
 */
 
 use crate::{
-    error::TvmError,
     executor::engine::Engine,
     stack::StackItem,
-    types::{Exception, Status},
+    types::Status,
 };
 use num::{BigUint, ToPrimitive};
 use std::{

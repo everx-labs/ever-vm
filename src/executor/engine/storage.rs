@@ -12,13 +12,12 @@
 */
 
 use crate::{
-    error::TvmError,
     executor::{
         engine::Engine,
         microcode::{VAR, STACK, CC, CC_SAVELIST, CTRL, CTRL_SAVELIST, VAR_SAVELIST}
     },
     stack::{StackItem, continuation::ContinuationData, savelist::SaveList},
-    types::{Exception, ResultMut, ResultRef, Status}
+    types::{ResultMut, ResultRef, Status}
 };
 use std::{mem, ops::Range};
 use ever_block::{error, fail, Result, types::ExceptionCode};

@@ -12,9 +12,8 @@
 */
 
 use crate::{
-    error::TvmError,
     executor::{Mask, engine::Engine, types::{Instruction, InstructionOptions}},
-    stack::StackItem, types::{Exception, Status}
+    stack::StackItem, types::Status
 };
 use ever_block::{error, types::ExceptionCode};
 use std::{cmp, str, sync::Arc};

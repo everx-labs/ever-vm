@@ -14,7 +14,6 @@
 use std::{str::FromStr, sync::Arc, usize};
 
 use crate::{
-    error::TvmError,
     executor::{
         engine::{storage::fetch_stack, Engine}, gas::gas_state::Gas, types::Instruction
     },
@@ -25,7 +24,7 @@ use crate::{
             IntegerData
         }, StackItem
     },
-    types::{Exception, Status}
+    types::Status
 };
 use ever_block::GlobalCapabilities;
 use ever_block::{

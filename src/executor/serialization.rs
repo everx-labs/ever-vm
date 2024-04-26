@@ -12,9 +12,8 @@
 */
 
 use crate::{
-    error::TvmError,
     executor::{
-    	Mask, engine::{Engine, data::convert, storage::{fetch_stack, fetch_reference}},
+        Mask, engine::{Engine, data::convert, storage::{fetch_stack, fetch_reference}},
         gas::gas_state::Gas, microcode::{BUILDER, CC, CELL, VAR},
         types::{InstructionOptions, Instruction}
     },
@@ -29,7 +28,7 @@ use crate::{
             }
         }
     },
-    types::{Exception, Status}
+    types::Status
 };
 use ever_block::GlobalCapabilities;
 use ever_block::{BuilderData, CellType, GasConsumer, error, IBitstring, Result, ExceptionCode, MAX_LEVEL};

@@ -12,7 +12,6 @@
 */
 
 use crate::{
-    error::TvmError,
     executor::{
         engine::{Engine, storage::fetch_stack}, gas::gas_state::Gas, types::Instruction
     },
@@ -23,17 +22,13 @@ use crate::{
             serialization::UnsignedIntegerBigEndianEncoding
         },
     },
-    types::{Exception, Status}
+    types::Status
 };
-use ed25519::signature::Verifier;
 use std::borrow::Cow;
-use ever_block::GlobalCapabilities;
-use ever_block::{BuilderData, error, GasConsumer, ExceptionCode, UInt256};
-
-const PUBLIC_KEY_BITS:  usize = PUBLIC_KEY_BYTES * 8;
-const SIGNATURE_BITS:   usize = SIGNATURE_BYTES * 8;
-const PUBLIC_KEY_BYTES: usize = ed25519_dalek::PUBLIC_KEY_LENGTH;
-const SIGNATURE_BYTES:  usize = ed25519_dalek::SIGNATURE_LENGTH;
+use ever_block::{
+    error, BuilderData, Ed25519PublicKey, ExceptionCode, GasConsumer, GlobalCapabilities, UInt256,
+    ED25519_PUBLIC_KEY_LENGTH, ED25519_SIGNATURE_LENGTH
+};
 
 fn hash_to_uint(bits: impl AsRef<[u8]>) -> IntegerData {
     IntegerData::from_unsigned_bytes_be(bits)
@@ -113,14 +108,14 @@ fn check_signature(engine: &mut Engine, name: &'static str, hash: bool) -> Statu
     engine.load_instruction(Instruction::new(name))?;
     fetch_stack(engine, 3)?;
     let pub_key = engine.cmd.var(0).as_integer()?
-        .as_builder::<UnsignedIntegerBigEndianEncoding>(PUBLIC_KEY_BITS)?;
+        .as_builder::<UnsignedIntegerBigEndianEncoding>(ED25519_PUBLIC_KEY_LENGTH * 8)?;
     engine.cmd.var(1).as_slice()?;
     if hash {
         engine.cmd.var(2).as_integer()?;
     } else {
         engine.cmd.var(2).as_slice()?;
     }
-    if engine.cmd.var(1).as_slice()?.remaining_bits() < SIGNATURE_BITS {
+    if engine.cmd.var(1).as_slice()?.remaining_bits() < ED25519_SIGNATURE_LENGTH * 8 {
         return err!(ExceptionCode::CellUnderflow)
     }
     let data = if hash {
@@ -132,7 +127,7 @@ fn check_signature(engine: &mut Engine, name: &'static str, hash: bool) -> Statu
         }
         DataForSignature::Slice(engine.cmd.var(2).as_slice()?.get_bytestring(0))
     };
-    let pub_key = match ed25519_dalek::PublicKey::from_bytes(pub_key.data()) {
+    let pub_key = match Ed25519PublicKey::from_bytes(pub_key.data().try_into()?) {
         Ok(pub_key) => pub_key,
         Err(err) => if engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
                 engine.cc.stack.push(boolean!(false));
@@ -142,29 +137,23 @@ fn check_signature(engine: &mut Engine, name: &'static str, hash: bool) -> Statu
             }
     };
     let signature = engine.cmd.var(1).as_slice()?.get_bytestring(0);
-    let signature = match ed25519::signature::Signature::from_bytes(&signature[..SIGNATURE_BYTES]) {
-        Ok(signature) => signature,
-        Err(err) => {
-            #[allow(clippy::collapsible_else_if)]
-            if engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
-                engine.cc.stack.push(boolean!(false));
-                return Ok(())    
-            } else {
-                if hash {
-                    engine.cc.stack.push(boolean!(false));
-                    return Ok(())        
-                } else {
-                    return err!(ExceptionCode::FatalError, "cannot load signature {}", err)
-                }
-            }
+    if signature.len() < ED25519_SIGNATURE_LENGTH {
+        if engine.check_capabilities(GlobalCapabilities::CapsTvmBugfixes2022 as u64) {
+            engine.cc.stack.push(boolean!(false));
+            return Ok(())
+        } else if hash {
+            engine.cc.stack.push(boolean!(false));
+            return Ok(())
+        } else {
+            return err!(ExceptionCode::FatalError, "cannot load signature")
         }
     };
     let data = preprocess_signed_data(engine, data.as_ref());
     #[cfg(feature = "signature_no_check")]
     let result = 
-        engine.modifiers.chksig_always_succeed || pub_key.verify(&data, &signature).is_ok();
+        engine.modifiers.chksig_always_succeed || pub_key.verify(&data, &signature[..ED25519_SIGNATURE_LENGTH].try_into()?);
     #[cfg(not(feature = "signature_no_check"))]
-    let result = pub_key.verify(&data, &signature).is_ok();
+    let result = pub_key.verify(&data, &signature[..ED25519_SIGNATURE_LENGTH].try_into()?);
     engine.cc.stack.push(boolean!(result));
     Ok(())
 }

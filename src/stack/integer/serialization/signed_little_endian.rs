@@ -12,7 +12,6 @@
 */
 
 use crate::{
-    error::TvmError,
     stack::{
         integer::{
             serialization::{
@@ -23,7 +22,6 @@ use crate::{
         },
         serialization::{Deserializer, Serializer},
     },
-    types::Exception,
 };
 use num::{bigint::ToBigInt, Signed};
 use ever_block::{error, BuilderData, ExceptionCode, Result};

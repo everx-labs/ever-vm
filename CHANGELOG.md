@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 2.1.4
+
+- Removed using ed25519 crates directly
+
 ## Version 2.1.0
 
 - the crate was renamed from `ton_vm` to `ever_vm`
