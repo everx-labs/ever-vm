@@ -12,13 +12,12 @@
 */
 
 use crate::{
-    error::TvmError,
     executor::{
         Mask, engine::{Engine, storage::fetch_stack}, gas::gas_state::Gas,
         types::{InstructionOptions, Instruction, WhereToGetParams}
     },
     stack::{StackItem, integer::IntegerData},
-    types::{Exception, Status}
+    types::Status
 };
 use ever_block::GlobalCapabilities;
 use ever_block::{error, fail, ExceptionCode};

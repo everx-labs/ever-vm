@@ -12,9 +12,8 @@
 */
 
 use crate::{
-    error::TvmError,
     executor::gas::gas_state::Gas,
-    types::{Exception, ResultMut, ResultOpt, ResultRef, ResultVec, Status},
+    types::{ResultMut, ResultOpt, ResultRef, ResultVec, Status},
 };
 use self::{savelist::SaveList, continuation::ContinuationData, integer::IntegerData};
 use std::{fmt, mem, ops::Range, slice::Iter, sync::Arc, cmp::Ordering};

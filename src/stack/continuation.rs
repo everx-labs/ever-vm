@@ -12,10 +12,9 @@
 */
 
 use crate::{
-    error::TvmError,
     executor::gas::gas_state::Gas,
     stack::{SliceData, Stack, StackItem, savelist::SaveList},
-    types::{Exception, ResultOpt},
+    types::ResultOpt,
 };
 use std::{fmt, mem};
 use ever_block::{BuilderData, Cell, IBitstring, Result, error, ExceptionCode, GasConsumer, HashmapE, HashmapType};

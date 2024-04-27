@@ -11,7 +11,6 @@
 * limitations under the License.
 */
 
-use crate::{error::TvmError, types::Exception};
 use ever_block::{
     error, fail, 
     BuilderData, Cell, ExceptionCode, GasConsumer, MAX_DATA_BITS, Result, SliceData

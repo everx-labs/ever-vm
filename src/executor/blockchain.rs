@@ -12,7 +12,6 @@
 */
 
 use crate::{
-    error::TvmError,
     executor::{
         engine::{storage::fetch_stack, Engine},
         serialize_currency_collection,
@@ -25,7 +24,7 @@ use crate::{
         },
         StackItem,
     },
-    types::{Exception, Status},
+    types::Status,
 };
 use num::{bigint::Sign, BigInt};
 use ever_block::{

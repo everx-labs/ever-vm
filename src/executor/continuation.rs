@@ -12,7 +12,6 @@
 */
 
 use crate::{
-    error::TvmError,
     executor::{
         Mask,
         engine::{
@@ -29,7 +28,7 @@ use crate::{
         StackItem, continuation::{ContinuationData, ContinuationType},
         integer::{IntegerData, behavior::Signaling}, savelist::SaveList
     },
-    types::{Exception, Status}
+    types::Status
 };
 use ever_block::{error, fail, types::ExceptionCode};
 use std::{mem, ops::{Range, RangeInclusive}};

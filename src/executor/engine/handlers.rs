@@ -12,7 +12,6 @@
 */
 
 use crate::{
-    error::TvmError,
     executor::{
         accounts::*, blockchain::*, bls::*, config::*, continuation::*, crypto::*, currency::*, 
         deserialization::*, dictionary::*, dump::*, 
@@ -22,7 +21,7 @@ use crate::{
         types::{Instruction, InstructionOptions}
     },
     stack::integer::behavior::{Quiet, Signaling},
-    types::{Exception, Status}
+    types::Status
 };
 #[cfg(feature = "gosh")]
 use crate::executor::diff::*;

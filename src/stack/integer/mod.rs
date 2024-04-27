@@ -13,12 +13,11 @@
 */
 
 use crate::{
-    error::TvmError,
     stack::integer::{
         behavior::{OperationBehavior, Quiet, Signaling},
         serialization::Encoding,
     },
-    types::{ResultOpt, Exception},
+    types::ResultOpt,
 };
 use ever_block::{error, BuilderData, ExceptionCode, Result, SliceData};
 
