@@ -12,7 +12,7 @@
 */
 
 use super::*;
-use ever_block::fail;
+use ever_block::{error, fail};
 
 #[test]
 fn test_tvm_exception_code() {
