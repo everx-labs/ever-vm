@@ -11,7 +11,7 @@
 * limitations under the License.
 */
 
-use ever_block::{error, fail, Result, ExceptionCode};
+use ever_block::{fail, Result, ExceptionCode};
 use crate::types::Exception;
 
 #[derive(Debug, failure::Fail)]

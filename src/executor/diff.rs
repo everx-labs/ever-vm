@@ -12,11 +12,10 @@
 */
 
 use crate::{
-    error::TvmError,
     executor::{
         engine::{storage::fetch_stack, Engine}, gas::gas_state::Gas, types::Instruction
     },
-    stack::StackItem, types::{Exception, Status},
+    stack::StackItem, types::Status,
     utils::{
         bytes_to_string, pack_data_to_cell, unpack_data_from_cell
     }
