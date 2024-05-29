@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 2.1.9
+
+- Fixed BLS_* instructions behavior in case of bad data
+
 ## Version 2.1.8
 
 - Fix build warnings
