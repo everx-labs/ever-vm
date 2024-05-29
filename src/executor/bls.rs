@@ -79,9 +79,9 @@ pub(super) fn execute_bls_verify(engine: &mut Engine) -> Status {
     let msg = slice_to_msg(engine.cmd.var(1).as_slice()?)?;
     let pk = engine.cmd.var(2).as_slice()?.clone().get_next_bytes(BLS_PUBLIC_KEY_LEN)?;
 
-    let res = verify(sgn.as_slice().try_into()?, &msg, pk.as_slice().try_into()?)?;
+    let res = verify(sgn.as_slice().try_into()?, &msg, pk.as_slice().try_into()?);
 
-    engine.cc.stack.push(boolean!(res));
+    engine.cc.stack.push(boolean!(res.unwrap_or(false)));
 
     Ok(())
 }
@@ -128,22 +128,25 @@ pub(super) fn execute_bls_fast_aggregate_verify(engine: &mut Engine) -> Status {
     let sgn = engine.cmd.var(0).as_slice()?.clone().get_next_bytes(BLS_SIG_LEN)?;
     let msg = slice_to_msg(engine.cmd.var(1).as_slice()?)?;
     let n = engine.cmd.var(2).as_small_integer()?;
-    if n == 0 || n > engine.stack().depth() {
+    if n > engine.stack().depth() {
         return err!(ExceptionCode::RangeCheckError);
     }
     engine.try_use_gas(Gas::bls_fastaggregateverify_gas_price(n as i64))?;
+    let res = if n == 0 {
+        false
+    } else {
+        fetch_stack(engine, n)?;
+        let mut pks = Vec::with_capacity(n);
+        for i in 3..n+3 {
+            pks.push(engine.cmd.var(i).as_slice()?.clone().get_next_bytes(BLS_PUBLIC_KEY_LEN)?)
+        }
+        let mut pks_refs = Vec::<&[u8; BLS_PUBLIC_KEY_LEN]>::with_capacity(n);
+        for pk in &pks {
+            pks_refs.push(pk.as_slice().try_into()?);
+        }
 
-    fetch_stack(engine, n)?;
-    let mut pks = Vec::with_capacity(n);
-    for i in 3..n+3 {
-        pks.push(engine.cmd.var(i).as_slice()?.clone().get_next_bytes(BLS_PUBLIC_KEY_LEN)?)
-    }
-    let mut pks_refs = Vec::<&[u8; BLS_PUBLIC_KEY_LEN]>::with_capacity(n);
-    for pk in &pks {
-        pks_refs.push(pk.as_slice().try_into()?);
-    }
-
-    let res = aggregate_public_keys_and_verify(sgn.as_slice().try_into()?, &msg, &pks_refs)?;
+        aggregate_public_keys_and_verify(sgn.as_slice().try_into()?, &msg, &pks_refs).unwrap_or(false)
+    };
     engine.cc.stack.push(boolean!(res));
 
     Ok(())
@@ -159,25 +162,29 @@ pub(super) fn execute_bls_aggregate_verify(engine: &mut Engine) -> Status {
     fetch_stack(engine, 2)?;
     let sgn = engine.cmd.var(0).as_slice()?.clone().get_next_bytes(BLS_SIG_LEN)?;
     let n = engine.cmd.var(1).as_small_integer()?;
-    if n == 0 || n * 2 > engine.stack().depth() {
+    if n * 2 > engine.stack().depth() {
         return err!(ExceptionCode::RangeCheckError);
     }
     engine.try_use_gas(Gas::bls_aggregateverify_gas_price(n as i64))?;
+    let res = if n == 0 {
+        false
+    } else {
 
-    fetch_stack(engine, n * 2)?;
-    let mut pks = Vec::with_capacity(n);
-    let mut msgs = Vec::with_capacity(n);
-    for i in 0..n {
-        msgs.push(slice_to_msg(engine.cmd.var(2 + i * 2).as_slice()?)?);
-        pks.push(engine.cmd.var(3 + i * 2).as_slice()?.clone().get_next_bytes(BLS_PUBLIC_KEY_LEN)?);
-    }
-    let msgs_refs: Vec<&[u8]> = msgs.iter().map(|sig| &sig[..]).collect();
-    let mut pks_refs = Vec::<&[u8; BLS_PUBLIC_KEY_LEN]>::with_capacity(n);
-    for pk in &pks {
-        pks_refs.push(pk.as_slice().try_into()?);
-    }
+        fetch_stack(engine, n * 2)?;
+        let mut pks = Vec::with_capacity(n);
+        let mut msgs = Vec::with_capacity(n);
+        for i in 0..n {
+            msgs.push(slice_to_msg(engine.cmd.var(2 + i * 2).as_slice()?)?);
+            pks.push(engine.cmd.var(3 + i * 2).as_slice()?.clone().get_next_bytes(BLS_PUBLIC_KEY_LEN)?);
+        }
+        let msgs_refs: Vec<&[u8]> = msgs.iter().map(|sig| &sig[..]).collect();
+        let mut pks_refs = Vec::<&[u8; BLS_PUBLIC_KEY_LEN]>::with_capacity(n);
+        for pk in &pks {
+            pks_refs.push(pk.as_slice().try_into()?);
+        }
 
-    let res = aggregate_and_verify(sgn.as_slice().try_into()?, &msgs_refs, &pks_refs)?;
+        aggregate_and_verify(sgn.as_slice().try_into()?, &msgs_refs, &pks_refs).unwrap_or(false)
+    };
     engine.cc.stack.push(boolean!(res));
 
     Ok(())
@@ -206,7 +213,8 @@ where
     let y = engine.cmd.var(0).as_slice()?.clone().get_next_bytes(L)?;
     let x = engine.cmd.var(1).as_slice()?.clone().get_next_bytes(L)?;
 
-    let res = op(x.as_slice().try_into()?, y.as_slice().try_into()?)?;
+    let res = op(x.as_slice().try_into()?, y.as_slice().try_into()?)
+        .map_err(|err| exception!(ExceptionCode::UnknownError, "{}", err))?;
 
     engine.cc.stack.push(StackItem::Slice(SliceData::with_bitstring(res.as_slice(), L * 8)));
 
@@ -237,7 +245,7 @@ where
     let res = op(
         x.as_slice().try_into()?,
         s.as_builder::<UnsignedIntegerBigEndianEncoding>(BLS_SCALAR_LEN * 8)?.data().try_into()?
-    )?;
+    ).map_err(|err| exception!(ExceptionCode::UnknownError, "{}", err))?;
 
     engine.cc.stack.push(StackItem::Slice(SliceData::with_bitstring(res.as_slice(), L * 8)));
 
@@ -287,7 +295,7 @@ where
         scalars_refs.push(scalar.as_slice().try_into()?);
     }
 
-    let res = op(&points_refs, &scalars_refs)?;
+    let res = op(&points_refs, &scalars_refs).map_err(|err| exception!(ExceptionCode::UnknownError, "{}", err))?;
 
     engine.cc.stack.push(StackItem::Slice(SliceData::with_bitstring(res.as_slice(), L * 8)));
 
@@ -311,7 +319,7 @@ where
     fetch_stack(engine, 1)?;
     let x = engine.cmd.var(0).as_slice()?.clone().get_next_bytes(L)?;
 
-    let res = op(x.as_slice().try_into()?)?;
+    let res = op(x.as_slice().try_into()?).map_err(|err| exception!(ExceptionCode::UnknownError, "{}", err))?;
 
     engine.cc.stack.push(StackItem::Slice(SliceData::with_bitstring(res.as_slice(), L * 8)));
 
@@ -502,23 +510,28 @@ pub(super) fn execute_bls_pairing(engine: &mut Engine) -> Status {
 
     engine.try_use_gas(Gas::bls_pairing_gas_price(n as i64))?;
 
-    fetch_stack(engine, n * 2)?;
-    let mut g1_x = Vec::with_capacity(n);
-    let mut g2_y = Vec::with_capacity(n);
-    for i in 0..n {
-        g2_y.push(engine.cmd.var(1 + i * 2).as_slice()?.clone().get_next_bytes(BLS_G2_LEN)?);
-        g1_x.push(engine.cmd.var(2 + i * 2).as_slice()?.clone().get_next_bytes(BLS_G1_LEN)?);
-    }
-    let mut g1_x_refs = Vec::<&[u8; BLS_G1_LEN]>::with_capacity(n);
-    for point in &g1_x {
-        g1_x_refs.push(point.as_slice().try_into()?);
-    }
-    let mut g2_y_refs = Vec::<&[u8; BLS_G2_LEN]>::with_capacity(n);
-    for point in &g2_y {
-        g2_y_refs.push(point.as_slice().try_into()?);
-    }
+    let res = if n == 0 {
+        false
+    } else {
 
-    let res = pairing(&g1_x_refs, &g2_y_refs)?;
+        fetch_stack(engine, n * 2)?;
+        let mut g1_x = Vec::with_capacity(n);
+        let mut g2_y = Vec::with_capacity(n);
+        for i in 0..n {
+            g2_y.push(engine.cmd.var(1 + i * 2).as_slice()?.clone().get_next_bytes(BLS_G2_LEN)?);
+            g1_x.push(engine.cmd.var(2 + i * 2).as_slice()?.clone().get_next_bytes(BLS_G1_LEN)?);
+        }
+        let mut g1_x_refs = Vec::<&[u8; BLS_G1_LEN]>::with_capacity(n);
+        for point in &g1_x {
+            g1_x_refs.push(point.as_slice().try_into()?);
+        }
+        let mut g2_y_refs = Vec::<&[u8; BLS_G2_LEN]>::with_capacity(n);
+        for point in &g2_y {
+            g2_y_refs.push(point.as_slice().try_into()?);
+        }
+
+        pairing(&g1_x_refs, &g2_y_refs).unwrap_or(false)
+    };
     engine.cc.stack.push(boolean!(res));
 
     Ok(())
