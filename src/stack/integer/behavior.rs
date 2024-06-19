@@ -12,7 +12,7 @@
 */
 
 use crate::types::Status;
-use ever_block::{error, types::ExceptionCode};
+use ever_block::{types::ExceptionCode};
 
 pub trait OperationBehavior {
     fn quiet() -> bool;

@@ -12,7 +12,7 @@
 */
 
 use ever_block::{
-    error, fail, 
+    fail, 
     BuilderData, Cell, ExceptionCode, GasConsumer, MAX_DATA_BITS, Result, SliceData
 };
 

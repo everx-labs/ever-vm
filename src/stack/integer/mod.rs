@@ -19,7 +19,7 @@ use crate::{
     },
     types::ResultOpt,
 };
-use ever_block::{error, BuilderData, ExceptionCode, Result, SliceData};
+use ever_block::{BuilderData, ExceptionCode, Result, SliceData};
 
 use core::mem;
 use num_traits::{One, Signed, Zero};

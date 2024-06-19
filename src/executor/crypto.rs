@@ -26,7 +26,7 @@ use crate::{
 };
 use std::borrow::Cow;
 use ever_block::{
-    error, BuilderData, Ed25519PublicKey, ExceptionCode, GasConsumer, GlobalCapabilities, UInt256,
+    BuilderData, Ed25519PublicKey, ExceptionCode, GasConsumer, GlobalCapabilities, UInt256,
     ED25519_PUBLIC_KEY_LENGTH, ED25519_SIGNATURE_LENGTH
 };
 

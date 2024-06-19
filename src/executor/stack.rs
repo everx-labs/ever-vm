@@ -27,7 +27,7 @@ use crate::{
     types::Status
 };
 use std::cmp;
-use ever_block::{error, fail, types::ExceptionCode};
+use ever_block::{fail, ExceptionCode};
 use ever_block::GlobalCapabilities;
 
 // Stack manipulation *********************************************************
@@ -289,7 +289,7 @@ pub(super) fn execute_pu2xc(engine: &mut Engine) -> Status {
     let ra = engine.cmd.sregs3().ra;
     let rb = engine.cmd.sregs3().rb;
     let rc = engine.cmd.sregs3().rc;
-    if engine.cc.stack.depth() + 1 < cmp::max(rc, cmp::max(ra + 2, rb + 1)) {
+    if engine.cc.stack.depth() + 1 < rc.max(cmp::max(ra + 2, rb + 1)) {
         return err!(ExceptionCode::StackUnderflow)
     }
     engine.cc.stack.push_copy(ra)?;

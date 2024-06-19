@@ -131,7 +131,7 @@ impl Exception {
 
 macro_rules! exception {
     ($code:expr) => {
-        error!(
+        ever_block::error!(
             $crate::error::TvmError::TvmExceptionFull(
                 $crate::types::Exception::from_code($code, file!(), line!()), 
                 String::new()
@@ -139,7 +139,7 @@ macro_rules! exception {
         )
     };
     ($code:expr, $msg:literal, $($arg:tt)*) => {
-        error!(
+        ever_block::error!(
             $crate::error::TvmError::TvmExceptionFull(
                 $crate::types::Exception::from_code($code, file!(), line!()), 
                 format!($msg, $($arg)*)
@@ -147,7 +147,7 @@ macro_rules! exception {
         )
     };
     ($code:expr, $value:expr, $msg:literal, $($arg:tt)*) => {
-        error!(
+        ever_block::error!(
             $crate::error::TvmError::TvmExceptionFull(
                 $crate::types::Exception::from_code_and_value($code, $value, file!(), line!()), 
                 format!($msg, $($arg)*)
@@ -155,7 +155,7 @@ macro_rules! exception {
         )
     };
     ($code:expr, $value:expr, $msg:literal) => {
-        error!(
+        ever_block::error!(
             $crate::error::TvmError::TvmExceptionFull(
                 $crate::types::Exception::from_code_and_value($code, $value, file!(), line!()), 
                 $msg.to_string()
@@ -163,7 +163,7 @@ macro_rules! exception {
         )
     };
     ($code:expr, $msg:literal) => {
-        error!(
+        ever_block::error!(
             $crate::error::TvmError::TvmExceptionFull(
                 $crate::types::Exception::from_code($code, file!(), line!()), 
                 $msg.to_string()
@@ -171,7 +171,7 @@ macro_rules! exception {
         )
     };
     ($code:expr, $file:expr, $line:expr) => {
-        error!(
+        ever_block::error!(
             $crate::error::TvmError::TvmExceptionFull(
                 $crate::types::Exception::from_code($code, $file, $line), 
                String::new()

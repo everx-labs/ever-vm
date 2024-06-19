@@ -30,8 +30,8 @@ use crate::{
     types::Status
 };
 use ever_block::{
-    BuilderData, error, fail, GasConsumer, HashmapE, HashmapSubtree, PfxHashmapE, Result, SliceData,
-    types::ExceptionCode
+    fail, BuilderData, ExceptionCode, GasConsumer,
+    HashmapE, HashmapSubtree, PfxHashmapE, Result, SliceData,
 };
 
 fn try_unref_leaf(slice: SliceData) -> Result<StackItem> {

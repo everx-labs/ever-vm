@@ -24,7 +24,7 @@ use crate::{
     },
 };
 use num::{bigint::ToBigInt, Signed};
-use ever_block::{error, BuilderData, ExceptionCode, Result};
+use ever_block::{BuilderData, ExceptionCode, Result};
 
 pub struct SignedIntegerLittleEndianEncoding {
     length_in_bits: usize

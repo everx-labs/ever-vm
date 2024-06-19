@@ -21,7 +21,6 @@ use integer::serialization::{Encoding, SignedIntegerBigEndianEncoding};
 use serialization::Deserializer;
 use ever_block::{
     MAX_DATA_BITS, MAX_REFERENCES_COUNT,
-    error,
     BuilderData, Cell, CellType, ExceptionCode, HashmapType, IBitstring,
     Result, SliceData, GasConsumer, HashmapE
 };

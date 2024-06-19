@@ -26,7 +26,7 @@ use crate::{
 #[cfg(feature = "gosh")]
 use crate::executor::diff::*;
 use std::{fmt, ops::Range};
-use ever_block::{error, Result, types::ExceptionCode};
+use ever_block::{Result, ExceptionCode};
 
 // ( - )
 fn execute_nop(engine: &mut Engine) -> Status {

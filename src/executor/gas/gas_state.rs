@@ -11,8 +11,7 @@
 * limitations under the License.
 */
 
-use std::cmp::{max, min};
-use ever_block::{error, Result, types::ExceptionCode};
+use ever_block::{Result, ExceptionCode};
 
 // Gas state
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -186,7 +185,7 @@ impl Gas {
     }
     pub fn consume_stack(&mut self, stack_depth: usize) -> i64 {
         self.use_gas(
-            STACK_ENTRY_GAS_PRICE * (max(stack_depth, FREE_STACK_DEPTH) - FREE_STACK_DEPTH) as i64
+            STACK_ENTRY_GAS_PRICE * (stack_depth.saturating_sub(FREE_STACK_DEPTH) as i64)
         )
     }
 
@@ -334,7 +333,7 @@ impl Gas {
 
     /// Set input gas to gas limit
     pub fn new_gas_limit(&mut self, gas_limit: i64) {
-        self.gas_limit = max(0, min(gas_limit, self.gas_limit_max));
+        self.gas_limit = gas_limit.min(self.gas_limit_max).max(0);
         self.gas_credit = 0;
         self.gas_remaining += self.gas_limit - self.gas_base;
         self.gas_base = self.gas_limit;

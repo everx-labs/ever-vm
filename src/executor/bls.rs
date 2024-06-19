@@ -29,7 +29,7 @@ use crate::{
 use ever_block::GlobalCapabilities;
 use ever_block::{
     aggregate_and_verify, aggregate_public_keys_and_verify, 
-    aggregate_pure_bls_signatures, error, g1_add, g1_in_group, g1_mul, 
+    aggregate_pure_bls_signatures, g1_add, g1_in_group, g1_mul, 
     g1_multiexp, g1_neg, g1_sub, g1_zero, g2_add, g2_in_group, g2_mul, g2_multiexp, g2_neg, g2_sub, 
     g2_zero, map_to_g1, map_to_g2, pairing, verify, ExceptionCode, Result, SliceData,
     BLS_G1_LEN, BLS_G2_LEN, BLS_PUBLIC_KEY_LEN, BLS_SCALAR_LEN, BLS_SIG_LEN

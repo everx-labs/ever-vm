@@ -43,7 +43,7 @@ macro_rules! continuation_mut_by_address {
             VAR => $engine.cmd.var_mut(storage_index!($address)).as_continuation_mut(),
             CTRL => match $engine.ctrls.get_mut(storage_index!($address)) {
                 Some(ctrl) => ctrl.as_continuation_mut(),
-                None => fail!(ExceptionCode::TypeCheckError)
+                None => ever_block::fail!(ExceptionCode::TypeCheckError)
             },
             _ => fail!("continuation_mut_by_address: {:X}", address_tag!($address))
         }

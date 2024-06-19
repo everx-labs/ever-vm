@@ -32,7 +32,7 @@ use crate::{
 };
 use ever_block::GlobalCapabilities;
 use ever_block::{
-    error, CellType, GasConsumer, Result, SliceData, ExceptionCode
+    CellType, GasConsumer, Result, SliceData, ExceptionCode
 };
 use std::collections::HashSet;
 
