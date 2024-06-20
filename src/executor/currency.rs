@@ -16,8 +16,7 @@ use crate::{
     stack::{StackItem, integer::IntegerData},
     types::Status
 };
-use ever_block::GlobalCapabilities;
-use ever_block::{BuilderData, error, IBitstring, types::ExceptionCode};
+use ever_block::{BuilderData, ExceptionCode, GlobalCapabilities, IBitstring};
 
 // slice - uint slice'
 fn load_var(engine: &mut Engine, name: &'static str, max_bytes: u8, sign: bool) -> Status {

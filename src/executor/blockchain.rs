@@ -32,7 +32,7 @@ use ever_block::{
     ACTION_RESERVE, ACTION_SEND_MSG, ACTION_SET_CODE,
 };
 use ever_block::{
-    error, types::ExceptionCode, BuilderData, Cell, GasConsumer, IBitstring, Result, SliceData,
+    types::ExceptionCode, BuilderData, Cell, GasConsumer, IBitstring, Result, SliceData,
 };
 
 fn get_bigint(slice: &SliceData) -> BigInt {

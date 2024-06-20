@@ -17,7 +17,7 @@ use crate::{
     types::ResultOpt,
 };
 use std::fmt;
-use ever_block::{error, ExceptionCode, Result, SliceData, HashmapE, HashmapType, BuilderData, IBitstring};
+use ever_block::{ExceptionCode, Result, SliceData, HashmapE, HashmapType, BuilderData, IBitstring};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SaveList {

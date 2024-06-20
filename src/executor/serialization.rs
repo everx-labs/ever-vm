@@ -31,7 +31,7 @@ use crate::{
     types::Status
 };
 use ever_block::GlobalCapabilities;
-use ever_block::{BuilderData, CellType, GasConsumer, error, IBitstring, Result, ExceptionCode, MAX_LEVEL};
+use ever_block::{BuilderData, CellType, GasConsumer, IBitstring, Result, ExceptionCode, MAX_LEVEL};
 
 const QUIET: u8 = 0x01; // quiet variant
 const STACK: u8 = 0x02; // length of int in stack

@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 2.2.0
+
+- Use modern crates anyhow and thiserror instead of failure
+
 ## Version 2.1.9
 
 - Fixed BLS_* instructions behavior in case of bad data

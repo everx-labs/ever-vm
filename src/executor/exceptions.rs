@@ -22,7 +22,7 @@ use crate::{
 };
 use std::ops::Range;
 use ever_block::GlobalCapabilities;
-use ever_block::{error, fail, types::ExceptionCode};
+use ever_block::{fail, ExceptionCode};
 
 //Utilities **********************************************************************************
 //(c c' -)

@@ -30,7 +30,7 @@ use crate::{
     },
     types::Status
 };
-use ever_block::{error, fail, types::ExceptionCode};
+use ever_block::{fail, ExceptionCode};
 use std::{mem, ops::{Range, RangeInclusive}};
 
 const CALLX: u8 = 0x40;   // CALLX to found value

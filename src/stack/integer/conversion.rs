@@ -17,7 +17,7 @@ use crate::stack::integer::{
 };
 use num_traits::Num;
 use std::ops::RangeInclusive;
-use ever_block::{error, Result, types::ExceptionCode};
+use ever_block::{Error, Result, types::ExceptionCode};
 
 impl IntegerData {
     /// Constructs new IntegerData from u32 in a fastest way.
@@ -169,7 +169,7 @@ impl IntegerData {
 }
 
 impl std::str::FromStr for IntegerData {
-    type Err = failure::Error;
+    type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
         Self::from_str_radix(s, 10)
     }

@@ -11,19 +11,17 @@
 * limitations under the License.
 */
 
-use crate::{
-    stack::{
-        integer::{
-            serialization::{
-                common::bits_to_bytes,
-                Encoding,
-            },
-            IntegerData,
+use crate::stack::{
+    integer::{
+        serialization::{
+            common::bits_to_bytes,
+            Encoding,
         },
-        serialization::{Deserializer, Serializer},
+        IntegerData,
     },
+    serialization::{Deserializer, Serializer},
 };
-use ever_block::{error, BuilderData, ExceptionCode, Result};
+use ever_block::{BuilderData, ExceptionCode, Result};
 
 pub struct UnsignedIntegerLittleEndianEncoding {
     length_in_bits: usize

@@ -17,7 +17,7 @@ use crate::{
     types::Status
 };
 use ever_block::GlobalCapabilities;
-use ever_block::{error, types::ExceptionCode, Result};
+use ever_block::{ExceptionCode, Result};
 
 pub mod gas_state;
 

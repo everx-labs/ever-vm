@@ -17,7 +17,7 @@ use crate::{
     types::ResultOpt,
 };
 use std::{fmt, mem};
-use ever_block::{BuilderData, Cell, IBitstring, Result, error, ExceptionCode, GasConsumer, HashmapE, HashmapType};
+use ever_block::{BuilderData, Cell, IBitstring, Result, ExceptionCode, GasConsumer, HashmapE, HashmapType};
 use super::{slice_serialize, slice_deserialize, items_deserialize, items_serialize, prepare_cont_serialize_vars, DeserializeItem};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
