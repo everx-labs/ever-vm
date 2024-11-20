@@ -2,7 +2,7 @@
 build = 'common/build/build.rs'
 edition = '2021'
 name = 'ever_vm'
-version = '2.2.21'
+version = '2.2.22'
 
 [dependencies]
 anyhow = '1.0'
@@ -15,7 +15,7 @@ num-traits = '0.2'
 similar = { features = [ 'bytes' ], optional = true, version = '2.2.0' }
 thiserror = '1.0'
 zstd = { default-features = false, optional = true, version = '0.11' }
-ever_block = { git = 'https://github.com/everx-labs/ever-block.git', tag = '1.11.20' }
+ever_block = { git = 'https://github.com/everx-labs/ever-block.git', tag = '1.11.21' }
 
 [dev-dependencies]
 criterion = '0.4'
