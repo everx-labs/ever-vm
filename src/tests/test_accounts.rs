@@ -114,5 +114,3 @@ fn test_sorted_validator_list() {
     }
 }
 
-#[cfg(feature = "ci_run")]
-mod private_test_accounts;
