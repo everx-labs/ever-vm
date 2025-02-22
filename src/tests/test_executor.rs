@@ -258,5 +258,3 @@ fn test_currency_collection_ser() {
     assert_eq!(b1, b2);
 }
 
-#[cfg(feature = "ci_run")]
-mod private_test_executor;

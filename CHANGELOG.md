@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Version 2.2.26
+
+- Fix the build
+
 ## Version 2.2.25
 
 - Fix the build

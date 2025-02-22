@@ -2,7 +2,7 @@
 build = 'common/build/build.rs'
 edition = '2021'
 name = 'ever_vm'
-version = '2.2.25'
+version = '2.2.26'
 
 [dependencies]
 anyhow = '1.0'
