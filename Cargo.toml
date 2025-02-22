@@ -2,7 +2,7 @@
 build = 'common/build/build.rs'
 edition = '2021'
 name = 'ever_vm'
-version = '2.2.24'
+version = '2.2.25'
 
 [dependencies]
 anyhow = '1.0'
@@ -27,8 +27,10 @@ rand = '0.8'
 ever_assembler = { git = 'https://github.com/everx-labs/ever-assembler.git' }
 
 [features]
+ci_run = [  ]
 fift_check = [  ]
 gosh = [ 'ever_block/gosh', 'diffy', 'similar', 'zstd' ]
+gosh_test = [ 'gosh', 'ever_assembler/gosh' ]
 log_file = [  ]
 signature_no_check = [  ]
 signature_with_id = [ 'ever_block/signature_with_id' ]
